@@ -67,9 +67,10 @@ pnpm --filter @concord/shared test
 - [x] JWT authentication
 - [x] Server/channel management
 - [x] Permission system (bitmask roles)
-- [ ] Voice chat via LiveKit
-- [ ] Video chat (1080p60)
-- [ ] Screen sharing (1080p60)
-- [ ] Music streaming (YouTube via yt-dlp)
+- [x] Voice chat via LiveKit
+- [x] Video chat (1080p60 via VP9)
+- [x] Screen sharing (1080p60)
+- [x] Music streaming (YouTube search, queue, playback via yt-dlp)
 - [ ] File uploads / image embeds
 - [ ] Typing indicators / presence
+- [ ] User settings UI (audio/video device selection)
