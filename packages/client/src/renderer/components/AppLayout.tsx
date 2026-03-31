@@ -7,6 +7,7 @@ import { ServerList } from "./ServerList";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { ChatArea } from "./ChatArea";
 import { VoiceChannel } from "./VoiceChannel";
+import { MusicPlayer } from "./MusicPlayer";
 
 export function AppLayout() {
   const { serverId, channelId } = useParams();
@@ -99,6 +100,7 @@ export function AppLayout() {
           </p>
         </div>
       )}
+      <MusicPlayer />
     </div>
   );
 }

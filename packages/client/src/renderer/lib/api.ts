@@ -8,6 +8,8 @@ import type {
   MembersResponse,
   VoiceJoinResponse,
   VoiceParticipantsResponse,
+  MusicSearchResponse,
+  MusicState,
 } from "@concord/shared";
 
 const API_BASE = "http://localhost:3001/api";
@@ -97,4 +99,32 @@ export const api = {
 
   getVoiceParticipants: (channelId: string) =>
     request<VoiceParticipantsResponse>(`/voice/${channelId}/participants`),
+
+  // Music
+  musicSearch: (query: string) =>
+    request<MusicSearchResponse>(`/music/search?q=${encodeURIComponent(query)}`),
+
+  musicGetState: (voiceChannelId: string) =>
+    request<MusicState>(`/music/state/${voiceChannelId}`),
+
+  musicAddToQueue: (
+    voiceChannelId: string,
+    track: { url: string; title?: string; duration?: number; thumbnail?: string }
+  ) =>
+    request<MusicState>(`/music/queue/${voiceChannelId}`, {
+      method: "POST",
+      body: JSON.stringify(track),
+    }),
+
+  musicSkip: (voiceChannelId: string) =>
+    request<MusicState>(`/music/skip/${voiceChannelId}`, { method: "POST" }),
+
+  musicStop: (voiceChannelId: string) =>
+    request<MusicState>(`/music/stop/${voiceChannelId}`, { method: "POST" }),
+
+  musicClearQueue: (voiceChannelId: string) =>
+    request<MusicState>(`/music/queue/${voiceChannelId}`, { method: "DELETE" }),
+
+  musicStatus: () =>
+    request<{ available: boolean; message: string }>("/music/status"),
 };
