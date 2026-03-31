@@ -70,3 +70,31 @@ export interface MembersResponse {
 export interface UserResponse {
   user: PublicUser;
 }
+
+// ---- Voice ----
+
+export interface VoiceJoinResponse {
+  token: string;
+  url: string;
+  roomName: string;
+}
+
+export interface VoiceParticipant {
+  userId: string;
+  name: string;
+  joinedAt: string | null;
+  tracks: VoiceTrack[];
+}
+
+export interface VoiceTrack {
+  sid: string;
+  type: number;
+  source: number;
+  muted: boolean;
+  width: number;
+  height: number;
+}
+
+export interface VoiceParticipantsResponse {
+  participants: VoiceParticipant[];
+}
