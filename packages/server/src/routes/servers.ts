@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "../db.js";
 import { Permissions } from "@concord/shared";
+import { getOnlineUserIds } from "../ws/connections.js";
 
 export const serverRoutes: FastifyPluginAsync = async (app) => {
   // All server routes require auth
@@ -131,6 +132,8 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
       },
     });
 
+    const onlineIds = new Set(getOnlineUserIds());
+
     return {
       members: members.map((m) => ({
         userId: m.userId,
@@ -139,6 +142,7 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
         roleIds: m.memberRoles.map((r) => r.roleId),
         joinedAt: m.joinedAt.toISOString(),
         user: m.user,
+        online: onlineIds.has(m.userId),
       })),
     };
   });

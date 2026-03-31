@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useParams } from "react-router-dom";
 import { useChatStore } from "../stores/chat";
 import { useAuthStore } from "../stores/auth";
+import { usePresenceStore } from "../stores/presence";
 import { sendWs } from "../lib/ws";
 
 export function ChatArea() {
@@ -11,11 +12,34 @@ export function ChatArea() {
   const userId = useAuthStore((s) => s.user?.id);
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channel = channels.find((c) => c.id === channelId);
+
+  const typingUsers = usePresenceStore(
+    useCallback(
+      (s) => (channelId ? s.getTypingUsers(channelId) : []),
+      [channelId]
+    )
+  );
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  const sendTyping = useCallback(() => {
+    if (!channelId) return;
+    // Debounce: only send typing every 2 seconds
+    if (typingTimeoutRef.current) return;
+    sendWs({ type: "typing_start", channelId });
+    typingTimeoutRef.current = setTimeout(() => {
+      typingTimeoutRef.current = null;
+    }, 2000);
+  }, [channelId]);
+
+  const handleInputChange = (value: string) => {
+    setInput(value);
+    if (value.trim()) sendTyping();
+  };
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -23,6 +47,15 @@ export function ChatArea() {
     sendWs({ type: "send_message", channelId, content: input.trim() });
     setInput("");
   };
+
+  const typingText =
+    typingUsers.length === 0
+      ? null
+      : typingUsers.length === 1
+        ? `${typingUsers[0]} is typing...`
+        : typingUsers.length === 2
+          ? `${typingUsers[0]} and ${typingUsers[1]} are typing...`
+          : `${typingUsers[0]} and ${typingUsers.length - 1} others are typing...`;
 
   return (
     <div style={styles.container}>
@@ -56,15 +89,18 @@ export function ChatArea() {
         <div ref={messagesEndRef} />
       </div>
 
-      <form onSubmit={handleSubmit} style={styles.inputContainer}>
-        <input
-          style={styles.input}
-          placeholder={`Message #${channel?.name ?? "channel"}`}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          autoFocus
-        />
-      </form>
+      <div style={styles.inputArea}>
+        {typingText && <div style={styles.typingIndicator}>{typingText}</div>}
+        <form onSubmit={handleSubmit} style={styles.inputContainer}>
+          <input
+            style={styles.input}
+            placeholder={`Message #${channel?.name ?? "channel"}`}
+            value={input}
+            onChange={(e) => handleInputChange(e.target.value)}
+            autoFocus
+          />
+        </form>
+      </div>
     </div>
   );
 }
@@ -140,9 +176,18 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--text-secondary)",
     wordBreak: "break-word",
   },
+  inputArea: {
+    flexShrink: 0,
+  },
+  typingIndicator: {
+    padding: "0 16px 4px",
+    fontSize: "12px",
+    color: "var(--text-muted)",
+    fontStyle: "italic",
+    height: "18px",
+  },
   inputContainer: {
     padding: "0 16px 24px",
-    flexShrink: 0,
   },
   input: {
     width: "100%",

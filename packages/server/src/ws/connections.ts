@@ -59,3 +59,19 @@ export function getOnlineUserIds(): string[] {
   }
   return Array.from(userIds);
 }
+
+export function broadcastToAll(message: ServerMessage, excludeSessionId?: string) {
+  for (const [sessionId, conn] of connections) {
+    if (sessionId === excludeSessionId) continue;
+    if (conn.socket.readyState === 1) {
+      conn.socket.send(JSON.stringify(message));
+    }
+  }
+}
+
+export function isUserOnline(userId: string): boolean {
+  for (const conn of connections.values()) {
+    if (conn.userId === userId) return true;
+  }
+  return false;
+}

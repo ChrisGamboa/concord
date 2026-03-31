@@ -3,11 +3,13 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { onWsMessage, sendWs } from "../lib/ws";
 import { useChatStore } from "../stores/chat";
+import { usePresenceStore } from "../stores/presence";
 import { ServerList } from "./ServerList";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { ChatArea } from "./ChatArea";
 import { VoiceChannel } from "./VoiceChannel";
 import { MusicPlayer } from "./MusicPlayer";
+import { MemberList } from "./MemberList";
 
 export function AppLayout() {
   const { serverId, channelId } = useParams();
@@ -64,6 +66,8 @@ export function AppLayout() {
     };
   }, [channelId, isVoiceChannel, setActiveChannel, setMessages]);
 
+  const { setUserOnline, setUserOffline, addTyping } = usePresenceStore();
+
   // Handle incoming WebSocket messages
   useEffect(() => {
     return onWsMessage((msg) => {
@@ -77,9 +81,16 @@ export function AppLayout() {
         case "message_deleted":
           removeMessage(msg.channelId, msg.messageId);
           break;
+        case "presence_update":
+          if (msg.status === "online") setUserOnline(msg.userId);
+          else setUserOffline(msg.userId);
+          break;
+        case "typing":
+          addTyping(msg.channelId, msg.userId, msg.username);
+          break;
       }
     });
-  }, [addMessage, updateMessage, removeMessage]);
+  }, [addMessage, updateMessage, removeMessage, setUserOnline, setUserOffline, addTyping]);
 
   return (
     <div style={styles.layout}>
@@ -92,6 +103,7 @@ export function AppLayout() {
         />
       )}
       {channelId && !isVoiceChannel && <ChatArea />}
+      {serverId && !isVoiceChannel && <MemberList />}
       {!serverId && (
         <div style={styles.welcome}>
           <h2>Welcome to Concord</h2>

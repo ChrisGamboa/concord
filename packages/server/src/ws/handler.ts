@@ -8,6 +8,9 @@ import {
   subscribeToChannel,
   unsubscribeFromChannel,
   broadcastToChannel,
+  broadcastToAll,
+  isUserOnline,
+  getOnlineUserIds,
 } from "./connections.js";
 
 export const wsHandler: FastifyPluginAsync = async (app) => {
@@ -23,8 +26,17 @@ export const wsHandler: FastifyPluginAsync = async (app) => {
       try {
         const decoded = app.jwt.verify<{ userId: string }>(token);
         userId = decoded.userId;
+        const wasOnline = isUserOnline(userId);
         addConnection(sessionId, socket, userId);
         send({ type: "ready", userId, sessionId });
+
+        // Broadcast online presence if this is their first connection
+        if (!wasOnline) {
+          broadcastToAll(
+            { type: "presence_update", userId, status: "online" },
+            sessionId
+          );
+        }
       } catch {
         send({ type: "error", message: "Invalid token" });
         socket.close();
@@ -56,7 +68,17 @@ export const wsHandler: FastifyPluginAsync = async (app) => {
     });
 
     socket.on("close", () => {
+      const disconnectedUserId = userId;
       removeConnection(sessionId);
+
+      // Broadcast offline if user has no remaining connections
+      if (disconnectedUserId && !isUserOnline(disconnectedUserId)) {
+        broadcastToAll({
+          type: "presence_update",
+          userId: disconnectedUserId,
+          status: "offline",
+        });
+      }
     });
 
     function send(msg: ServerMessage) {
