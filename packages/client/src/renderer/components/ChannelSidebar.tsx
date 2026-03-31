@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { useChatStore } from "../stores/chat";
+import { useVoiceStore } from "../stores/voice";
 import { ChannelType } from "@concord/shared";
 
 export function ChannelSidebar() {
@@ -8,6 +9,8 @@ export function ChannelSidebar() {
   const navigate = useNavigate();
   const servers = useChatStore((s) => s.servers);
   const server = servers.find((s) => s.id === serverId);
+
+  const voiceChannelId = useVoiceStore((s) => s.activeChannelId);
 
   const textChannels = channels.filter((c) => c.type === ChannelType.Text);
   const voiceChannels = channels.filter((c) => c.type === ChannelType.Voice);
@@ -51,13 +54,24 @@ export function ChannelSidebar() {
             {voiceChannels.map((channel) => (
               <button
                 key={channel.id}
+                onClick={() => navigate(`/channels/${serverId}/${channel.id}`)}
                 style={{
                   ...styles.channelButton,
-                  color: "var(--text-muted)",
+                  background:
+                    channel.id === channelId
+                      ? "rgba(255,255,255,0.06)"
+                      : "transparent",
+                  color:
+                    channel.id === channelId
+                      ? "var(--text-primary)"
+                      : "var(--text-muted)",
                 }}
               >
-                <span style={styles.voiceIcon}>🔊</span>
+                <span style={styles.voiceIcon}>V</span>
                 {channel.name}
+                {voiceChannelId === channel.id && (
+                  <span style={styles.connectedDot} />
+                )}
               </button>
             ))}
           </div>
@@ -125,5 +139,15 @@ const styles: Record<string, React.CSSProperties> = {
   },
   voiceIcon: {
     fontSize: "14px",
+    fontWeight: 700,
+    opacity: 0.5,
+  },
+  connectedDot: {
+    width: "8px",
+    height: "8px",
+    borderRadius: "50%",
+    background: "var(--success)",
+    marginLeft: "auto",
+    flexShrink: 0,
   },
 };

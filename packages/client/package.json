@@ -12,6 +12,9 @@
   },
   "dependencies": {
     "@concord/shared": "workspace:*",
+    "@livekit/components-react": "^2.9.20",
+    "@livekit/components-styles": "^1.2.0",
+    "livekit-client": "^2.18.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.5.0",

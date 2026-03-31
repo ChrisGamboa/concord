@@ -6,6 +6,7 @@ import { useChatStore } from "../stores/chat";
 import { ServerList } from "./ServerList";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { ChatArea } from "./ChatArea";
+import { VoiceChannel } from "./VoiceChannel";
 
 export function AppLayout() {
   const { serverId, channelId } = useParams();
@@ -42,9 +43,14 @@ export function AppLayout() {
     });
   }, [serverId, channelId, navigate, setActiveServer, setChannels]);
 
-  // Load messages & subscribe when channel changes
+  // Determine if current channel is voice or text
+  const channels = useChatStore((s) => s.channels);
+  const currentChannel = channels.find((c) => c.id === channelId);
+  const isVoiceChannel = currentChannel?.type === "voice";
+
+  // Load messages & subscribe when text channel changes
   useEffect(() => {
-    if (!channelId) return;
+    if (!channelId || isVoiceChannel) return;
     setActiveChannel(channelId);
 
     api.getMessages(channelId).then((res) => {
@@ -55,7 +61,7 @@ export function AppLayout() {
     return () => {
       sendWs({ type: "unsubscribe_channel", channelId });
     };
-  }, [channelId, setActiveChannel, setMessages]);
+  }, [channelId, isVoiceChannel, setActiveChannel, setMessages]);
 
   // Handle incoming WebSocket messages
   useEffect(() => {
@@ -78,7 +84,13 @@ export function AppLayout() {
     <div style={styles.layout}>
       <ServerList />
       {serverId && <ChannelSidebar />}
-      {channelId && <ChatArea />}
+      {channelId && isVoiceChannel && (
+        <VoiceChannel
+          channelId={channelId}
+          channelName={currentChannel?.name ?? "voice"}
+        />
+      )}
+      {channelId && !isVoiceChannel && <ChatArea />}
       {!serverId && (
         <div style={styles.welcome}>
           <h2>Welcome to Concord</h2>

@@ -6,6 +6,8 @@ import type {
   RegisterRequest,
   ServersResponse,
   MembersResponse,
+  VoiceJoinResponse,
+  VoiceParticipantsResponse,
 } from "@concord/shared";
 
 const API_BASE = "http://localhost:3001/api";
@@ -86,4 +88,13 @@ export const api = {
     request<MessagesResponse>(
       `/messages/channel/${channelId}${before ? `?before=${before}` : ""}`
     ),
+
+  // Voice
+  joinVoiceChannel: (channelId: string) =>
+    request<VoiceJoinResponse>(`/voice/${channelId}/join`, {
+      method: "POST",
+    }),
+
+  getVoiceParticipants: (channelId: string) =>
+    request<VoiceParticipantsResponse>(`/voice/${channelId}/participants`),
 };
