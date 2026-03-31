@@ -98,3 +98,42 @@ export interface VoiceTrack {
 export interface VoiceParticipantsResponse {
   participants: VoiceParticipant[];
 }
+
+// ---- Music ----
+
+export interface MusicSearchResult {
+  id: string;
+  title: string;
+  duration: number; // seconds
+  thumbnail: string | null;
+  url: string;
+}
+
+export interface MusicSearchResponse {
+  results: MusicSearchResult[];
+}
+
+export interface MusicQueueItem {
+  id: string;
+  title: string;
+  duration: number;
+  thumbnail: string | null;
+  url: string;
+  requestedBy: string;
+}
+
+export interface MusicState {
+  isPlaying: boolean;
+  currentTrack: MusicQueueItem | null;
+  queue: MusicQueueItem[];
+  voiceChannelId: string | null;
+}
+
+export interface MusicPlayRequest {
+  url: string;
+  voiceChannelId: string;
+}
+
+export interface MusicSearchRequest {
+  query: string;
+}
