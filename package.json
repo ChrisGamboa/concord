@@ -1,0 +1,16 @@
+{
+  "name": "concord",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Self-hostable Discord alternative",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev:server": "pnpm --filter @concord/server dev",
+    "dev:client": "pnpm --filter @concord/client dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck"
+  }
+}
