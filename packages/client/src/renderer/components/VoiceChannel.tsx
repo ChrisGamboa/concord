@@ -179,23 +179,25 @@ function VoiceContent({
   // Apply Krisp noise filter after mic track is fully published
   useEffect(() => {
     if (!isKrispNoiseFilterSupported()) return;
+    let cancelled = false;
+    let retries = 0;
 
     const applyKrisp = async () => {
+      if (cancelled || retries > 5) return;
       const micPub = localParticipant.getTrackPublication(Track.Source.Microphone);
       if (!micPub?.track || micPub.track.getProcessor()) return;
       try {
         // @ts-expect-error -- version mismatch between krisp plugin and livekit-client types
         await micPub.track.setProcessor(KrispNoiseFilter());
-        console.log("[krisp] Noise filter enabled");
       } catch {
-        // AudioContext not ready yet, retry shortly
-        setTimeout(applyKrisp, 500);
+        // AudioContext not ready yet or auth failed — retry
+        retries++;
+        if (!cancelled) setTimeout(applyKrisp, 500);
       }
     };
 
-    // Small delay to let AudioContext initialize after track publish
     const timer = setTimeout(applyKrisp, 300);
-    return () => clearTimeout(timer);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [localParticipant, localParticipant.isMicrophoneEnabled]);
 
   const allVideoTracks = useTracks(
