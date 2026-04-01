@@ -26,6 +26,10 @@ export function ChatArea() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [dragOver, setDragOver] = useState(false);
+  const [hoveredMsgId, setHoveredMsgId] = useState<string | null>(null);
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -106,6 +110,33 @@ export function ChatArea() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [handleFileUpload]);
 
+  const handleStartEdit = (msgId: string, content: string) => {
+    setEditingMsgId(msgId);
+    setEditContent(content);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingMsgId || !editContent.trim()) return;
+    sendWs({ type: "edit_message", messageId: editingMsgId, content: editContent.trim() });
+    setEditingMsgId(null);
+    setEditContent("");
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMsgId(null);
+    setEditContent("");
+  };
+
+  const handleDelete = (msgId: string) => {
+    if (confirmDeleteId === msgId) {
+      sendWs({ type: "delete_message", messageId: msgId });
+      setConfirmDeleteId(null);
+    } else {
+      setConfirmDeleteId(msgId);
+      setTimeout(() => setConfirmDeleteId((curr) => curr === msgId ? null : curr), 2000);
+    }
+  };
+
   const typingText =
     typingUsers.length === 0
       ? null
@@ -156,8 +187,18 @@ export function ChatArea() {
               GROUP_THRESHOLD_MS;
 
           if (isGrouped) {
+            const isOwnG = msg.authorId === userId;
+            const isHoveredG = hoveredMsgId === msg.id;
+            const isEditingG = editingMsgId === msg.id;
+
             return (
-              <div key={msg.id} className="message-grouped hover-bg" style={styles.messageGrouped}>
+              <div
+                key={msg.id}
+                className="message-grouped hover-bg"
+                style={styles.messageGrouped}
+                onMouseEnter={() => setHoveredMsgId(msg.id)}
+                onMouseLeave={() => setHoveredMsgId(null)}
+              >
                 <span className="grouped-timestamp" style={styles.groupedTimestamp}>
                   {new Date(msg.createdAt).toLocaleTimeString([], {
                     hour: "2-digit",
@@ -165,17 +206,48 @@ export function ChatArea() {
                   })}
                 </span>
                 <div style={styles.groupedContent}>
-                  <MessageBody content={msg.content} />
-                  {msg.editedAt && (
-                    <span style={styles.editedTag}>(edited)</span>
+                  {isEditingG ? (
+                    <MessageActions
+                      msgId={msg.id} content={msg.content} isOwn={isOwnG}
+                      isHovered={isHoveredG} isEditing={true} editContent={editContent}
+                      confirmDeleteId={confirmDeleteId}
+                      onStartEdit={handleStartEdit} onDelete={handleDelete}
+                      onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
+                      onEditChange={setEditContent}
+                    />
+                  ) : (
+                    <>
+                      <MessageBody content={msg.content} />
+                      {msg.editedAt && <span style={styles.editedTag}>(edited)</span>}
+                    </>
                   )}
                 </div>
+                {!isEditingG && (
+                  <MessageActions
+                    msgId={msg.id} content={msg.content} isOwn={isOwnG}
+                    isHovered={isHoveredG} isEditing={false} editContent={editContent}
+                    confirmDeleteId={confirmDeleteId}
+                    onStartEdit={handleStartEdit} onDelete={handleDelete}
+                    onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
+                    onEditChange={setEditContent}
+                  />
+                )}
               </div>
             );
           }
 
+          const isOwn = msg.authorId === userId;
+          const isHovered = hoveredMsgId === msg.id;
+          const isEditing = editingMsgId === msg.id;
+
           return (
-            <div key={msg.id} className="hover-bg" style={styles.message}>
+            <div
+              key={msg.id}
+              className="hover-bg"
+              style={styles.message}
+              onMouseEnter={() => setHoveredMsgId(msg.id)}
+              onMouseLeave={() => setHoveredMsgId(null)}
+            >
               <div style={{ ...styles.avatar, background: avatarColor(msg.authorId) }}>
                 {(msg.author?.displayName ?? "?").charAt(0).toUpperCase()}
               </div>
@@ -191,11 +263,32 @@ export function ChatArea() {
                     })}
                   </span>
                 </div>
-                <MessageBody content={msg.content} />
-                {msg.editedAt && (
-                  <span style={styles.editedTag}>(edited)</span>
+                {isEditing ? (
+                  <MessageActions
+                    msgId={msg.id} content={msg.content} isOwn={isOwn}
+                    isHovered={isHovered} isEditing={true} editContent={editContent}
+                    confirmDeleteId={confirmDeleteId}
+                    onStartEdit={handleStartEdit} onDelete={handleDelete}
+                    onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
+                    onEditChange={setEditContent}
+                  />
+                ) : (
+                  <>
+                    <MessageBody content={msg.content} />
+                    {msg.editedAt && <span style={styles.editedTag}>(edited)</span>}
+                  </>
                 )}
               </div>
+              {!isEditing && (
+                <MessageActions
+                  msgId={msg.id} content={msg.content} isOwn={isOwn}
+                  isHovered={isHovered} isEditing={false} editContent={editContent}
+                  confirmDeleteId={confirmDeleteId}
+                  onStartEdit={handleStartEdit} onDelete={handleDelete}
+                  onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
+                  onEditChange={setEditContent}
+                />
+              )}
             </div>
           );
         })}
@@ -235,6 +328,76 @@ export function ChatArea() {
           />
         </form>
       </div>
+    </div>
+  );
+}
+
+function MessageActions({
+  msgId,
+  content,
+  isOwn,
+  isHovered,
+  isEditing,
+  editContent,
+  confirmDeleteId,
+  onStartEdit,
+  onDelete,
+  onSaveEdit,
+  onCancelEdit,
+  onEditChange,
+}: {
+  msgId: string;
+  content: string;
+  isOwn: boolean;
+  isHovered: boolean;
+  isEditing: boolean;
+  editContent: string;
+  confirmDeleteId: string | null;
+  onStartEdit: (id: string, content: string) => void;
+  onDelete: (id: string) => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+  onEditChange: (val: string) => void;
+}) {
+  if (isEditing) {
+    return (
+      <div style={styles.editContainer}>
+        <input
+          style={styles.editInput}
+          value={editContent}
+          onChange={(e) => onEditChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onSaveEdit();
+            if (e.key === "Escape") onCancelEdit();
+          }}
+          autoFocus
+        />
+        <span style={styles.editHint}>
+          escape to cancel, enter to save
+        </span>
+      </div>
+    );
+  }
+
+  if (!isOwn || !isHovered) return null;
+
+  return (
+    <div style={styles.actionBar}>
+      <button
+        style={styles.actionButton}
+        onClick={() => onStartEdit(msgId, content)}
+      >
+        Edit
+      </button>
+      <button
+        style={{
+          ...styles.actionButton,
+          ...(confirmDeleteId === msgId ? { background: "var(--danger)", color: "white" } : {}),
+        }}
+        onClick={() => onDelete(msgId)}
+      >
+        {confirmDeleteId === msgId ? "Sure?" : "Del"}
+      </button>
     </div>
   );
 }
@@ -393,6 +556,45 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "11px",
     color: "var(--text-muted)",
     marginLeft: "4px",
+  },
+  actionBar: {
+    position: "absolute",
+    top: "-12px",
+    right: "16px",
+    display: "flex",
+    gap: "2px",
+    background: "var(--bg-secondary)",
+    borderRadius: "4px",
+    padding: "2px",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+    zIndex: 1,
+  },
+  actionButton: {
+    padding: "2px 8px",
+    background: "transparent",
+    border: "none",
+    borderRadius: "3px",
+    color: "var(--text-muted)",
+    fontSize: "12px",
+    cursor: "pointer",
+  },
+  editContainer: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+  },
+  editInput: {
+    padding: "8px 12px",
+    background: "var(--input-bg)",
+    border: "1px solid var(--accent)",
+    borderRadius: "4px",
+    color: "var(--text-primary)",
+    fontSize: "14px",
+    outline: "none",
+  },
+  editHint: {
+    fontSize: "11px",
+    color: "var(--text-muted)",
   },
   imageEmbed: {
     maxWidth: "400px",
