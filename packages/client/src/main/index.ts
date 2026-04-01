@@ -9,7 +9,6 @@ function createWindow() {
     minWidth: 940,
     minHeight: 600,
     show: false,
-    titleBarStyle: "hiddenInset",
     webPreferences: {
       preload: join(__dirname, "../preload/index.mjs"),
       sandbox: false,

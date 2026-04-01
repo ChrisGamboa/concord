@@ -37,19 +37,16 @@ body {
   color: var(--text-primary);
   font-size: 14px;
   line-height: 1.375;
-  -webkit-app-region: drag;
 }
 
 button, input, textarea {
   font-family: inherit;
   font-size: inherit;
-  -webkit-app-region: no-drag;
 }
 
 a {
   color: var(--accent);
   text-decoration: none;
-  -webkit-app-region: no-drag;
   cursor: pointer;
 }
 
