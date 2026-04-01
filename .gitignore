@@ -8,3 +8,4 @@ out/
 .vite/
 *.db
 .prisma/
+uploads/
