@@ -15,6 +15,7 @@ import {
 } from "@livekit/krisp-noise-filter";
 import { api } from "../lib/api";
 import { avatarColor } from "../lib/avatar";
+import { playJoinSelf, playDisconnect, playUserJoined, playUserLeft } from "../lib/sounds";
 
 interface VoiceChannelProps {
   channelId: string;
@@ -44,6 +45,7 @@ export function VoiceChannel({ channelId, channelName }: VoiceChannelProps) {
 
   const handleDisconnect = useCallback(() => {
     setConnectionInfo(null);
+    playDisconnect();
   }, []);
 
   if (!connectionInfo) {
@@ -68,6 +70,7 @@ export function VoiceChannel({ channelId, channelName }: VoiceChannelProps) {
       connect={true}
       audio={true}
       video={false}
+      onConnected={() => playJoinSelf()}
       onDisconnected={handleDisconnect}
       onError={(err) => {
         console.error("[livekit] error", err);
@@ -172,6 +175,41 @@ function VoiceContent({
   const room = useRoomContext();
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
+
+  // Track participant join/leave for sound effects
+  const prevParticipantIds = useRef<Set<string>>(new Set());
+  const initialLoadDone = useRef(false);
+
+  useEffect(() => {
+    const currentIds = new Set(participants.map((p) => p.identity));
+
+    // Skip the initial load (don't play sounds for everyone already in the room)
+    if (!initialLoadDone.current) {
+      initialLoadDone.current = true;
+      prevParticipantIds.current = currentIds;
+      return;
+    }
+
+    const prev = prevParticipantIds.current;
+
+    // Someone new joined (not us)
+    for (const id of currentIds) {
+      if (!prev.has(id) && id !== localParticipant.identity) {
+        playUserJoined();
+        break; // one sound per batch
+      }
+    }
+
+    // Someone left (not us)
+    for (const id of prev) {
+      if (!currentIds.has(id) && id !== localParticipant.identity) {
+        playUserLeft();
+        break;
+      }
+    }
+
+    prevParticipantIds.current = currentIds;
+  }, [participants, localParticipant.identity]);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const callTime = useCallTimer();
