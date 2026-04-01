@@ -198,10 +198,11 @@ function VoiceContent({
     return () => clearTimeout(timer);
   }, [localParticipant, localParticipant.isMicrophoneEnabled]);
 
-  const videoTracks = useTracks(
+  const allVideoTracks = useTracks(
     [Track.Source.Camera, Track.Source.ScreenShare],
     { onlySubscribed: false }
   );
+  const videoTracks = allVideoTracks.filter((t) => !t.publication.isMuted);
 
   const isMuted = !localParticipant.isMicrophoneEnabled;
 
