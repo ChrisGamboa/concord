@@ -263,7 +263,8 @@ function VoiceContent({
       {/* Participant list */}
       <div style={styles.participants}>
         {participants.map((p) => {
-          const isMicMuted = !p.isMicrophoneEnabled;
+          const isBot = p.identity === "concord-music-bot";
+          const isMicMuted = !isBot && !p.isMicrophoneEnabled;
           const isLocal = p.identity === localParticipant.identity;
           return (
             <div key={p.identity} style={styles.participant}>
@@ -273,17 +274,17 @@ function VoiceContent({
                   borderColor: p.isSpeaking ? "var(--success)" : "transparent",
                 }}
               >
-                <div style={{ ...styles.participantAvatar, background: avatarColor(p.identity) }}>
-                  {(p.name ?? "?").charAt(0).toUpperCase()}
+                <div style={{ ...styles.participantAvatar, background: isBot ? "#57f287" : avatarColor(p.identity) }}>
+                  {isBot ? "M" : (p.name ?? "?").charAt(0).toUpperCase()}
                 </div>
               </div>
               <span
                 style={{
                   ...styles.participantName,
-                  color: p.isSpeaking ? "var(--success)" : "var(--text-secondary)",
+                  color: p.isSpeaking ? "var(--success)" : isBot ? "var(--success)" : "var(--text-secondary)",
                 }}
               >
-                {p.name ?? p.identity}
+                {isBot ? "Music Bot" : (p.name ?? p.identity)}
                 {isLocal ? " (You)" : ""}
               </span>
               {isMicMuted && (
