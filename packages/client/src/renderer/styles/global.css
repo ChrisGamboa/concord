@@ -50,6 +50,11 @@ a {
   cursor: pointer;
 }
 
+/* Message grouping: show timestamp on hover */
+.message-grouped:hover .grouped-timestamp {
+  color: var(--text-muted) !important;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
 }

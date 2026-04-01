@@ -9,6 +9,7 @@ import { api } from "../lib/api";
 const IMAGE_REGEX = /\.(png|jpe?g|gif|webp)$/i;
 const UPLOAD_URL_REGEX = /^\/uploads\/.+/;
 const SERVER_BASE = "http://localhost:3001";
+const GROUP_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
 function isImageUrl(text: string): boolean {
   return IMAGE_REGEX.test(text) || (UPLOAD_URL_REGEX.test(text) && IMAGE_REGEX.test(text));
@@ -125,27 +126,70 @@ export function ChatArea() {
       </div>
 
       <div style={styles.messages}>
-        {messages.map((msg) => (
-          <div key={msg.id} style={styles.message}>
-            <div style={styles.avatar}>
-              {(msg.author?.displayName ?? "?").charAt(0).toUpperCase()}
-            </div>
-            <div style={styles.messageContent}>
-              <div style={styles.messageHeader}>
-                <span style={styles.authorName}>
-                  {msg.author?.displayName ?? "Unknown"}
-                </span>
-                <span style={styles.timestamp}>
+        {messages.length === 0 && (
+          <div style={styles.emptyState}>
+            <h2 style={styles.emptyTitle}>
+              Welcome to #{channel?.name ?? "channel"}
+            </h2>
+            <p style={styles.emptySubtitle}>
+              This is the beginning of the #{channel?.name ?? "channel"} channel.
+            </p>
+          </div>
+        )}
+
+        {messages.map((msg, i) => {
+          const prev = i > 0 ? messages[i - 1] : null;
+          const isGrouped =
+            prev !== null &&
+            prev.authorId === msg.authorId &&
+            new Date(msg.createdAt).getTime() -
+              new Date(prev.createdAt).getTime() <
+              GROUP_THRESHOLD_MS;
+
+          if (isGrouped) {
+            return (
+              <div key={msg.id} className="message-grouped" style={styles.messageGrouped}>
+                <span className="grouped-timestamp" style={styles.groupedTimestamp}>
                   {new Date(msg.createdAt).toLocaleTimeString([], {
                     hour: "2-digit",
                     minute: "2-digit",
                   })}
                 </span>
+                <div style={styles.groupedContent}>
+                  <MessageBody content={msg.content} />
+                  {msg.editedAt && (
+                    <span style={styles.editedTag}>(edited)</span>
+                  )}
+                </div>
               </div>
-              <MessageBody content={msg.content} />
+            );
+          }
+
+          return (
+            <div key={msg.id} style={styles.message}>
+              <div style={styles.avatar}>
+                {(msg.author?.displayName ?? "?").charAt(0).toUpperCase()}
+              </div>
+              <div style={styles.messageContent}>
+                <div style={styles.messageHeader}>
+                  <span style={styles.authorName}>
+                    {msg.author?.displayName ?? "Unknown"}
+                  </span>
+                  <span style={styles.timestamp}>
+                    {new Date(msg.createdAt).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
+                <MessageBody content={msg.content} />
+                {msg.editedAt && (
+                  <span style={styles.editedTag}>(edited)</span>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         <div ref={messagesEndRef} />
       </div>
 
@@ -248,11 +292,50 @@ const styles: Record<string, React.CSSProperties> = {
     overflowY: "auto",
     padding: "16px 0",
   },
+  emptyState: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "48px 16px",
+    textAlign: "center",
+  },
+  emptyTitle: {
+    fontSize: "24px",
+    fontWeight: 700,
+    marginBottom: "8px",
+  },
+  emptySubtitle: {
+    color: "var(--text-muted)",
+    fontSize: "14px",
+  },
   message: {
     display: "flex",
     gap: "16px",
     padding: "2px 16px",
     marginTop: "16px",
+    position: "relative",
+  },
+  messageGrouped: {
+    display: "flex",
+    alignItems: "flex-start",
+    padding: "1px 16px",
+    paddingLeft: "16px",
+    position: "relative",
+  },
+  groupedTimestamp: {
+    width: "40px",
+    fontSize: "10px",
+    color: "transparent",
+    textAlign: "right",
+    paddingRight: "4px",
+    paddingTop: "2px",
+    flexShrink: 0,
+    userSelect: "none",
+  },
+  groupedContent: {
+    flex: 1,
+    marginLeft: "16px",
   },
   avatar: {
     width: "40px",
@@ -287,6 +370,11 @@ const styles: Record<string, React.CSSProperties> = {
   messageText: {
     color: "var(--text-secondary)",
     wordBreak: "break-word",
+  },
+  editedTag: {
+    fontSize: "11px",
+    color: "var(--text-muted)",
+    marginLeft: "4px",
   },
   imageEmbed: {
     maxWidth: "400px",
