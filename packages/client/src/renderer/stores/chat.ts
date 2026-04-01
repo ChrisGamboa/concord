@@ -8,10 +8,12 @@ interface ChatState {
   activeServerId: string | null;
   activeChannelId: string | null;
   hasMoreMessages: boolean;
+  messagesLoading: boolean;
 
   setServers: (servers: Server[]) => void;
   setChannels: (channels: Channel[]) => void;
   setMessages: (messages: Message[], hasMore: boolean) => void;
+  setMessagesLoading: (loading: boolean) => void;
   prependMessages: (messages: Message[], hasMore: boolean) => void;
   addMessage: (message: Message) => void;
   updateMessage: (message: Message) => void;
@@ -27,10 +29,12 @@ export const useChatStore = create<ChatState>()((set) => ({
   activeServerId: null,
   activeChannelId: null,
   hasMoreMessages: false,
+  messagesLoading: false,
 
   setServers: (servers) => set({ servers }),
   setChannels: (channels) => set({ channels }),
-  setMessages: (messages, hasMore) => set({ messages, hasMoreMessages: hasMore }),
+  setMessages: (messages, hasMore) => set({ messages, hasMoreMessages: hasMore, messagesLoading: false }),
+  setMessagesLoading: (loading) => set({ messagesLoading: loading }),
   prependMessages: (messages, hasMore) =>
     set((s) => ({
       messages: [...messages, ...s.messages],

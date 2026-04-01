@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useChatStore } from "../stores/chat";
 import { api } from "../lib/api";
 
-export function ServerList() {
+export function ServerList({ loading }: { loading?: boolean }) {
   const servers = useChatStore((s) => s.servers);
   const setServers = useChatStore((s) => s.setServers);
   const { serverId: activeServerId } = useParams();
@@ -51,6 +51,9 @@ export function ServerList() {
   return (
     <div style={styles.container}>
       <div style={styles.scrollArea}>
+        {loading && [0, 1, 2].map((i) => (
+          <div key={i} style={{ ...styles.serverButton, background: "var(--bg-tertiary)", opacity: 0.4 }} />
+        ))}
         {servers.map((server) => (
           <button
             key={server.id}

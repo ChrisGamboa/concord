@@ -60,6 +60,13 @@ export function ChannelSidebar() {
       </div>
 
       <div style={styles.channels}>
+        {channels.length === 0 && (
+          <div style={styles.loadingChannels}>
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} style={styles.skeletonChannel} />
+            ))}
+          </div>
+        )}
         {textChannels.length > 0 && (
           <div style={styles.category}>
             <span style={styles.categoryLabel}>Text Channels</span>
@@ -176,6 +183,18 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     overflowY: "auto",
     padding: "12px 8px",
+  },
+  loadingChannels: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "6px",
+    padding: "8px",
+  },
+  skeletonChannel: {
+    height: "28px",
+    background: "var(--bg-tertiary)",
+    borderRadius: "4px",
+    opacity: 0.3,
   },
   category: {
     marginBottom: "16px",

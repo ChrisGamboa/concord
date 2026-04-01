@@ -20,6 +20,7 @@ export function AppLayout() {
     setServers,
     setChannels,
     setMessages,
+    setMessagesLoading,
     addMessage,
     updateMessage,
     removeMessage,
@@ -27,9 +28,13 @@ export function AppLayout() {
     setActiveChannel,
   } = useChatStore();
 
+  const [serversLoading, setServersLoading] = useState(true);
+
   // Load servers on mount
   useEffect(() => {
-    api.getServers().then((res) => setServers(res.servers));
+    api.getServers()
+      .then((res) => setServers(res.servers))
+      .finally(() => setServersLoading(false));
   }, [setServers]);
 
   // Load channels when server changes
@@ -63,6 +68,7 @@ export function AppLayout() {
   useEffect(() => {
     if (!channelId || isVoiceChannel) return;
     setActiveChannel(channelId);
+    setMessagesLoading(true);
 
     api.getMessages(channelId).then((res) => {
       setMessages(res.messages, res.hasMore);
@@ -121,7 +127,7 @@ export function AppLayout() {
 
   return (
     <div style={styles.layout}>
-      <ServerList />
+      <ServerList loading={serversLoading} />
       {serverId && <ChannelSidebar />}
       {channelId && isVoiceChannel && (
         <VoiceChannel

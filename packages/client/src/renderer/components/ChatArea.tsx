@@ -20,8 +20,10 @@ export function ChatArea() {
   const messages = useChatStore((s) => s.messages);
   const channels = useChatStore((s) => s.channels);
   const userId = useAuthStore((s) => s.user?.id);
+  const messagesLoading = useChatStore((s) => s.messagesLoading);
   const [input, setInput] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -77,7 +79,9 @@ export function ChatArea() {
           content: result.url,
         });
       } catch (err) {
-        console.error("Upload failed:", err);
+        const msg = err instanceof Error ? err.message : "Upload failed";
+        setUploadError(msg);
+        setTimeout(() => setUploadError(""), 5000);
       } finally {
         setUploading(false);
       }
@@ -126,7 +130,11 @@ export function ChatArea() {
       </div>
 
       <div style={styles.messages}>
-        {messages.length === 0 && (
+        {messagesLoading && (
+          <div style={styles.loadingState}>Loading messages...</div>
+        )}
+
+        {!messagesLoading && messages.length === 0 && (
           <div style={styles.emptyState}>
             <h2 style={styles.emptyTitle}>
               Welcome to #{channel?.name ?? "channel"}
@@ -194,6 +202,7 @@ export function ChatArea() {
       </div>
 
       <div style={styles.inputArea}>
+        {uploadError && <div style={styles.uploadError}>{uploadError}</div>}
         {typingText && <div style={styles.typingIndicator}>{typingText}</div>}
         <form onSubmit={handleSubmit} style={styles.inputContainer}>
           <input
@@ -291,6 +300,14 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     overflowY: "auto",
     padding: "16px 0",
+  },
+  loadingState: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "48px 16px",
+    color: "var(--text-muted)",
+    fontSize: "14px",
   },
   emptyState: {
     display: "flex",
@@ -397,6 +414,14 @@ const styles: Record<string, React.CSSProperties> = {
   },
   inputArea: {
     flexShrink: 0,
+  },
+  uploadError: {
+    padding: "6px 16px",
+    fontSize: "12px",
+    color: "var(--danger)",
+    background: "rgba(237, 66, 69, 0.1)",
+    borderRadius: "4px",
+    margin: "0 16px 4px",
   },
   typingIndicator: {
     padding: "0 16px 4px",

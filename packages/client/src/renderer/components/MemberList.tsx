@@ -32,6 +32,16 @@ export function MemberList() {
 
   return (
     <div style={styles.container}>
+      {members.length === 0 && (
+        <div style={{ padding: "12px 8px", display: "flex", flexDirection: "column", gap: "8px" }}>
+          {[0, 1, 2].map((i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "4px 8px" }}>
+              <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "var(--bg-tertiary)", opacity: 0.3 }} />
+              <div style={{ height: "12px", width: "80px", background: "var(--bg-tertiary)", borderRadius: "4px", opacity: 0.3 }} />
+            </div>
+          ))}
+        </div>
+      )}
       {online.length > 0 && (
         <div style={styles.section}>
           <span style={styles.sectionLabel}>
