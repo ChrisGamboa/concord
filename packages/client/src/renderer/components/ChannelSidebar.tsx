@@ -136,14 +136,29 @@ export function ChannelSidebar() {
                   </button>
                   {participants.length > 0 && (
                     <div style={styles.voiceUsers}>
-                      {participants.map((p) => (
-                        <div key={p.userId} style={styles.voiceUser}>
-                          <div style={styles.voiceUserDot} />
-                          <span style={styles.voiceUserName}>
-                            {p.name || p.userId}
-                          </span>
-                        </div>
-                      ))}
+                      {participants.map((p) => {
+                        const isBot = p.userId === "concord-music-bot";
+                        const micTrack = p.tracks.find((t) => t.source === 2);
+                        const isMicMuted = !isBot && (!micTrack || micTrack.muted);
+                        return (
+                          <div key={p.userId} style={styles.voiceUser}>
+                            <div style={{
+                              ...styles.voiceUserDot,
+                              background: isMicMuted ? "var(--danger)" : "var(--success)",
+                            }} />
+                            <span style={styles.voiceUserName}>
+                              {isBot ? "Music Bot" : (p.name || p.userId)}
+                            </span>
+                            {isMicMuted && (
+                              <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.6 }}>
+                                <line x1="1" y1="1" x2="23" y2="23" />
+                                <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
+                                <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2c0 .76-.13 1.49-.35 2.17" />
+                              </svg>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
