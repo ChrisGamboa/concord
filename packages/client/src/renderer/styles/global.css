@@ -50,6 +50,14 @@ a {
   cursor: pointer;
 }
 
+/* Hover utilities */
+.hover-bg:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+.hover-brighten:hover {
+  filter: brightness(1.2);
+}
+
 /* Message grouping: show timestamp on hover */
 .message-grouped:hover .grouped-timestamp {
   color: var(--text-muted) !important;

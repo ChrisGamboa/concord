@@ -14,6 +14,7 @@ import {
   isKrispNoiseFilterSupported,
 } from "@livekit/krisp-noise-filter";
 import { api } from "../lib/api";
+import { avatarColor } from "../lib/avatar";
 
 interface VoiceChannelProps {
   channelId: string;
@@ -221,7 +222,7 @@ function VoiceContent({
                   : "transparent",
               }}
             >
-              <div style={styles.participantAvatar}>
+              <div style={{ ...styles.participantAvatar, background: avatarColor(p.identity) }}>
                 {(p.name ?? "?").charAt(0).toUpperCase()}
               </div>
             </div>

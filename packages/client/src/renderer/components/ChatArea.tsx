@@ -5,6 +5,7 @@ import { useAuthStore } from "../stores/auth";
 import { usePresenceStore } from "../stores/presence";
 import { sendWs } from "../lib/ws";
 import { api } from "../lib/api";
+import { avatarColor } from "../lib/avatar";
 
 const IMAGE_REGEX = /\.(png|jpe?g|gif|webp)$/i;
 const UPLOAD_URL_REGEX = /^\/uploads\/.+/;
@@ -156,7 +157,7 @@ export function ChatArea() {
 
           if (isGrouped) {
             return (
-              <div key={msg.id} className="message-grouped" style={styles.messageGrouped}>
+              <div key={msg.id} className="message-grouped hover-bg" style={styles.messageGrouped}>
                 <span className="grouped-timestamp" style={styles.groupedTimestamp}>
                   {new Date(msg.createdAt).toLocaleTimeString([], {
                     hour: "2-digit",
@@ -174,8 +175,8 @@ export function ChatArea() {
           }
 
           return (
-            <div key={msg.id} style={styles.message}>
-              <div style={styles.avatar}>
+            <div key={msg.id} className="hover-bg" style={styles.message}>
+              <div style={{ ...styles.avatar, background: avatarColor(msg.authorId) }}>
                 {(msg.author?.displayName ?? "?").charAt(0).toUpperCase()}
               </div>
               <div style={styles.messageContent}>

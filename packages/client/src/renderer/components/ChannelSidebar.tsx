@@ -11,6 +11,8 @@ export function ChannelSidebar() {
   const servers = useChatStore((s) => s.servers);
   const server = servers.find((s) => s.id === serverId);
 
+  const [copied, setCopied] = useState(false);
+
   const textChannels = channels.filter((c) => c.type === ChannelType.Text);
   const voiceChannels = channels.filter((c) => c.type === ChannelType.Voice);
 
@@ -47,15 +49,20 @@ export function ChannelSidebar() {
       <div style={styles.header}>
         <h3 style={styles.serverName}>{server?.name ?? "Server"}</h3>
         <button
-          style={styles.copyId}
+          style={{
+            ...styles.copyId,
+            ...(copied ? { background: "var(--success)", color: "white" } : {}),
+          }}
           onClick={() => {
             if (serverId) {
               navigator.clipboard.writeText(serverId);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
             }
           }}
           title="Copy server ID to share with others"
         >
-          Copy ID
+          {copied ? "Copied!" : "Copy ID"}
         </button>
       </div>
 
@@ -73,6 +80,7 @@ export function ChannelSidebar() {
             {textChannels.map((channel) => (
               <button
                 key={channel.id}
+                className="hover-bg"
                 onClick={() => navigate(`/channels/${serverId}/${channel.id}`)}
                 style={{
                   ...styles.channelButton,
@@ -101,6 +109,7 @@ export function ChannelSidebar() {
               return (
                 <div key={channel.id}>
                   <button
+                    className="hover-bg"
                     onClick={() =>
                       navigate(`/channels/${serverId}/${channel.id}`)
                     }

@@ -67,6 +67,7 @@ export function ServerList({ loading }: { loading?: boolean }) {
         {servers.map((server) => (
           <button
             key={server.id}
+            className="hover-brighten"
             onClick={() => navigate(`/channels/${server.id}`)}
             style={{
               ...styles.serverButton,
