@@ -49,6 +49,8 @@ button, input, textarea {
 a {
   color: var(--accent);
   text-decoration: none;
+  -webkit-app-region: no-drag;
+  cursor: pointer;
 }
 
 ::-webkit-scrollbar {
