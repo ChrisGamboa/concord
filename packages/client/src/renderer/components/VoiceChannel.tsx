@@ -204,6 +204,39 @@ function VoiceContent({
   );
   const videoTracks = allVideoTracks.filter((t) => !t.publication.isMuted);
 
+  // Explicitly subscribe to screenshare audio tracks (music bot)
+  const screenShareAudioTracks = useTracks(
+    [Track.Source.ScreenShareAudio],
+    { onlySubscribed: false }
+  );
+
+  // Attach screenshare audio to hidden audio elements
+  const audioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
+  useEffect(() => {
+    for (const trackRef of screenShareAudioTracks) {
+      const sid = trackRef.publication.trackSid;
+      if (!sid || !trackRef.publication.track) continue;
+      const mediaTrack = trackRef.publication.track.mediaStreamTrack;
+      if (!mediaTrack) continue;
+
+      if (!audioRefs.current.has(sid)) {
+        const audio = new Audio();
+        audio.srcObject = new MediaStream([mediaTrack]);
+        audio.play().catch(() => {});
+        audioRefs.current.set(sid, audio);
+      }
+    }
+
+    // Clean up removed tracks
+    for (const [sid, audio] of audioRefs.current) {
+      if (!screenShareAudioTracks.some((t) => t.publication.trackSid === sid)) {
+        audio.pause();
+        audio.srcObject = null;
+        audioRefs.current.delete(sid);
+      }
+    }
+  }, [screenShareAudioTracks]);
+
   const isMuted = !localParticipant.isMicrophoneEnabled;
 
   const toggleMic = async () => {

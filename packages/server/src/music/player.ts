@@ -76,22 +76,24 @@ export async function playTrack(
 
     console.log(`[music] Playing "${title}" in ${roomName}`);
 
-    // Pipe ffmpeg PCM output into LiveKit audio frames
+    // Pipe ffmpeg PCM output into LiveKit audio frames using a sequential queue
     let buffer = Buffer.alloc(0);
+    let processing = false;
+    let stopped = false;
+    let frameCount = 0;
 
-    ffmpeg.stdout?.on("data", async (chunk: Buffer) => {
-      buffer = Buffer.concat([buffer, chunk]);
+    const processFrames = async () => {
+      if (processing || stopped) return;
+      processing = true;
 
-      // Send complete frames
-      while (buffer.length >= BYTES_PER_FRAME) {
+      while (buffer.length >= BYTES_PER_FRAME && !stopped) {
         const frameData = buffer.subarray(0, BYTES_PER_FRAME);
         buffer = buffer.subarray(BYTES_PER_FRAME);
 
-        const int16 = new Int16Array(
-          frameData.buffer,
-          frameData.byteOffset,
-          frameData.byteLength / 2
-        );
+        // Copy to a new aligned buffer for Int16Array
+        const aligned = new ArrayBuffer(BYTES_PER_FRAME);
+        new Uint8Array(aligned).set(frameData);
+        const int16 = new Int16Array(aligned);
 
         const frame = new AudioFrame(
           int16,
@@ -102,15 +104,29 @@ export async function playTrack(
 
         try {
           await audioSource.captureFrame(frame);
-        } catch {
-          // Room disconnected or source closed
+          frameCount++;
+          if (frameCount === 50) {
+            console.log(`[music] Streaming audio (${frameCount} frames sent)`);
+          }
+        } catch (err) {
+          console.error("[music] captureFrame error:", err);
+          stopped = true;
           break;
         }
       }
+
+      processing = false;
+    };
+
+    ffmpeg.stdout?.on("data", (chunk: Buffer) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      processFrames();
     });
 
     // When ffmpeg finishes, clean up and play next
     ffmpeg.on("close", async () => {
+      stopped = true;
+      console.log(`[music] Track finished (${frameCount} frames total)`);
       const player = activePlayers.get(voiceChannelId);
       if (player?.ffmpeg === ffmpeg) {
         activePlayers.delete(voiceChannelId);
@@ -124,7 +140,9 @@ export async function playTrack(
       }
     });
 
-    ffmpeg.on("error", async () => {
+    ffmpeg.on("error", async (err) => {
+      stopped = true;
+      console.error(`[music] ffmpeg error:`, err);
       const player = activePlayers.get(voiceChannelId);
       if (player?.ffmpeg === ffmpeg) {
         activePlayers.delete(voiceChannelId);
