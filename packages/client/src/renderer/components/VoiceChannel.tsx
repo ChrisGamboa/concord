@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   LiveKitRoom,
   RoomAudioRenderer,
@@ -7,7 +7,11 @@ import {
   useTracks,
   VideoTrack,
 } from "@livekit/components-react";
-import { Track, RoomEvent, VideoPresets, type Room } from "livekit-client";
+import { Track, VideoPresets } from "livekit-client";
+import {
+  KrispNoiseFilter,
+  isKrispNoiseFilterSupported,
+} from "@livekit/krisp-noise-filter";
 import { api } from "../lib/api";
 
 interface VoiceChannelProps {
@@ -72,9 +76,12 @@ export function VoiceChannel({ channelId, channelName }: VoiceChannelProps) {
         audioCaptureDefaults: {
           autoGainControl: true,
           echoCancellation: true,
-          noiseSuppression: true,
+          noiseSuppression: false, // Krisp handles this better
           channelCount: 2,
           sampleRate: 48000,
+          ...(isKrispNoiseFilterSupported()
+            ? { processor: KrispNoiseFilter() }
+            : { noiseSuppression: true }), // fallback to browser NS
         },
         videoCaptureDefaults: {
           resolution: VideoPresets.h1080.resolution,
