@@ -19,6 +19,17 @@ export function ChannelSidebar() {
     <div style={styles.container}>
       <div style={styles.header}>
         <h3 style={styles.serverName}>{server?.name ?? "Server"}</h3>
+        <button
+          style={styles.copyId}
+          onClick={() => {
+            if (serverId) {
+              navigator.clipboard.writeText(serverId);
+            }
+          }}
+          title="Copy server ID to share with others"
+        >
+          Copy ID
+        </button>
       </div>
 
       <div style={styles.channels}>
@@ -93,6 +104,9 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "12px 16px",
     borderBottom: "1px solid var(--bg-primary)",
     boxShadow: "0 1px 0 rgba(0,0,0,0.2)",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   serverName: {
     fontSize: "15px",
@@ -100,6 +114,16 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap",
     overflow: "hidden",
     textOverflow: "ellipsis",
+  },
+  copyId: {
+    padding: "2px 8px",
+    background: "var(--bg-tertiary)",
+    border: "none",
+    borderRadius: "4px",
+    color: "var(--text-muted)",
+    fontSize: "11px",
+    cursor: "pointer",
+    flexShrink: 0,
   },
   channels: {
     flex: 1,
