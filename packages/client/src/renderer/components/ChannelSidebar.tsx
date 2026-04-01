@@ -1,7 +1,8 @@
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useChatStore } from "../stores/chat";
-import { useVoiceStore } from "../stores/voice";
-import { ChannelType } from "@concord/shared";
+import { ChannelType, type VoiceParticipant } from "@concord/shared";
+import { api } from "../lib/api";
 
 export function ChannelSidebar() {
   const channels = useChatStore((s) => s.channels);
@@ -10,10 +11,36 @@ export function ChannelSidebar() {
   const servers = useChatStore((s) => s.servers);
   const server = servers.find((s) => s.id === serverId);
 
-  const voiceChannelId = useVoiceStore((s) => s.activeChannelId);
-
   const textChannels = channels.filter((c) => c.type === ChannelType.Text);
   const voiceChannels = channels.filter((c) => c.type === ChannelType.Voice);
+
+  // Poll voice channel participants
+  const [voiceParticipants, setVoiceParticipants] = useState<
+    Record<string, VoiceParticipant[]>
+  >({});
+
+  useEffect(() => {
+    if (voiceChannels.length === 0) return;
+
+    const fetchParticipants = async () => {
+      const results: Record<string, VoiceParticipant[]> = {};
+      for (const vc of voiceChannels) {
+        try {
+          const res = await api.getVoiceParticipants(vc.id);
+          if (res.participants.length > 0) {
+            results[vc.id] = res.participants;
+          }
+        } catch {
+          // ignore - room may not exist yet
+        }
+      }
+      setVoiceParticipants(results);
+    };
+
+    fetchParticipants();
+    const interval = setInterval(fetchParticipants, 5000);
+    return () => clearInterval(interval);
+  }, [voiceChannels.map((c) => c.id).join(",")]);
 
   return (
     <div style={styles.container}>
@@ -62,29 +89,49 @@ export function ChannelSidebar() {
         {voiceChannels.length > 0 && (
           <div style={styles.category}>
             <span style={styles.categoryLabel}>Voice Channels</span>
-            {voiceChannels.map((channel) => (
-              <button
-                key={channel.id}
-                onClick={() => navigate(`/channels/${serverId}/${channel.id}`)}
-                style={{
-                  ...styles.channelButton,
-                  background:
-                    channel.id === channelId
-                      ? "rgba(255,255,255,0.06)"
-                      : "transparent",
-                  color:
-                    channel.id === channelId
-                      ? "var(--text-primary)"
-                      : "var(--text-muted)",
-                }}
-              >
-                <span style={styles.voiceIcon}>V</span>
-                {channel.name}
-                {voiceChannelId === channel.id && (
-                  <span style={styles.connectedDot} />
-                )}
-              </button>
-            ))}
+            {voiceChannels.map((channel) => {
+              const participants = voiceParticipants[channel.id] ?? [];
+              return (
+                <div key={channel.id}>
+                  <button
+                    onClick={() =>
+                      navigate(`/channels/${serverId}/${channel.id}`)
+                    }
+                    style={{
+                      ...styles.channelButton,
+                      background:
+                        channel.id === channelId
+                          ? "rgba(255,255,255,0.06)"
+                          : "transparent",
+                      color:
+                        channel.id === channelId
+                          ? "var(--text-primary)"
+                          : "var(--text-muted)",
+                    }}
+                  >
+                    <span style={styles.voiceIcon}>V</span>
+                    {channel.name}
+                    {participants.length > 0 && (
+                      <span style={styles.participantCount}>
+                        {participants.length}
+                      </span>
+                    )}
+                  </button>
+                  {participants.length > 0 && (
+                    <div style={styles.voiceUsers}>
+                      {participants.map((p) => (
+                        <div key={p.userId} style={styles.voiceUser}>
+                          <div style={styles.voiceUserDot} />
+                          <span style={styles.voiceUserName}>
+                            {p.name || p.userId}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -166,12 +213,37 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     opacity: 0.5,
   },
-  connectedDot: {
-    width: "8px",
-    height: "8px",
+  participantCount: {
+    marginLeft: "auto",
+    fontSize: "11px",
+    color: "var(--success)",
+    background: "rgba(87, 242, 135, 0.1)",
+    padding: "1px 6px",
+    borderRadius: "8px",
+    fontWeight: 600,
+  },
+  voiceUsers: {
+    paddingLeft: "28px",
+    paddingBottom: "4px",
+  },
+  voiceUser: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "2px 8px",
+  },
+  voiceUserDot: {
+    width: "6px",
+    height: "6px",
     borderRadius: "50%",
     background: "var(--success)",
-    marginLeft: "auto",
     flexShrink: 0,
+  },
+  voiceUserName: {
+    fontSize: "13px",
+    color: "var(--text-secondary)",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
   },
 };

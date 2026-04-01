@@ -1,11 +1,16 @@
 import { useState, useEffect, useCallback, type FormEvent } from "react";
+import { useParams } from "react-router-dom";
+import { useChatStore } from "../stores/chat";
+import { ChannelType } from "@concord/shared";
 import { api } from "../lib/api";
-import { useVoiceStore } from "../stores/voice";
 import type { MusicSearchResult, MusicState } from "@concord/shared";
 
 export function MusicPlayer() {
-  const voiceChannelId = useVoiceStore((s) => s.activeChannelId);
-  const isConnected = useVoiceStore((s) => s.isConnected);
+  const { channelId } = useParams();
+  const channels = useChatStore((s) => s.channels);
+  const currentChannel = channels.find((c) => c.id === channelId);
+  const isVoiceChannel = currentChannel?.type === ChannelType.Voice;
+  const voiceChannelId = isVoiceChannel ? channelId ?? null : null;
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<MusicSearchResult[]>([]);
@@ -15,7 +20,7 @@ export function MusicPlayer() {
 
   // Poll music state
   useEffect(() => {
-    if (!voiceChannelId || !isConnected) return;
+    if (!voiceChannelId) return;
 
     const fetchState = () => {
       api.musicGetState(voiceChannelId).then(setMusicState).catch(() => {});
@@ -24,7 +29,7 @@ export function MusicPlayer() {
     fetchState();
     const interval = setInterval(fetchState, 3000);
     return () => clearInterval(interval);
-  }, [voiceChannelId, isConnected]);
+  }, [voiceChannelId, isVoiceChannel]);
 
   const handleSearch = useCallback(
     async (e: FormEvent) => {
@@ -72,7 +77,7 @@ export function MusicPlayer() {
     setMusicState(state);
   }, [voiceChannelId]);
 
-  if (!isConnected || !voiceChannelId) return null;
+  if (!isVoiceChannel || !voiceChannelId) return null;
 
   return (
     <div style={styles.container}>
