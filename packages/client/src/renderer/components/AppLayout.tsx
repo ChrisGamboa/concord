@@ -1,8 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { onWsMessage, sendWs } from "../lib/ws";
 import { useChatStore } from "../stores/chat";
+import { useAuthStore } from "../stores/auth";
 import { usePresenceStore } from "../stores/presence";
 import { ServerList } from "./ServerList";
 import { ChannelSidebar } from "./ChannelSidebar";
@@ -10,6 +11,7 @@ import { ChatArea } from "./ChatArea";
 import { VoiceChannel } from "./VoiceChannel";
 import { MusicPlayer } from "./MusicPlayer";
 import { MemberList } from "./MemberList";
+import { SettingsPage } from "./SettingsPage";
 
 export function AppLayout() {
   const { serverId, channelId } = useParams();
@@ -66,7 +68,16 @@ export function AppLayout() {
     };
   }, [channelId, isVoiceChannel, setActiveChannel, setMessages]);
 
+  const userId = useAuthStore((s) => s.user?.id);
   const { setUserOnline, setUserOffline, addTyping } = usePresenceStore();
+  const [showSettings, setShowSettings] = useState(false);
+
+  // Listen for settings open event from ServerList
+  useEffect(() => {
+    const handler = () => setShowSettings(true);
+    window.addEventListener("concord:open-settings", handler);
+    return () => window.removeEventListener("concord:open-settings", handler);
+  }, []);
 
   // Handle incoming WebSocket messages
   useEffect(() => {
@@ -74,6 +85,16 @@ export function AppLayout() {
       switch (msg.type) {
         case "message_created":
           addMessage(msg.message);
+          // Desktop notification when window is not focused
+          if (!document.hasFocus() && msg.message.authorId !== userId) {
+            const electron = (window as any).electron;
+            electron?.sendNotification?.(
+              msg.message.author?.displayName ?? "New message",
+              msg.message.content.length > 100
+                ? msg.message.content.slice(0, 100) + "..."
+                : msg.message.content
+            );
+          }
           break;
         case "message_updated":
           updateMessage(msg.message);
@@ -113,6 +134,7 @@ export function AppLayout() {
         </div>
       )}
       <MusicPlayer />
+      {showSettings && <SettingsPage onClose={() => setShowSettings(false)} />}
     </div>
   );
 }

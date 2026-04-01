@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, shell, Notification, ipcMain } from "electron";
 import { join } from "path";
 import { is } from "@electron-toolkit/utils";
 
@@ -31,6 +31,13 @@ function createWindow() {
     mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
   }
 }
+
+// Desktop notifications
+ipcMain.on("show-notification", (_event, { title, body }: { title: string; body: string }) => {
+  if (Notification.isSupported()) {
+    new Notification({ title, body }).show();
+  }
+});
 
 app.whenReady().then(() => {
   createWindow();

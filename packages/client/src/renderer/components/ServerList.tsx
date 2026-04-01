@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useChatStore } from "../stores/chat";
-import { useAuthStore } from "../stores/auth";
 import { api } from "../lib/api";
 
 export function ServerList() {
@@ -9,7 +8,6 @@ export function ServerList() {
   const setServers = useChatStore((s) => s.setServers);
   const { serverId: activeServerId } = useParams();
   const navigate = useNavigate();
-  const logout = useAuthStore((s) => s.logout);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
 
@@ -76,11 +74,14 @@ export function ServerList() {
       )}
 
       <button
-        onClick={logout}
-        style={{ ...styles.serverButton, background: "var(--bg-tertiary)", color: "var(--danger)", fontSize: "12px", marginTop: "auto" }}
-        title="Logout"
+        onClick={() => {
+          const event = new CustomEvent("concord:open-settings");
+          window.dispatchEvent(event);
+        }}
+        style={{ ...styles.serverButton, background: "var(--bg-tertiary)", color: "var(--text-muted)", fontSize: "16px", marginTop: "auto" }}
+        title="Settings"
       >
-        Out
+        S
       </button>
     </div>
   );
