@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
   LiveKitRoom,
   RoomAudioRenderer,
@@ -7,8 +7,7 @@ import {
   useTracks,
   VideoTrack,
 } from "@livekit/components-react";
-import { Track } from "livekit-client";
-import { useVoiceStore } from "../stores/voice";
+import { Track, RoomEvent, VideoPresets, type Room } from "livekit-client";
 import { api } from "../lib/api";
 
 interface VoiceChannelProps {
@@ -17,76 +16,152 @@ interface VoiceChannelProps {
 }
 
 export function VoiceChannel({ channelId, channelName }: VoiceChannelProps) {
-  const { room, isConnected, activeChannelId } = useVoiceStore();
-  const connect = useVoiceStore((s) => s.connect);
-  const disconnect = useVoiceStore((s) => s.disconnect);
-
-  const isInThisChannel = isConnected && activeChannelId === channelId;
+  const [connectionInfo, setConnectionInfo] = useState<{
+    url: string;
+    token: string;
+  } | null>(null);
+  const [joining, setJoining] = useState(false);
+  const [error, setError] = useState("");
 
   const handleJoin = useCallback(async () => {
-    const res = await api.joinVoiceChannel(channelId);
-    await connect(res.url, res.token, channelId);
-  }, [channelId, connect]);
+    setJoining(true);
+    setError("");
+    try {
+      const res = await api.joinVoiceChannel(channelId);
+      setConnectionInfo({ url: res.url, token: res.token });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to join");
+    } finally {
+      setJoining(false);
+    }
+  }, [channelId]);
 
-  if (!isInThisChannel) {
+  const handleDisconnect = useCallback(() => {
+    setConnectionInfo(null);
+  }, []);
+
+  if (!connectionInfo) {
     return (
       <div style={styles.disconnected}>
-        <button onClick={handleJoin} style={styles.joinButton}>
-          Join Voice
+        <button
+          onClick={handleJoin}
+          style={styles.joinButton}
+          disabled={joining}
+        >
+          {joining ? "Joining..." : "Join Voice"}
         </button>
+        {error && <p style={styles.error}>{error}</p>}
       </div>
     );
   }
 
   return (
     <LiveKitRoom
-      room={room!}
-      serverUrl=""
-      token=""
-      connect={false}
+      serverUrl={connectionInfo.url}
+      token={connectionInfo.token}
+      connect={true}
+      audio={true}
+      video={false}
+      onDisconnected={handleDisconnect}
+      onError={(err) => {
+        console.error("[livekit] error", err);
+        setError(err.message);
+        setConnectionInfo(null);
+      }}
+      options={{
+        videoCaptureDefaults: {
+          resolution: VideoPresets.h1080.resolution,
+        },
+        publishDefaults: {
+          videoCodec: "vp9",
+          screenShareEncoding: {
+            maxBitrate: 5_000_000,
+            maxFramerate: 60,
+          },
+          videoEncoding: {
+            maxBitrate: 5_000_000,
+            maxFramerate: 60,
+          },
+        },
+      }}
       style={styles.room}
     >
-      <VoiceContent channelName={channelName} />
+      <VoiceContent
+        channelName={channelName}
+        onLeave={handleDisconnect}
+      />
       <RoomAudioRenderer />
     </LiveKitRoom>
   );
 }
 
-function VoiceContent({ channelName }: { channelName: string }) {
+function VoiceContent({
+  channelName,
+  onLeave,
+}: {
+  channelName: string;
+  onLeave: () => void;
+}) {
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
-  const disconnect = useVoiceStore((s) => s.disconnect);
-  const toggleMic = useVoiceStore((s) => s.toggleMic);
-  const toggleCamera = useVoiceStore((s) => s.toggleCamera);
-  const toggleScreenShare = useVoiceStore((s) => s.toggleScreenShare);
-  const isMicEnabled = useVoiceStore((s) => s.isMicEnabled);
-  const isCameraEnabled = useVoiceStore((s) => s.isCameraEnabled);
-  const isScreenShareEnabled = useVoiceStore((s) => s.isScreenShareEnabled);
+  const [isCameraOn, setIsCameraOn] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
 
-  // Get all video/screen share tracks for display
   const videoTracks = useTracks(
     [Track.Source.Camera, Track.Source.ScreenShare],
-    { onlySubscribed: true }
+    { onlySubscribed: false }
   );
+
+  const isMuted = !localParticipant.isMicrophoneEnabled;
+
+  const toggleMic = async () => {
+    await localParticipant.setMicrophoneEnabled(isMuted);
+  };
+
+  const toggleCamera = async () => {
+    const next = !isCameraOn;
+    await localParticipant.setCameraEnabled(next);
+    setIsCameraOn(next);
+  };
+
+  const toggleScreenShare = async () => {
+    const next = !isScreenSharing;
+    await localParticipant.setScreenShareEnabled(next, {
+      resolution: { width: 1920, height: 1080, frameRate: 60 },
+      contentHint: "detail",
+    });
+    setIsScreenSharing(next);
+  };
 
   return (
     <div style={styles.voiceContainer}>
       <div style={styles.header}>
-        <span style={styles.channelLabel}>Voice Connected - {channelName}</span>
+        <span style={styles.channelLabel}>
+          Voice Connected - {channelName}
+        </span>
       </div>
 
       {/* Video grid */}
       {videoTracks.length > 0 && (
         <div style={styles.videoGrid}>
           {videoTracks.map((trackRef) => (
-            <div key={trackRef.publication.trackSid} style={styles.videoTile}>
+            <div
+              key={trackRef.publication.trackSid}
+              style={styles.videoTile}
+            >
               <VideoTrack
                 trackRef={trackRef}
-                style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain",
+                }}
               />
               <span style={styles.videoLabel}>
                 {trackRef.participant.name ?? trackRef.participant.identity}
-                {trackRef.source === Track.Source.ScreenShare ? " (Screen)" : ""}
+                {trackRef.source === Track.Source.ScreenShare
+                  ? " (Screen)"
+                  : ""}
               </span>
             </div>
           ))}
@@ -130,19 +205,21 @@ function VoiceContent({ channelName }: { channelName: string }) {
           onClick={toggleMic}
           style={{
             ...styles.controlButton,
-            background: isMicEnabled ? "var(--bg-tertiary)" : "var(--danger)",
+            background: !isMuted ? "var(--bg-tertiary)" : "var(--danger)",
           }}
-          title={isMicEnabled ? "Mute" : "Unmute"}
+          title={!isMuted ? "Mute" : "Unmute"}
         >
-          {isMicEnabled ? "Mic" : "Muted"}
+          {!isMuted ? "Mic" : "Muted"}
         </button>
         <button
           onClick={toggleCamera}
           style={{
             ...styles.controlButton,
-            background: isCameraEnabled ? "var(--accent)" : "var(--bg-tertiary)",
+            background: isCameraOn
+              ? "var(--accent)"
+              : "var(--bg-tertiary)",
           }}
-          title={isCameraEnabled ? "Turn Off Camera" : "Turn On Camera"}
+          title={isCameraOn ? "Turn Off Camera" : "Turn On Camera"}
         >
           Cam
         </button>
@@ -150,16 +227,16 @@ function VoiceContent({ channelName }: { channelName: string }) {
           onClick={toggleScreenShare}
           style={{
             ...styles.controlButton,
-            background: isScreenShareEnabled
+            background: isScreenSharing
               ? "var(--accent)"
               : "var(--bg-tertiary)",
           }}
-          title={isScreenShareEnabled ? "Stop Sharing" : "Share Screen"}
+          title={isScreenSharing ? "Stop Sharing" : "Share Screen"}
         >
           Screen
         </button>
         <button
-          onClick={disconnect}
+          onClick={onLeave}
           style={{ ...styles.controlButton, background: "var(--danger)" }}
           title="Disconnect"
         >
@@ -174,8 +251,10 @@ const styles: Record<string, React.CSSProperties> = {
   disconnected: {
     flex: 1,
     display: "flex",
+    flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
+    gap: "12px",
     background: "var(--bg-chat)",
   },
   joinButton: {
@@ -187,6 +266,10 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "16px",
     fontWeight: 600,
     cursor: "pointer",
+  },
+  error: {
+    color: "var(--danger)",
+    fontSize: "13px",
   },
   room: {
     flex: 1,
