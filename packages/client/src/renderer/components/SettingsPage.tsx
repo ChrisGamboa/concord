@@ -9,6 +9,23 @@ interface MediaDeviceOption {
 export function SettingsPage({ onClose }: { onClose: () => void }) {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const [confirmLogout, setConfirmLogout] = useState(false);
+
+  // Close on ESC
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  // Auto-reset logout confirmation after 3 seconds
+  useEffect(() => {
+    if (!confirmLogout) return;
+    const t = setTimeout(() => setConfirmLogout(false), 3000);
+    return () => clearTimeout(t);
+  }, [confirmLogout]);
 
   const [audioInputs, setAudioInputs] = useState<MediaDeviceOption[]>([]);
   const [audioOutputs, setAudioOutputs] = useState<MediaDeviceOption[]>([]);
@@ -52,8 +69,8 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div style={styles.overlay}>
-      <div style={styles.panel}>
+    <div style={styles.overlay} onClick={onClose}>
+      <div style={styles.panel} onClick={(e) => e.stopPropagation()}>
         <div style={styles.header}>
           <h2 style={styles.title}>Settings</h2>
           <button onClick={onClose} style={styles.closeButton}>
@@ -73,8 +90,14 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
               <span style={styles.label}>Display Name</span>
               <span style={styles.value}>{user?.displayName}</span>
             </div>
-            <button onClick={logout} style={styles.dangerButton}>
-              Log Out
+            <button
+              onClick={confirmLogout ? logout : () => setConfirmLogout(true)}
+              style={{
+                ...styles.dangerButton,
+                ...(confirmLogout ? { background: "#a12d2f" } : {}),
+              }}
+            >
+              {confirmLogout ? "Click again to confirm" : "Log Out"}
             </button>
           </section>
 

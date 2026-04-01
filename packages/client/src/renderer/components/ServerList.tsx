@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useChatStore } from "../stores/chat";
 import { api } from "../lib/api";
@@ -48,6 +48,16 @@ export function ServerList({ loading }: { loading?: boolean }) {
     setError("");
   };
 
+  // Close popup on ESC
+  useEffect(() => {
+    if (!showMenu) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [showMenu]);
+
   return (
     <div style={styles.container}>
       <div style={styles.scrollArea}>
@@ -87,6 +97,10 @@ export function ServerList({ loading }: { loading?: boolean }) {
           +
         </button>
       </div>
+
+      {showMenu && (
+        <div style={styles.popupOverlay} onClick={close} />
+      )}
 
       {showMenu && !mode && (
         <div style={styles.popup}>
@@ -208,6 +222,11 @@ const styles: Record<string, React.CSSProperties> = {
     height: "2px",
     background: "var(--border)",
     borderRadius: "1px",
+  },
+  popupOverlay: {
+    position: "fixed",
+    inset: 0,
+    zIndex: 9,
   },
   popup: {
     position: "absolute",
