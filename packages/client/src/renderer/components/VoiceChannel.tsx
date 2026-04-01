@@ -9,13 +9,10 @@ import {
   VideoTrack,
 } from "@livekit/components-react";
 import { Track, VideoPresets } from "livekit-client";
-import {
-  KrispNoiseFilter,
-  isKrispNoiseFilterSupported,
-} from "@livekit/krisp-noise-filter";
 import { api } from "../lib/api";
 import { avatarColor } from "../lib/avatar";
 import { playJoinSelf, playDisconnect, playUserJoined, playUserLeft } from "../lib/sounds";
+import { createRnnoiseTrack } from "../lib/rnnoise-processor";
 
 interface VoiceChannelProps {
   channelId: string;
@@ -83,7 +80,7 @@ export function VoiceChannel({ channelId, channelName }: VoiceChannelProps) {
         audioCaptureDefaults: {
           autoGainControl: true,
           echoCancellation: true,
-          noiseSuppression: true,
+          noiseSuppression: false, // RNNoise handles this
           channelCount: 2,
           sampleRate: 48000,
         },
@@ -214,29 +211,47 @@ function VoiceContent({
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const callTime = useCallTimer();
 
-  // Apply Krisp noise filter after mic track is fully published
-  useEffect(() => {
-    if (!isKrispNoiseFilterSupported()) return;
-    let cancelled = false;
-    let retries = 0;
+  // Apply RNNoise to microphone track for noise suppression
+  const rnnoiseCleanupRef = useRef<(() => void) | null>(null);
 
-    const applyKrisp = async () => {
-      if (cancelled || retries > 5) return;
+  useEffect(() => {
+    if (!localParticipant.isMicrophoneEnabled) return;
+    let cancelled = false;
+
+    const applyRnnoise = async () => {
       const micPub = localParticipant.getTrackPublication(Track.Source.Microphone);
-      if (!micPub?.track || micPub.track.getProcessor()) return;
+      const mediaTrack = micPub?.track?.mediaStreamTrack;
+      if (!mediaTrack || cancelled) return;
+
       try {
-        // @ts-expect-error -- version mismatch between krisp plugin and livekit-client types
-        await micPub.track.setProcessor(KrispNoiseFilter());
-      } catch {
-        // AudioContext not ready yet or auth failed — retry
-        retries++;
-        if (!cancelled) setTimeout(applyKrisp, 500);
+        // Clean up previous processor if any
+        rnnoiseCleanupRef.current?.();
+
+        const { processedTrack, cleanup } = await createRnnoiseTrack(mediaTrack);
+        if (cancelled) { cleanup(); return; }
+
+        rnnoiseCleanupRef.current = cleanup;
+
+        // Replace the mic track with the processed one
+        await micPub!.track!.replaceTrack(processedTrack);
+        console.log("[rnnoise] Noise suppression enabled");
+      } catch (err) {
+        console.warn("[rnnoise] Failed to enable noise suppression:", err);
       }
     };
 
-    const timer = setTimeout(applyKrisp, 300);
-    return () => { cancelled = true; clearTimeout(timer); };
+    // Delay to ensure track is fully published
+    const timer = setTimeout(applyRnnoise, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [localParticipant, localParticipant.isMicrophoneEnabled]);
+
+  // Clean up RNNoise on unmount
+  useEffect(() => {
+    return () => { rnnoiseCleanupRef.current?.(); };
+  }, []);
 
   const allVideoTracks = useTracks(
     [Track.Source.Camera, Track.Source.ScreenShare],

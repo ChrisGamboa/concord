@@ -22,6 +22,9 @@ importers:
       '@livekit/krisp-noise-filter':
         specifier: ^0.4.1
         version: 0.4.1(livekit-client@2.18.0(@types/dom-mediacapture-record@1.0.22))
+      '@sapphi-red/web-noise-suppressor':
+        specifier: ^0.3.5
+        version: 0.3.5
       livekit-client:
         specifier: ^2.18.0
         version: 2.18.0(@types/dom-mediacapture-record@1.0.22)
@@ -869,6 +872,9 @@ packages:
     resolution: {integrity: sha512-lWMnixq/QzxyhTV6NjQJ4SFo1J6PvOX8vUx5Wb4bBPsEb+8xZ89Bz6kOXpfXj9ak9AHTQVQzlgzBEc1SyM27xQ==}
     cpu: [x64]
     os: [win32]
+
+  '@sapphi-red/web-noise-suppressor@0.3.5':
+    resolution: {integrity: sha512-jh3+V9yM+zxLriQexoGm0GatoPaJWjs6ypFIbFYwQp+AoUb55eUXrjKtKQyuC5zShzzeAQUl0M5JzqB7SSrsRA==}
 
   '@sindresorhus/is@4.6.0':
     resolution: {integrity: sha512-t09vSN3MdfsyCHoFcTRCH/iUtG7OJ0CsjzB8cjAmKc/va/kIgeDI/TxsigdncE/4be734m0cvIYwNaV4i2XqAw==}
@@ -2646,6 +2652,8 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.60.1':
     optional: true
+
+  '@sapphi-red/web-noise-suppressor@0.3.5': {}
 
   '@sindresorhus/is@4.6.0': {}
 
