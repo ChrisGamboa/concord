@@ -208,3 +208,12 @@ export async function skipTrack(voiceChannelId: string): Promise<void> {
 export function isPlaying(voiceChannelId: string): boolean {
   return activePlayers.has(voiceChannelId);
 }
+
+/**
+ * Stop all active players. Called during server shutdown.
+ */
+export async function stopAll(): Promise<void> {
+  const channelIds = Array.from(activePlayers.keys());
+  await Promise.all(channelIds.map((id) => stopPlayback(id)));
+  console.log(`[music] Stopped ${channelIds.length} active player(s)`);
+}

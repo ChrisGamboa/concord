@@ -16,6 +16,7 @@ import { voiceRoutes } from "./routes/voice.js";
 import { musicRoutes } from "./routes/music.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { wsHandler } from "./ws/handler.js";
+import { stopAll as stopAllMusic } from "./music/player.js";
 
 const app = Fastify({ logger: true });
 
@@ -58,6 +59,7 @@ app.get("/health", async () => ({ status: "ok" }));
 
 // Graceful shutdown
 const shutdown = async () => {
+  await stopAllMusic();
   await prisma.$disconnect();
   await app.close();
   process.exit(0);
