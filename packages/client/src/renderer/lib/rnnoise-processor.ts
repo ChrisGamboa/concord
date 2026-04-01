@@ -1,17 +1,17 @@
 import { loadRnnoise, RnnoiseWorkletNode } from "@sapphi-red/web-noise-suppressor";
-// @ts-expect-error -- worklet processor URL import
-import rnnoiseWorkletUrl from "@sapphi-red/web-noise-suppressor/dist/rnnoise/workletProcessor.js?url";
-// @ts-expect-error -- wasm URL import
-import rnnoiseWasmUrl from "@sapphi-red/web-noise-suppressor/dist/rnnoise.wasm?url";
-// @ts-expect-error -- simd wasm URL import
-import rnnoiseSimdWasmUrl from "@sapphi-red/web-noise-suppressor/dist/rnnoise_simd.wasm?url";
+// Use the package's exported paths for worklet and WASM
+// @ts-expect-error -- Vite URL import
+import rnnoiseWorkletUrl from "@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js?url";
+// @ts-expect-error -- Vite URL import
+import rnnoiseWasmUrl from "@sapphi-red/web-noise-suppressor/rnnoise.wasm?url";
+// @ts-expect-error -- Vite URL import
+import rnnoiseSimdWasmUrl from "@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url";
 
 let wasmBinary: ArrayBuffer | null = null;
 let workletRegistered = false;
 
 /**
  * Initialize the RNNoise WASM module and register the AudioWorklet processor.
- * Call once before creating processor instances.
  */
 async function ensureInitialized(ctx: AudioContext): Promise<ArrayBuffer> {
   if (!wasmBinary) {
@@ -45,9 +45,9 @@ export async function createRnnoiseTrack(
   // Create source from original mic track
   const source = ctx.createMediaStreamSource(new MediaStream([originalTrack]));
 
-  // Create RNNoise worklet node
+  // Create RNNoise worklet node (works on mono, 48kHz)
   const rnnoise = new RnnoiseWorkletNode(ctx, {
-    maxChannels: 1, // RNNoise works on mono
+    maxChannels: 1,
     wasmBinary: binary,
   });
 
