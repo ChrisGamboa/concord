@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type DragEvent } from "react";
 import { useParams } from "react-router-dom";
 import { useChatStore } from "../stores/chat";
 import { useAuthStore } from "../stores/auth";
@@ -27,12 +27,17 @@ export function ChatArea() {
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channel = channels.find((c) => c.id === channelId);
 
-  const typingUsers = usePresenceStore(
-    useCallback(
-      (s) => (channelId ? s.getTypingUsers(channelId) : []),
-      [channelId]
-    )
-  );
+  const typingUsersMap = usePresenceStore((s) => s.typingUsers);
+  const typingUsers = useMemo(() => {
+    if (!channelId) return [];
+    const result: string[] = [];
+    for (const [key, val] of typingUsersMap) {
+      if (key.startsWith(`${channelId}:`)) {
+        result.push(val.username);
+      }
+    }
+    return result;
+  }, [channelId, typingUsersMap]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
