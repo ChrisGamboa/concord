@@ -69,6 +69,11 @@ process.on("SIGTERM", shutdown);
 
 // Start
 try {
+  // Check for yt-dlp availability
+  const { isYtdlpAvailable } = await import("./music/ytdlp.js");
+  const ytdlp = await isYtdlpAvailable();
+  console.log(`[music] yt-dlp: ${ytdlp ? "available" : "NOT FOUND — music features disabled"}`);
+
   await app.listen({ port: env.PORT, host: "0.0.0.0" });
   console.log(`Server running on port ${env.PORT}`);
 } catch (err) {
