@@ -93,7 +93,7 @@ export const musicRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: { voiceChannelId: string } }>(
     "/skip/:voiceChannelId",
     async (request) => {
-      skipTrack(request.params.voiceChannelId);
+      await skipTrack(request.params.voiceChannelId);
       return getState(request.params.voiceChannelId);
     }
   );
@@ -102,7 +102,7 @@ export const musicRoutes: FastifyPluginAsync = async (app) => {
   app.post<{ Params: { voiceChannelId: string } }>(
     "/stop/:voiceChannelId",
     async (request) => {
-      stopPlayback(request.params.voiceChannelId);
+      await stopPlayback(request.params.voiceChannelId);
       return getState(request.params.voiceChannelId);
     }
   );

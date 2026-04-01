@@ -1,59 +1,141 @@
 import type { ChildProcess } from "child_process";
+import {
+  Room,
+  AudioFrame,
+  AudioSource,
+  LocalAudioTrack,
+  TrackPublishOptions,
+  TrackSource,
+} from "@livekit/rtc-node";
 import { getAudioStreamUrl, spawnFfmpegStream } from "./ytdlp.js";
-import { popNext, setPlaying, setNotPlaying, getState } from "./queue.js";
+import { popNext, setPlaying, setNotPlaying } from "./queue.js";
+import { createLiveKitToken, voiceRoomName } from "../livekit.js";
+import { env } from "../env.js";
 import type { MusicQueueItem } from "@concord/shared";
 
-/**
- * Active players per voice channel.
- * Each channel can have at most one active ffmpeg process.
- */
-const activePlayers = new Map<
-  string,
-  { process: ChildProcess; track: MusicQueueItem }
->();
+const SAMPLE_RATE = 48000;
+const CHANNELS = 2;
+const FRAME_DURATION_MS = 20;
+const SAMPLES_PER_FRAME = (SAMPLE_RATE * FRAME_DURATION_MS) / 1000; // 960
+const BYTES_PER_FRAME = SAMPLES_PER_FRAME * CHANNELS * 2; // 3840 bytes (16-bit stereo)
+const BOT_IDENTITY = "concord-music-bot";
+
+interface ActivePlayer {
+  ffmpeg: ChildProcess;
+  room: Room;
+  track: MusicQueueItem;
+}
+
+const activePlayers = new Map<string, ActivePlayer>();
 
 /**
- * Start playing a track in a voice channel.
- * In a full implementation, this would publish the audio into the LiveKit room
- * via a server-side participant. For now, it manages the ffmpeg process lifecycle
- * and queue progression.
- *
- * LiveKit audio injection requires the livekit-server-sdk's Room Agent or
- * Ingress API — this will be wired up as a follow-up when we have a running
- * LiveKit instance to test against.
+ * Start playing a track in a voice channel by joining the LiveKit room
+ * as a bot participant and publishing audio from ffmpeg.
  */
 export async function playTrack(
   voiceChannelId: string,
   track: MusicQueueItem
 ): Promise<void> {
   // Stop any existing playback
-  stopPlayback(voiceChannelId);
+  await stopPlayback(voiceChannelId);
 
   try {
     const { streamUrl, title } = await getAudioStreamUrl(track.url);
+    const roomName = voiceRoomName(voiceChannelId);
+
+    // Create a token for the music bot to join the room
+    const token = await createLiveKitToken(
+      BOT_IDENTITY,
+      "Music Bot",
+      roomName
+    );
+
+    // Connect to the LiveKit room
+    const room = new Room();
+    await room.connect(env.LIVEKIT_URL, token, {
+      autoSubscribe: false,
+      dynacast: false,
+    });
+
+    // Create audio source and track
+    const audioSource = new AudioSource(SAMPLE_RATE, CHANNELS);
+    const audioTrack = LocalAudioTrack.createAudioTrack("music", audioSource);
+    const publishOptions = new TrackPublishOptions();
+    publishOptions.source = TrackSource.SOURCE_MICROPHONE;
+    await room.localParticipant!.publishTrack(audioTrack, publishOptions);
+
+    // Spawn ffmpeg to extract audio
     const ffmpeg = spawnFfmpegStream(streamUrl);
 
-    activePlayers.set(voiceChannelId, { process: ffmpeg, track });
+    activePlayers.set(voiceChannelId, { ffmpeg, room, track });
     setPlaying(voiceChannelId, { ...track, title });
 
-    // When ffmpeg finishes (track ended), play next in queue
-    ffmpeg.on("close", () => {
-      activePlayers.delete(voiceChannelId);
-      playNext(voiceChannelId);
+    console.log(`[music] Playing "${title}" in ${roomName}`);
+
+    // Pipe ffmpeg PCM output into LiveKit audio frames
+    let buffer = Buffer.alloc(0);
+
+    ffmpeg.stdout?.on("data", async (chunk: Buffer) => {
+      buffer = Buffer.concat([buffer, chunk]);
+
+      // Send complete frames
+      while (buffer.length >= BYTES_PER_FRAME) {
+        const frameData = buffer.subarray(0, BYTES_PER_FRAME);
+        buffer = buffer.subarray(BYTES_PER_FRAME);
+
+        const int16 = new Int16Array(
+          frameData.buffer,
+          frameData.byteOffset,
+          frameData.byteLength / 2
+        );
+
+        const frame = new AudioFrame(
+          int16,
+          SAMPLE_RATE,
+          CHANNELS,
+          SAMPLES_PER_FRAME
+        );
+
+        try {
+          await audioSource.captureFrame(frame);
+        } catch {
+          // Room disconnected or source closed
+          break;
+        }
+      }
     });
 
-    ffmpeg.on("error", () => {
-      activePlayers.delete(voiceChannelId);
-      setNotPlaying(voiceChannelId);
+    // When ffmpeg finishes, clean up and play next
+    ffmpeg.on("close", async () => {
+      const player = activePlayers.get(voiceChannelId);
+      if (player?.ffmpeg === ffmpeg) {
+        activePlayers.delete(voiceChannelId);
+        try {
+          await audioTrack.close();
+          await room.disconnect();
+        } catch {
+          // ignore cleanup errors
+        }
+        playNext(voiceChannelId);
+      }
     });
 
-    // Consume stdout to prevent backpressure
-    // In production, this data would be sent to LiveKit
-    ffmpeg.stdout?.resume();
+    ffmpeg.on("error", async () => {
+      const player = activePlayers.get(voiceChannelId);
+      if (player?.ffmpeg === ffmpeg) {
+        activePlayers.delete(voiceChannelId);
+        try {
+          await audioTrack.close();
+          await room.disconnect();
+        } catch {
+          // ignore cleanup errors
+        }
+        setNotPlaying(voiceChannelId);
+      }
+    });
   } catch (err) {
     console.error(`[music] Failed to play track: ${err}`);
     setNotPlaying(voiceChannelId);
-    // Try next track
     playNext(voiceChannelId);
   }
 }
@@ -74,12 +156,17 @@ export function playNext(voiceChannelId: string): void {
 }
 
 /**
- * Stop current playback.
+ * Stop current playback and disconnect the bot from the room.
  */
-export function stopPlayback(voiceChannelId: string): void {
-  const active = activePlayers.get(voiceChannelId);
-  if (active) {
-    active.process.kill("SIGTERM");
+export async function stopPlayback(voiceChannelId: string): Promise<void> {
+  const player = activePlayers.get(voiceChannelId);
+  if (player) {
+    player.ffmpeg.kill("SIGTERM");
+    try {
+      await player.room.disconnect();
+    } catch {
+      // ignore
+    }
     activePlayers.delete(voiceChannelId);
   }
   setNotPlaying(voiceChannelId);
@@ -88,8 +175,8 @@ export function stopPlayback(voiceChannelId: string): void {
 /**
  * Skip the current track and play the next one.
  */
-export function skipTrack(voiceChannelId: string): void {
-  stopPlayback(voiceChannelId);
+export async function skipTrack(voiceChannelId: string): Promise<void> {
+  await stopPlayback(voiceChannelId);
   playNext(voiceChannelId);
 }
 

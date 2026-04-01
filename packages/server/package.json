@@ -21,6 +21,7 @@
     "@fastify/multipart": "^9.4.0",
     "@fastify/static": "^9.0.0",
     "@fastify/websocket": "^11.0.0",
+    "@livekit/rtc-node": "^0.13.24",
     "@prisma/client": "^6.6.0",
     "bcrypt": "^6.0.0",
     "dotenv": "^16.4.0",
