@@ -69,10 +69,21 @@ export function VoiceChannel({ channelId, channelName }: VoiceChannelProps) {
         setConnectionInfo(null);
       }}
       options={{
+        audioCaptureDefaults: {
+          autoGainControl: true,
+          echoCancellation: true,
+          noiseSuppression: true,
+          channelCount: 2,
+          sampleRate: 48000,
+        },
         videoCaptureDefaults: {
           resolution: VideoPresets.h1080.resolution,
         },
         publishDefaults: {
+          audioPreset: {
+            maxBitrate: 128_000,
+          },
+          dtx: false,
           videoCodec: "vp9",
           screenShareEncoding: {
             maxBitrate: 5_000_000,
