@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
-import { onWsMessage, sendWs } from "../lib/ws";
+import { onWsMessage } from "../lib/ws";
 import { useChatStore } from "../stores/chat";
 import { useAuthStore } from "../stores/auth";
 import { usePresenceStore } from "../stores/presence";
@@ -19,13 +19,10 @@ export function AppLayout() {
   const {
     setServers,
     setChannels,
-    setMessages,
-    setMessagesLoading,
     addMessage,
     updateMessage,
     removeMessage,
     setActiveServer,
-    setActiveChannel,
   } = useChatStore();
 
   const [serversLoading, setServersLoading] = useState(true);
@@ -64,21 +61,7 @@ export function AppLayout() {
   const currentChannel = channels.find((c) => c.id === channelId);
   const isVoiceChannel = currentChannel?.type === "voice";
 
-  // Load messages & subscribe when text channel changes
-  useEffect(() => {
-    if (!channelId || isVoiceChannel) return;
-    setActiveChannel(channelId);
-    setMessagesLoading(true);
-
-    api.getMessages(channelId).then((res) => {
-      setMessages(res.messages, res.hasMore);
-    });
-
-    sendWs({ type: "subscribe_channel", channelId });
-    return () => {
-      sendWs({ type: "unsubscribe_channel", channelId });
-    };
-  }, [channelId, isVoiceChannel, setActiveChannel, setMessages]);
+  // ChatArea handles its own message fetching and WS subscription
 
   const userId = useAuthStore((s) => s.user?.id);
   const { setUserOnline, setUserOffline, addTyping } = usePresenceStore();

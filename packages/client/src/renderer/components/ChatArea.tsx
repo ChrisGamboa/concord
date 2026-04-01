@@ -20,6 +20,11 @@ export function ChatArea() {
   const { channelId } = useParams();
   const messages = useChatStore((s) => s.messages);
   const channels = useChatStore((s) => s.channels);
+  const hasMore = useChatStore((s) => s.hasMoreMessages);
+  const setMessages = useChatStore((s) => s.setMessages);
+  const setMessagesLoading = useChatStore((s) => s.setMessagesLoading);
+  const prependMessages = useChatStore((s) => s.prependMessages);
+  const setActiveChannel = useChatStore((s) => s.setActiveChannel);
   const userId = useAuthStore((s) => s.user?.id);
   const messagesLoading = useChatStore((s) => s.messagesLoading);
   const [input, setInput] = useState("");
@@ -30,10 +35,47 @@ export function ChatArea() {
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channel = channels.find((c) => c.id === channelId);
+
+  // Load messages and subscribe to WS channel
+  useEffect(() => {
+    if (!channelId) return;
+    setActiveChannel(channelId);
+    setMessagesLoading(true);
+
+    api.getMessages(channelId).then((res) => {
+      setMessages(res.messages, res.hasMore);
+    });
+
+    sendWs({ type: "subscribe_channel", channelId });
+    return () => {
+      sendWs({ type: "unsubscribe_channel", channelId });
+    };
+  }, [channelId]);
+
+  // Load older messages
+  const loadOlder = useCallback(async () => {
+    if (!channelId || messages.length === 0 || loadingMore) return;
+    const container = messagesContainerRef.current;
+    const prevHeight = container?.scrollHeight ?? 0;
+    setLoadingMore(true);
+    try {
+      const res = await api.getMessages(channelId, messages[0].createdAt);
+      prependMessages(res.messages, res.hasMore);
+      requestAnimationFrame(() => {
+        if (container) {
+          container.scrollTop = container.scrollHeight - prevHeight;
+        }
+      });
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [channelId, messages, loadingMore, prependMessages]);
 
   const typingUsersMap = usePresenceStore((s) => s.typingUsers);
   const typingUsers = useMemo(() => {
@@ -161,7 +203,18 @@ export function ChatArea() {
         <span style={styles.channelName}>{channel?.name ?? "channel"}</span>
       </div>
 
-      <div style={styles.messages}>
+      <div ref={messagesContainerRef} style={styles.messages}>
+        {hasMore && !messagesLoading && (
+          <div style={styles.loadMoreContainer}>
+            <button
+              onClick={loadOlder}
+              disabled={loadingMore}
+              style={styles.loadMoreButton}
+            >
+              {loadingMore ? "Loading..." : "Load older messages"}
+            </button>
+          </div>
+        )}
         {messagesLoading && (
           <div style={styles.loadingState}>Loading messages...</div>
         )}
@@ -464,6 +517,20 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     overflowY: "auto",
     padding: "16px 0",
+  },
+  loadMoreContainer: {
+    display: "flex",
+    justifyContent: "center",
+    padding: "8px 16px",
+  },
+  loadMoreButton: {
+    padding: "6px 16px",
+    background: "var(--bg-secondary)",
+    border: "none",
+    borderRadius: "4px",
+    color: "var(--text-secondary)",
+    fontSize: "13px",
+    cursor: "pointer",
   },
   loadingState: {
     display: "flex",
