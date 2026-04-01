@@ -71,6 +71,8 @@ pnpm --filter @concord/shared test
 - [x] Video chat (1080p60 via VP9)
 - [x] Screen sharing (1080p60)
 - [x] Music streaming (YouTube search, queue, playback via yt-dlp)
-- [ ] File uploads / image embeds
-- [ ] Typing indicators / presence
-- [ ] User settings UI (audio/video device selection)
+- [x] File uploads (drag-and-drop, inline image embeds)
+- [x] Typing indicators
+- [x] User presence (online/offline with member list)
+- [x] User settings (audio/video device selection)
+- [x] Desktop notifications
