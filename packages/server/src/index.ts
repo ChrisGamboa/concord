@@ -3,6 +3,9 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import websocket from "@fastify/websocket";
+import multipart from "@fastify/multipart";
+import staticPlugin from "@fastify/static";
+import { join } from "path";
 import { env } from "./env.js";
 import { prisma } from "./db.js";
 import { authRoutes } from "./routes/auth.js";
@@ -11,6 +14,7 @@ import { channelRoutes } from "./routes/channels.js";
 import { messageRoutes } from "./routes/messages.js";
 import { voiceRoutes } from "./routes/voice.js";
 import { musicRoutes } from "./routes/music.js";
+import { uploadRoutes } from "./routes/uploads.js";
 import { wsHandler } from "./ws/handler.js";
 
 const app = Fastify({ logger: true });
@@ -18,6 +22,12 @@ const app = Fastify({ logger: true });
 await app.register(cors, { origin: true });
 await app.register(jwt, { secret: env.JWT_SECRET });
 await app.register(websocket);
+await app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024 } });
+await app.register(staticPlugin, {
+  root: join(process.cwd(), "uploads"),
+  prefix: "/uploads/",
+  decorateReply: false,
+});
 
 // Auth decorator
 app.decorate(
@@ -38,6 +48,7 @@ await app.register(channelRoutes, { prefix: "/api/channels" });
 await app.register(messageRoutes, { prefix: "/api/messages" });
 await app.register(voiceRoutes, { prefix: "/api/voice" });
 await app.register(musicRoutes, { prefix: "/api/music" });
+await app.register(uploadRoutes, { prefix: "/api/uploads" });
 
 // WebSocket
 await app.register(wsHandler);

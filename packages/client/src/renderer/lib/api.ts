@@ -127,4 +127,34 @@ export const api = {
 
   musicStatus: () =>
     request<{ available: boolean; message: string }>("/music/status"),
+
+  // Uploads
+  uploadFile: async (file: File): Promise<{
+    id: string;
+    filename: string;
+    mimeType: string;
+    size: number;
+    url: string;
+  }> => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers["Authorization"] = `Bearer ${authToken}`;
+    }
+
+    const res = await fetch(`${API_BASE}/uploads`, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(body.error ?? `HTTP ${res.status}`);
+    }
+
+    return res.json();
+  },
 };

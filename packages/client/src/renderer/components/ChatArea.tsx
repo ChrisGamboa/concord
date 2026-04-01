@@ -1,9 +1,18 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type DragEvent } from "react";
 import { useParams } from "react-router-dom";
 import { useChatStore } from "../stores/chat";
 import { useAuthStore } from "../stores/auth";
 import { usePresenceStore } from "../stores/presence";
 import { sendWs } from "../lib/ws";
+import { api } from "../lib/api";
+
+const IMAGE_REGEX = /\.(png|jpe?g|gif|webp)$/i;
+const UPLOAD_URL_REGEX = /^\/uploads\/.+/;
+const SERVER_BASE = "http://localhost:3001";
+
+function isImageUrl(text: string): boolean {
+  return IMAGE_REGEX.test(text) || (UPLOAD_URL_REGEX.test(text) && IMAGE_REGEX.test(text));
+}
 
 export function ChatArea() {
   const { channelId } = useParams();
@@ -11,7 +20,10 @@ export function ChatArea() {
   const channels = useChatStore((s) => s.channels);
   const userId = useAuthStore((s) => s.user?.id);
   const [input, setInput] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channel = channels.find((c) => c.id === channelId);
 
@@ -28,7 +40,6 @@ export function ChatArea() {
 
   const sendTyping = useCallback(() => {
     if (!channelId) return;
-    // Debounce: only send typing every 2 seconds
     if (typingTimeoutRef.current) return;
     sendWs({ type: "typing_start", channelId });
     typingTimeoutRef.current = setTimeout(() => {
@@ -48,6 +59,42 @@ export function ChatArea() {
     setInput("");
   };
 
+  const handleFileUpload = useCallback(
+    async (file: File) => {
+      if (!channelId) return;
+      setUploading(true);
+      try {
+        const result = await api.uploadFile(file);
+        sendWs({
+          type: "send_message",
+          channelId,
+          content: result.url,
+        });
+      } catch (err) {
+        console.error("Upload failed:", err);
+      } finally {
+        setUploading(false);
+      }
+    },
+    [channelId]
+  );
+
+  const handleDrop = useCallback(
+    (e: DragEvent) => {
+      e.preventDefault();
+      setDragOver(false);
+      const file = e.dataTransfer.files[0];
+      if (file) handleFileUpload(file);
+    },
+    [handleFileUpload]
+  );
+
+  const handleFileSelect = useCallback(() => {
+    const file = fileInputRef.current?.files?.[0];
+    if (file) handleFileUpload(file);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, [handleFileUpload]);
+
   const typingText =
     typingUsers.length === 0
       ? null
@@ -58,7 +105,15 @@ export function ChatArea() {
           : `${typingUsers[0]} and ${typingUsers.length - 1} others are typing...`;
 
   return (
-    <div style={styles.container}>
+    <div
+      style={{
+        ...styles.container,
+        ...(dragOver ? { outline: "2px dashed var(--accent)" } : {}),
+      }}
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={handleDrop}
+    >
       <div style={styles.header}>
         <span style={styles.hash}>#</span>
         <span style={styles.channelName}>{channel?.name ?? "channel"}</span>
@@ -82,7 +137,7 @@ export function ChatArea() {
                   })}
                 </span>
               </div>
-              <div style={styles.messageText}>{msg.content}</div>
+              <MessageBody content={msg.content} />
             </div>
           </div>
         ))}
@@ -93,16 +148,68 @@ export function ChatArea() {
         {typingText && <div style={styles.typingIndicator}>{typingText}</div>}
         <form onSubmit={handleSubmit} style={styles.inputContainer}>
           <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileSelect}
+            style={{ display: "none" }}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            style={styles.uploadButton}
+            disabled={uploading}
+            title="Upload file"
+          >
+            +
+          </button>
+          <input
             style={styles.input}
-            placeholder={`Message #${channel?.name ?? "channel"}`}
+            placeholder={
+              uploading
+                ? "Uploading..."
+                : `Message #${channel?.name ?? "channel"}`
+            }
             value={input}
             onChange={(e) => handleInputChange(e.target.value)}
+            disabled={uploading}
             autoFocus
           />
         </form>
       </div>
     </div>
   );
+}
+
+/** Renders message content with inline image previews for uploaded files. */
+function MessageBody({ content }: { content: string }) {
+  if (UPLOAD_URL_REGEX.test(content) && isImageUrl(content)) {
+    return (
+      <div>
+        <img
+          src={`${SERVER_BASE}${content}`}
+          alt="uploaded image"
+          style={styles.imageEmbed}
+          loading="lazy"
+        />
+      </div>
+    );
+  }
+
+  if (UPLOAD_URL_REGEX.test(content)) {
+    const filename = content.split("/").pop() ?? "file";
+    return (
+      <a
+        href={`${SERVER_BASE}${content}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={styles.fileLink}
+      >
+        {filename}
+      </a>
+    );
+  }
+
+  return <div style={styles.messageText}>{content}</div>;
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -176,6 +283,25 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--text-secondary)",
     wordBreak: "break-word",
   },
+  imageEmbed: {
+    maxWidth: "400px",
+    maxHeight: "300px",
+    borderRadius: "8px",
+    marginTop: "4px",
+    cursor: "pointer",
+  },
+  fileLink: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "8px 12px",
+    background: "var(--bg-secondary)",
+    borderRadius: "6px",
+    color: "var(--accent)",
+    fontSize: "13px",
+    marginTop: "4px",
+    textDecoration: "none",
+  },
   inputArea: {
     flexShrink: 0,
   },
@@ -188,9 +314,25 @@ const styles: Record<string, React.CSSProperties> = {
   },
   inputContainer: {
     padding: "0 16px 24px",
+    display: "flex",
+    gap: "8px",
+  },
+  uploadButton: {
+    width: "44px",
+    height: "44px",
+    background: "var(--bg-secondary)",
+    border: "none",
+    borderRadius: "8px",
+    color: "var(--text-muted)",
+    fontSize: "22px",
+    cursor: "pointer",
+    flexShrink: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
   input: {
-    width: "100%",
+    flex: 1,
     padding: "12px 16px",
     background: "var(--input-bg)",
     border: "none",
