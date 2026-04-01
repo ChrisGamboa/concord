@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { onWsMessage, sendWs } from "../lib/ws";
@@ -33,19 +33,26 @@ export function AppLayout() {
   }, [setServers]);
 
   // Load channels when server changes
+  const prevServerRef = useRef<string | null>(null);
   useEffect(() => {
     if (!serverId) return;
     setActiveServer(serverId);
-    setChannels([]);
-    api.getChannels(serverId).then((res) => {
-      setChannels(res.channels);
-      // Auto-select first text channel if none selected
-      const firstText = res.channels.find((c) => c.type === "text");
-      if (firstText && !window.location.hash.includes(firstText.id)) {
-        navigate(`/channels/${serverId}/${firstText.id}`, { replace: true });
-      }
-    });
-  }, [serverId, navigate, setActiveServer, setChannels]);
+
+    // Only fetch channels if server actually changed
+    if (prevServerRef.current !== serverId) {
+      prevServerRef.current = serverId;
+      api.getChannels(serverId).then((res) => {
+        setChannels(res.channels);
+        // Auto-select first text channel only if no channel is selected
+        if (!channelId) {
+          const firstText = res.channels.find((c) => c.type === "text");
+          if (firstText) {
+            navigate(`/channels/${serverId}/${firstText.id}`, { replace: true });
+          }
+        }
+      });
+    }
+  }, [serverId, channelId, navigate, setActiveServer, setChannels]);
 
   // Determine if current channel is voice or text
   const channels = useChatStore((s) => s.channels);
