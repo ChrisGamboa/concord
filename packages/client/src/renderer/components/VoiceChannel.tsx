@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   LiveKitRoom,
   RoomAudioRenderer,
   useParticipants,
   useLocalParticipant,
+  useRoomContext,
   useTracks,
   VideoTrack,
 } from "@livekit/components-react";
@@ -69,6 +70,8 @@ export function VoiceChannel({ channelId, channelName }: VoiceChannelProps) {
       onDisconnected={handleDisconnect}
       onError={(err) => {
         console.error("[livekit] error", err);
+        // Don't disconnect for non-fatal processor errors
+        if (err.message?.includes("Audio context")) return;
         setError(err.message);
         setConnectionInfo(null);
       }}
@@ -76,12 +79,9 @@ export function VoiceChannel({ channelId, channelName }: VoiceChannelProps) {
         audioCaptureDefaults: {
           autoGainControl: true,
           echoCancellation: true,
-          noiseSuppression: false, // Krisp handles this better
+          noiseSuppression: true,
           channelCount: 2,
           sampleRate: 48000,
-          ...(isKrispNoiseFilterSupported()
-            ? { processor: KrispNoiseFilter() }
-            : { noiseSuppression: true }), // fallback to browser NS
         },
         videoCaptureDefaults: {
           resolution: VideoPresets.h1080.resolution,
@@ -120,10 +120,33 @@ function VoiceContent({
   channelName: string;
   onLeave: () => void;
 }) {
+  const room = useRoomContext();
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+
+  // Apply Krisp noise filter after mic track is fully published
+  useEffect(() => {
+    if (!isKrispNoiseFilterSupported()) return;
+
+    const applyKrisp = async () => {
+      const micPub = localParticipant.getTrackPublication(Track.Source.Microphone);
+      if (!micPub?.track || micPub.track.getProcessor()) return;
+      try {
+        // @ts-expect-error -- version mismatch between krisp plugin and livekit-client types
+        await micPub.track.setProcessor(KrispNoiseFilter());
+        console.log("[krisp] Noise filter enabled");
+      } catch {
+        // AudioContext not ready yet, retry shortly
+        setTimeout(applyKrisp, 500);
+      }
+    };
+
+    // Small delay to let AudioContext initialize after track publish
+    const timer = setTimeout(applyKrisp, 300);
+    return () => clearTimeout(timer);
+  }, [localParticipant, localParticipant.isMicrophoneEnabled]);
 
   const videoTracks = useTracks(
     [Track.Source.Camera, Track.Source.ScreenShare],
