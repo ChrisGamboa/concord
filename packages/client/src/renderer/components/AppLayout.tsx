@@ -36,17 +36,16 @@ export function AppLayout() {
   useEffect(() => {
     if (!serverId) return;
     setActiveServer(serverId);
+    setChannels([]);
     api.getChannels(serverId).then((res) => {
       setChannels(res.channels);
       // Auto-select first text channel if none selected
-      if (!channelId) {
-        const firstText = res.channels.find((c) => c.type === "text");
-        if (firstText) {
-          navigate(`/channels/${serverId}/${firstText.id}`, { replace: true });
-        }
+      const firstText = res.channels.find((c) => c.type === "text");
+      if (firstText && !window.location.hash.includes(firstText.id)) {
+        navigate(`/channels/${serverId}/${firstText.id}`, { replace: true });
       }
     });
-  }, [serverId, channelId, navigate, setActiveServer, setChannels]);
+  }, [serverId, navigate, setActiveServer, setChannels]);
 
   // Determine if current channel is voice or text
   const channels = useChatStore((s) => s.channels);
@@ -124,7 +123,12 @@ export function AppLayout() {
         />
       )}
       {channelId && !isVoiceChannel && <ChatArea />}
-      {serverId && !isVoiceChannel && <MemberList />}
+      {serverId && !channelId && (
+        <div style={styles.welcome}>
+          <p style={{ color: "var(--text-muted)" }}>Loading channels...</p>
+        </div>
+      )}
+      {serverId && !isVoiceChannel && channelId && <MemberList />}
       {!serverId && (
         <div style={styles.welcome}>
           <h2>Welcome to Concord</h2>
