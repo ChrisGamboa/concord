@@ -70,6 +70,7 @@ export const api = {
   joinServer: (serverId: string) =>
     request<{ joined: boolean }>(`/servers/${serverId}/join`, {
       method: "POST",
+      body: JSON.stringify({}),
     }),
 
   getMembers: (serverId: string) =>
