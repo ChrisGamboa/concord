@@ -18,6 +18,16 @@ export function MusicPlayer() {
   const [musicState, setMusicState] = useState<MusicState | null>(null);
   const [expanded, setExpanded] = useState(false);
 
+  // Clear stale state when leaving voice channel
+  useEffect(() => {
+    if (!voiceChannelId) {
+      setMusicState(null);
+      setSearchResults([]);
+      setSearchQuery("");
+      setExpanded(false);
+    }
+  }, [voiceChannelId]);
+
   // Poll music state
   useEffect(() => {
     if (!voiceChannelId) return;
@@ -29,7 +39,7 @@ export function MusicPlayer() {
     fetchState();
     const interval = setInterval(fetchState, 3000);
     return () => clearInterval(interval);
-  }, [voiceChannelId, isVoiceChannel]);
+  }, [voiceChannelId]);
 
   const handleSearch = useCallback(
     async (e: FormEvent) => {

@@ -45,15 +45,18 @@ export function ChatArea() {
   // Load messages and subscribe to WS channel
   useEffect(() => {
     if (!channelId) return;
+    let stale = false;
     setActiveChannel(channelId);
     setMessagesLoading(true);
 
     api.getMessages(channelId).then((res) => {
+      if (stale) return; // channel changed before response arrived
       setMessages(res.messages, res.hasMore);
     });
 
     sendWs({ type: "subscribe_channel", channelId });
     return () => {
+      stale = true;
       sendWs({ type: "unsubscribe_channel", channelId });
     };
   }, [channelId]);

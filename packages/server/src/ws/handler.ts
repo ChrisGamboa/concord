@@ -89,6 +89,21 @@ export const wsHandler: FastifyPluginAsync = async (app) => {
   });
 };
 
+async function verifyChannelAccess(
+  userId: string,
+  channelId: string
+): Promise<boolean> {
+  const channel = await prisma.channel.findUnique({
+    where: { id: channelId },
+    select: { serverId: true },
+  });
+  if (!channel) return false;
+  const member = await prisma.serverMember.findUnique({
+    where: { userId_serverId: { userId, serverId: channel.serverId } },
+  });
+  return member !== null;
+}
+
 async function handleMessage(
   sessionId: string,
   userId: string,
@@ -96,6 +111,7 @@ async function handleMessage(
 ) {
   switch (msg.type) {
     case "subscribe_channel": {
+      if (!(await verifyChannelAccess(userId, msg.channelId))) return;
       subscribeToChannel(sessionId, msg.channelId);
       break;
     }
@@ -104,6 +120,9 @@ async function handleMessage(
       break;
     }
     case "send_message": {
+      if (!msg.content || msg.content.trim().length === 0 || msg.content.length > 4000) return;
+      if (!(await verifyChannelAccess(userId, msg.channelId))) return;
+
       const message = await prisma.message.create({
         data: {
           channelId: msg.channelId,

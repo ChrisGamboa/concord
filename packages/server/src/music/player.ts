@@ -64,7 +64,10 @@ export async function playTrack(
 export function playNext(voiceChannelId: string): void {
   const next = popNext(voiceChannelId);
   if (next) {
-    playTrack(voiceChannelId, next);
+    playTrack(voiceChannelId, next).catch((err) => {
+      console.error(`[music] playNext failed: ${err}`);
+      setNotPlaying(voiceChannelId);
+    });
   } else {
     setNotPlaying(voiceChannelId);
   }

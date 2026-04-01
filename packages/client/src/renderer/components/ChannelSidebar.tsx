@@ -42,7 +42,8 @@ export function ChannelSidebar() {
     fetchParticipants();
     const interval = setInterval(fetchParticipants, 5000);
     return () => clearInterval(interval);
-  }, [voiceChannels.map((c) => c.id).join(",")]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channels]);
 
   return (
     <div style={styles.container}>
