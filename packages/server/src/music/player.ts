@@ -66,8 +66,6 @@ export async function playTrack(
     publishOptions.source = TrackSource.SOURCE_SCREENSHARE_AUDIO;
     publishOptions.dtx = false; // Don't use discontinuous transmission for music
     publishOptions.red = false; // Disable redundant encoding
-    // @ts-expect-error -- AudioEncoding not publicly exported, set directly
-    publishOptions.audioEncoding = { maxBitrate: BigInt(256_000) };
     await room.localParticipant!.publishTrack(audioTrack, publishOptions);
 
     // Spawn ffmpeg to extract audio
