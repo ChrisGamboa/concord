@@ -15,6 +15,7 @@ import { messageRoutes } from "./routes/messages.js";
 import { voiceRoutes } from "./routes/voice.js";
 import { musicRoutes } from "./routes/music.js";
 import { uploadRoutes } from "./routes/uploads.js";
+import { roleRoutes } from "./routes/roles.js";
 import { wsHandler } from "./ws/handler.js";
 import { stopAll as stopAllMusic } from "./music/player.js";
 
@@ -50,6 +51,7 @@ await app.register(messageRoutes, { prefix: "/api/messages" });
 await app.register(voiceRoutes, { prefix: "/api/voice" });
 await app.register(musicRoutes, { prefix: "/api/music" });
 await app.register(uploadRoutes, { prefix: "/api/uploads" });
+await app.register(roleRoutes, { prefix: "/api/servers" });
 
 // WebSocket
 await app.register(wsHandler);
