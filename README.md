@@ -5,6 +5,7 @@ Self-hostable Discord alternative built with TypeScript.
 ## Features
 
 - Text channels with real-time messaging (WebSocket)
+- **GIF picker** -- search and send GIFs inline via Klipy API
 - Voice chat, video chat (1080p60), and screen sharing via LiveKit
 - **Persistent voice sessions** -- stay connected while browsing text channels
 - Music streaming from YouTube into voice channels (yt-dlp + LiveKit)
@@ -15,11 +16,19 @@ Self-hostable Discord alternative built with TypeScript.
   - Prefetches next track for near-gapless playback
   - Two-column panel layout (search + queue side by side)
 - **Per-participant volume control** -- right-click any participant to adjust their volume or mute them (client-side only)
+- **Roles & permissions** -- bitmask-based permission system with 12 granular permissions
+  - Server Settings UI for creating, editing, and deleting roles with color and permission toggles
+  - Role assignment to members
+  - Role badges with colors in the member list
+  - Server owner is always admin
+- **Moderation tools**
+  - Voice: kick participants, server-mute (admins)
+  - Text: delete any user's messages (MANAGE_MESSAGES permission)
+  - Actions available via right-click context menus
 - **User profiles** -- customizable display name and avatar (auto-cropped to 256x256 WebP)
 - File uploads with drag-and-drop and inline image embeds
 - Typing indicators and user presence (online/offline)
 - Message editing and deletion
-- Permission system (bitmask roles)
 - Desktop notifications
 - RNNoise ML noise suppression for voice (WebAssembly AudioWorklet)
 
@@ -30,6 +39,7 @@ Self-hostable Discord alternative built with TypeScript.
 - **Real-time:** WebSockets (chat) + LiveKit WebRTC (voice/video)
 - **Music:** yt-dlp + ffmpeg + @livekit/rtc-node (server-side audio injection)
 - **Image processing:** sharp (avatar resize/crop)
+- **GIFs:** Klipy API (server-side proxy)
 
 ## Prerequisites
 
@@ -81,15 +91,31 @@ docker compose up -d
 pnpm --filter @concord/server db:push
 ```
 
-### 4. Start the server
+### 4. Configure environment
+
+Copy the example env and add your API keys:
+
+```bash
+cp packages/server/.env.example packages/server/.env
+```
+
+At minimum, add your Klipy API key for GIF support:
+
+```
+KLIPY_API_KEY=your_klipy_api_key
+```
+
+Get a free test key at [klipy.com/developers](https://klipy.com/developers) (100 requests/min, production keys are unlimited and free).
+
+### 5. Start the server
 
 ```bash
 pnpm dev:server
 ```
 
-The API runs on `http://localhost:3001`. You should see log output confirming the server is listening.
+The API runs on `http://localhost:3001`.
 
-### 5. Start the client
+### 6. Start the client
 
 In a separate terminal:
 
@@ -105,6 +131,7 @@ The Electron app opens with DevTools (in dev mode). Register an account and crea
 - Create a server via the `+` button in the left sidebar
 - Share the server ID (click "Copy ID" in the channel sidebar header) with others so they can join
 - Type in the message input and press Enter to send
+- Click the **GIF** button to search and send GIFs inline
 - Drag and drop files to upload, or click the `+` button next to the input
 - Hover over your own messages to edit or delete them
 
@@ -113,8 +140,8 @@ The Electron app opens with DevTools (in dev mode). Register an account and crea
 - Click "Join Voice" to connect
 - Use the control bar: Mic (toggle mute), Cam (toggle camera), Screen (share screen), Leave
 - **Voice persists across navigation** -- switch to text channels while staying in the call
-- The sidebar shows your voice connection status with mute toggle, return-to-call, and disconnect buttons
-- Right-click any participant to adjust their volume or mute them on your client
+- The sidebar shows your voice connection status with timer, mute toggle, return-to-call, and disconnect buttons
+- Right-click any participant to adjust their volume, mute, or (with permissions) kick/server-mute
 - Audio-only calls show large centered participant cards; video calls show a responsive grid
 
 ### Music
@@ -127,6 +154,13 @@ The Electron app opens with DevTools (in dev mode). Register an account and crea
 - Queue songs while browsing text channels -- the music bar stays visible
 
 **Note:** Music requires `yt-dlp` and `ffmpeg` installed on the machine running the server.
+
+### Roles & Permissions
+- Click the gear icon next to the server name to open **Server Settings**
+- Create roles with custom names, colors, and permission toggles
+- Assign roles to members to grant moderation capabilities
+- Server owner automatically has full admin permissions
+- Available permissions: Administrator, Manage Server/Channels/Roles/Messages, Kick/Ban Members, Send/Read Messages, Connect to Voice, Speak, Stream
 
 ### Profile & Settings
 - Click the gear icon at the bottom of the server list to open Settings
@@ -149,6 +183,7 @@ Server config lives in `packages/server/.env`. Defaults work with the Docker Com
 | `LIVEKIT_URL` | `ws://localhost:7880` | LiveKit server WebSocket URL |
 | `LIVEKIT_API_KEY` | `devkey` | LiveKit API key |
 | `LIVEKIT_API_SECRET` | `secret` | LiveKit API secret |
+| `KLIPY_API_KEY` | *(none)* | Klipy API key for GIF search ([get one free](https://klipy.com/developers)) |
 
 ## Testing
 
