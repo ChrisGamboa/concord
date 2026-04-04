@@ -10,6 +10,7 @@ import type {
   VoiceParticipantsResponse,
   MusicSearchResponse,
   MusicState,
+  Role,
 } from "@concord/shared";
 
 const API_BASE = "http://localhost:3001/api";
@@ -94,6 +95,44 @@ export const api = {
 
   getMembers: (serverId: string) =>
     request<MembersResponse>(`/servers/${serverId}/members`),
+
+  // Roles
+  getRoles: (serverId: string) =>
+    request<{ roles: Role[] }>(`/servers/${serverId}/roles`),
+
+  createRole: (serverId: string, data: { name: string; color?: string; permissions?: number }) =>
+    request<{ role: Role }>(`/servers/${serverId}/roles`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateRole: (serverId: string, roleId: string, data: { name?: string; color?: string | null; permissions?: number }) =>
+    request<{ role: Role }>(`/servers/${serverId}/roles/${roleId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteRole: (serverId: string, roleId: string) =>
+    request<{ deleted: boolean }>(`/servers/${serverId}/roles/${roleId}`, { method: "DELETE" }),
+
+  assignRole: (serverId: string, userId: string, roleId: string) =>
+    request<{ assigned: boolean }>(`/servers/${serverId}/members/${userId}/roles/${roleId}`, { method: "POST" }),
+
+  removeRole: (serverId: string, userId: string, roleId: string) =>
+    request<{ removed: boolean }>(`/servers/${serverId}/members/${userId}/roles/${roleId}`, { method: "DELETE" }),
+
+  getMyPermissions: (serverId: string, userId: string) =>
+    request<{ permissions: number }>(`/servers/${serverId}/members/${userId}/permissions`),
+
+  // Voice moderation
+  voiceKick: (channelId: string, targetId: string) =>
+    request<{ kicked: boolean }>(`/voice/${channelId}/kick/${targetId}`, { method: "POST" }),
+
+  voiceMute: (channelId: string, targetId: string, muted: boolean) =>
+    request<{ muted: boolean }>(`/voice/${channelId}/mute/${targetId}`, {
+      method: "POST",
+      body: JSON.stringify({ muted }),
+    }),
 
   // Channels
   getChannels: (serverId: string) =>
