@@ -36,6 +36,8 @@ export async function playTrack(
   voiceChannelId: string,
   track: MusicQueueItem
 ): Promise<void> {
+  console.log(`[music] Starting playback of "${track.title}" in channel ${voiceChannelId}`);
+
   // Stop any existing playback
   await stopPlayback(voiceChannelId);
 

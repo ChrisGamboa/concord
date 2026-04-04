@@ -17,7 +17,7 @@ export async function searchYouTube(
     "--flat-playlist",
     "--no-download",
     "--no-warnings",
-  ]);
+  ], { timeout: 30_000 });
 
   const results: MusicSearchResult[] = [];
   for (const line of stdout.trim().split("\n")) {
@@ -48,15 +48,20 @@ export async function getAudioStreamUrl(url: string): Promise<{
   title: string;
   duration: number;
 }> {
+  console.log(`[yt-dlp] Getting audio stream URL for: ${url}`);
   const { stdout } = await execFileAsync("yt-dlp", [
     url,
     "--dump-json",
     "-f", "bestaudio",
     "--no-download",
     "--no-warnings",
-  ]);
+  ], { timeout: 30_000 });
 
   const data = JSON.parse(stdout.trim());
+  if (!data.url) {
+    throw new Error(`yt-dlp returned no stream URL for: ${url}`);
+  }
+  console.log(`[yt-dlp] Got stream URL for "${data.title}" (${data.duration}s)`);
   return {
     streamUrl: data.url,
     title: data.title ?? "Unknown",
@@ -69,7 +74,7 @@ export async function getAudioStreamUrl(url: string): Promise<{
  * Returns the spawned process (pipe stdout for audio data).
  */
 export function spawnFfmpegStream(audioUrl: string) {
-  return spawn("ffmpeg", [
+  const proc = spawn("ffmpeg", [
     "-i", audioUrl,
     "-f", "s16le",        // raw PCM 16-bit little-endian
     "-acodec", "pcm_s16le",
@@ -77,8 +82,19 @@ export function spawnFfmpegStream(audioUrl: string) {
     "-ac", "2",            // stereo
     "-",                   // output to stdout
   ], {
-    stdio: ["ignore", "pipe", "ignore"],
+    stdio: ["ignore", "pipe", "pipe"],
   });
+
+  // Log ffmpeg errors for debugging
+  let stderrBuf = "";
+  proc.stderr?.on("data", (chunk: Buffer) => { stderrBuf += chunk.toString(); });
+  proc.on("close", (code) => {
+    if (code !== 0 && stderrBuf) {
+      console.error(`[ffmpeg] exited ${code}:`, stderrBuf.slice(-500));
+    }
+  });
+
+  return proc;
 }
 
 /**

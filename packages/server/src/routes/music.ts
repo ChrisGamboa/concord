@@ -81,7 +81,9 @@ export const musicRoutes: FastifyPluginAsync = async (app) => {
       if (!state.isPlaying) {
         const next = removeFromQueue(voiceChannelId, 0);
         if (next) {
-          playTrack(voiceChannelId, next);
+          playTrack(voiceChannelId, next).catch((err) => {
+            console.error("[music] playTrack failed:", err);
+          });
         }
       }
 
