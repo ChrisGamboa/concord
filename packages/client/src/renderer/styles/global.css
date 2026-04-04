@@ -109,9 +109,10 @@ a {
 .voice-ctx-pct {
   font-size: 11px;
   color: var(--text-muted);
-  min-width: 28px;
+  width: 32px;
   text-align: right;
   font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
 .voice-volume-slider {
