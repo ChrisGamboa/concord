@@ -43,42 +43,32 @@ ipcMain.on("show-notification", (_event, { title, body }: { title: string; body:
   }
 });
 
-// Screen source picker: renderer requests sources, user picks one, renderer replies
-ipcMain.handle("get-screen-sources", async () => {
-  const sources = await desktopCapturer.getSources({
-    types: ["screen", "window"],
-    thumbnailSize: { width: 320, height: 180 },
-  });
-  return sources.map((s) => ({
-    id: s.id,
-    name: s.name,
-    thumbnail: s.thumbnail.toDataURL(),
-    appIcon: s.appIcon?.toDataURL() ?? null,
-  }));
-});
-
 app.whenReady().then(() => {
-  // Screen sharing: send sources to renderer for picking
+  // Screen sharing: get sources, send to renderer for picking, wait for selection
   session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
-    desktopCapturer.getSources({ types: ["screen", "window"] }).then((sources) => {
-      // Send source list to renderer and wait for user selection
-      if (!mainWindow) {
+    desktopCapturer.getSources({
+      types: ["screen", "window"],
+      thumbnailSize: { width: 320, height: 180 },
+    }).then((sources) => {
+      if (!mainWindow || sources.length === 0) {
         callback({});
         return;
       }
 
+      // Send thumbnails to renderer for the picker UI
       mainWindow.webContents.send("screen-share-pick", sources.map((s) => ({
         id: s.id,
         name: s.name,
         thumbnail: s.thumbnail.toDataURL(),
       })));
 
-      // Wait for renderer to reply with selected source ID
+      // Wait for the user's selection from the renderer
       ipcMain.once("screen-share-selected", (_event, sourceId: string | null) => {
         if (!sourceId) {
           callback({});
           return;
         }
+        // Find the SAME source object from this getSources call
         const selected = sources.find((s) => s.id === sourceId);
         if (selected) {
           callback({ video: selected });
