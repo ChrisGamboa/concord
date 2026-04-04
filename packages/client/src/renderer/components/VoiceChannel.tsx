@@ -313,79 +313,127 @@ function VoiceContent({
     setIsScreenSharing(next);
   };
 
+  const hasVideo = videoTracks.length > 0;
+
   return (
     <div style={styles.voiceContainer}>
-      <div style={styles.header}>
-        <span style={styles.channelLabel}>
-          Voice Connected - {channelName}
-        </span>
-      </div>
+      {hasVideo ? (
+        /* ---- Video mode: grid fills space, compact participant strip ---- */
+        <>
+          <div style={styles.videoGrid}>
+            {videoTracks.map((trackRef) => (
+              <div
+                key={trackRef.publication.trackSid}
+                style={styles.videoTile}
+              >
+                <VideoTrack
+                  trackRef={trackRef}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "contain",
+                  }}
+                />
+                <span style={styles.videoLabel}>
+                  {trackRef.participant.name ?? trackRef.participant.identity}
+                  {trackRef.source === Track.Source.ScreenShare
+                    ? " (Screen)"
+                    : ""}
+                </span>
+              </div>
+            ))}
+          </div>
 
-      {/* Video grid - takes remaining space, videos constrained within */}
-      {videoTracks.length > 0 && (
-        <div style={styles.videoGrid}>
-          {videoTracks.map((trackRef) => (
-            <div
-              key={trackRef.publication.trackSid}
-              style={styles.videoTile}
-            >
-              <VideoTrack
-                trackRef={trackRef}
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "contain",
-                }}
-              />
-              <span style={styles.videoLabel}>
-                {trackRef.participant.name ?? trackRef.participant.identity}
-                {trackRef.source === Track.Source.ScreenShare
-                  ? " (Screen)"
-                  : ""}
-              </span>
-            </div>
-          ))}
+          {/* Compact participant strip below video */}
+          <div style={styles.participantStrip}>
+            {participants.map((p) => {
+              const isBot = p.identity === "concord-music-bot";
+              const isMicMuted = !isBot && !p.isMicrophoneEnabled;
+              const isLocal = p.identity === localParticipant.identity;
+              return (
+                <div key={p.identity} style={styles.participantCompact}>
+                  <div
+                    style={{
+                      ...styles.speakingIndicator,
+                      borderColor: p.isSpeaking ? "var(--success)" : "transparent",
+                    }}
+                  >
+                    <div style={{ ...styles.participantAvatarSmall, background: isBot ? "#57f287" : avatarColor(p.identity) }}>
+                      {isBot ? "M" : (p.name ?? "?").charAt(0).toUpperCase()}
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      ...styles.participantNameSmall,
+                      color: p.isSpeaking ? "var(--success)" : isBot ? "var(--success)" : "var(--text-secondary)",
+                    }}
+                  >
+                    {isBot ? "Music Bot" : (p.name ?? p.identity)}
+                    {isLocal ? " (You)" : ""}
+                  </span>
+                  {isMicMuted && (
+                    <span style={styles.mutedBadge} title="Muted">
+                      <MicOffIcon />
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      ) : (
+        /* ---- Audio-only mode: large centered participant cards ---- */
+        <div style={styles.audioCenter}>
+          <div style={styles.audioCenterInner}>
+            {participants.map((p) => {
+              const isBot = p.identity === "concord-music-bot";
+              const isMicMuted = !isBot && !p.isMicrophoneEnabled;
+              const isLocal = p.identity === localParticipant.identity;
+              return (
+                <div key={p.identity} style={styles.participantCard}>
+                  <div
+                    style={{
+                      ...styles.speakingRing,
+                      boxShadow: p.isSpeaking
+                        ? "0 0 0 3px var(--success)"
+                        : "none",
+                    }}
+                  >
+                    <div
+                      style={{
+                        ...styles.participantAvatarLarge,
+                        background: isBot ? "#57f287" : avatarColor(p.identity),
+                      }}
+                    >
+                      {isBot ? "M" : (p.name ?? "?").charAt(0).toUpperCase()}
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      ...styles.participantCardName,
+                      color: p.isSpeaking
+                        ? "var(--success)"
+                        : isBot
+                          ? "var(--success)"
+                          : "var(--text-primary)",
+                    }}
+                  >
+                    {isBot ? "Music Bot" : (p.name ?? p.identity)}
+                    {isLocal ? " (You)" : ""}
+                  </span>
+                  {isMicMuted && (
+                    <span style={styles.mutedLabel}>
+                      <MicOffIcon /> Muted
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
-      {/* Participant list */}
-      <div style={styles.participants}>
-        {participants.map((p) => {
-          const isBot = p.identity === "concord-music-bot";
-          const isMicMuted = !isBot && !p.isMicrophoneEnabled;
-          const isLocal = p.identity === localParticipant.identity;
-          return (
-            <div key={p.identity} style={styles.participant}>
-              <div
-                style={{
-                  ...styles.speakingIndicator,
-                  borderColor: p.isSpeaking ? "var(--success)" : "transparent",
-                }}
-              >
-                <div style={{ ...styles.participantAvatar, background: isBot ? "#57f287" : avatarColor(p.identity) }}>
-                  {isBot ? "M" : (p.name ?? "?").charAt(0).toUpperCase()}
-                </div>
-              </div>
-              <span
-                style={{
-                  ...styles.participantName,
-                  color: p.isSpeaking ? "var(--success)" : isBot ? "var(--success)" : "var(--text-secondary)",
-                }}
-              >
-                {isBot ? "Music Bot" : (p.name ?? p.identity)}
-                {isLocal ? " (You)" : ""}
-              </span>
-              {isMicMuted && (
-                <span style={styles.mutedBadge} title="Muted">
-                  <MicOffIcon />
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Controls - pinned at bottom */}
+      {/* Controls - always pinned at bottom */}
       <div style={styles.controlBar}>
         <div style={styles.controlBarInfo}>
           <span style={styles.callTimer}>{callTime}</span>
@@ -486,16 +534,63 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: 0,
     overflow: "hidden",
   },
-  header: {
-    padding: "12px 16px",
-    borderBottom: "1px solid var(--bg-primary)",
-    flexShrink: 0,
+
+  // ---- Audio-only mode: centered participant cards ----
+  audioCenter: {
+    flex: 1,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 0,
   },
-  channelLabel: {
-    color: "var(--success)",
+  audioCenterInner: {
+    display: "flex",
+    flexWrap: "wrap" as const,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: "24px",
+    padding: "24px",
+    maxWidth: "600px",
+  },
+  participantCard: {
+    display: "flex",
+    flexDirection: "column" as const,
+    alignItems: "center",
+    gap: "8px",
+    width: "100px",
+  },
+  speakingRing: {
+    borderRadius: "50%",
+    transition: "box-shadow 0.2s ease",
+  },
+  participantAvatarLarge: {
+    width: "72px",
+    height: "72px",
+    borderRadius: "50%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 700,
+    fontSize: "28px",
+    color: "white",
+  },
+  participantCardName: {
+    fontSize: "13px",
     fontWeight: 600,
-    fontSize: "14px",
+    textAlign: "center" as const,
+    lineHeight: "1.2",
+    wordBreak: "break-word" as const,
   },
+  mutedLabel: {
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    fontSize: "11px",
+    color: "var(--text-muted)",
+    opacity: 0.7,
+  },
+
+  // ---- Video mode ----
   videoGrid: {
     flex: 1,
     minHeight: 0,
@@ -523,18 +618,21 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "4px",
     fontSize: "12px",
   },
-  participants: {
+
+  // Compact participant strip (shown below video grid)
+  participantStrip: {
     display: "flex",
     flexWrap: "wrap" as const,
+    justifyContent: "center",
     gap: "8px",
-    padding: "12px 16px",
+    padding: "8px 16px",
     borderTop: "1px solid var(--bg-primary)",
     flexShrink: 0,
   },
-  participant: {
+  participantCompact: {
     display: "flex",
     alignItems: "center",
-    gap: "8px",
+    gap: "6px",
   },
   speakingIndicator: {
     borderRadius: "50%",
@@ -542,19 +640,19 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "2px",
     transition: "border-color 0.15s ease",
   },
-  participantAvatar: {
-    width: "32px",
-    height: "32px",
+  participantAvatarSmall: {
+    width: "28px",
+    height: "28px",
     borderRadius: "50%",
-    background: "var(--accent)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     fontWeight: 600,
-    fontSize: "13px",
+    fontSize: "12px",
+    color: "white",
   },
-  participantName: {
-    fontSize: "13px",
+  participantNameSmall: {
+    fontSize: "12px",
     fontWeight: 500,
   },
   mutedBadge: {
@@ -564,11 +662,13 @@ const styles: Record<string, React.CSSProperties> = {
     opacity: 0.6,
     marginLeft: "-2px",
   },
+
+  // ---- Controls bar (both modes) ----
   controlBar: {
     borderTop: "1px solid var(--bg-primary)",
     background: "var(--bg-secondary)",
     padding: "12px 16px",
-    paddingBottom: "60px", // 12px padding + 48px for music player bar
+    paddingBottom: "60px", // 12px + 48px for music player bar
     flexShrink: 0,
   },
   controlBarInfo: {
