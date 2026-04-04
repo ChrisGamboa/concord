@@ -57,8 +57,12 @@ await app.register(wsHandler);
 // Health check
 app.get("/health", async () => ({ status: "ok" }));
 
-// Graceful shutdown
+// Graceful shutdown with hard exit timeout
 const shutdown = async () => {
+  // Force exit after 3s if cleanup hangs (prevents orphaned processes)
+  const forceExit = setTimeout(() => process.exit(1), 3000);
+  forceExit.unref();
+
   await stopAllMusic();
   await prisma.$disconnect();
   await app.close();
