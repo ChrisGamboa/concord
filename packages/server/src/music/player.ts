@@ -82,14 +82,16 @@ export async function playTrack(
 
     console.log(`[music] Playing "${title}" in ${roomName}`);
 
-    // Pipe ffmpeg PCM output into LiveKit audio frames
+    // Buffer all PCM data from ffmpeg, then drain at real-time rate via captureFrame.
+    // ffmpeg runs at ~150x speed so it finishes in ~1s, but we need to play for minutes.
     let buffer = Buffer.alloc(0);
     let processing = false;
     let stopped = false;
+    let ffmpegDone = false;
     let frameCount = 0;
 
     const processFrames = async () => {
-      if (processing || stopped) return;
+      if (processing) return;
       processing = true;
 
       while (buffer.length >= BYTES_PER_FRAME && !stopped) {
@@ -121,6 +123,23 @@ export async function playTrack(
       }
 
       processing = false;
+
+      // Buffer fully drained after ffmpeg finished -> track is done
+      if (ffmpegDone && buffer.length < BYTES_PER_FRAME && !stopped) {
+        console.log(`[music] Track finished (${frameCount} frames total)`);
+        const player = activePlayers.get(voiceChannelId);
+        if (player?.ffmpeg === ffmpeg) {
+          activePlayers.delete(voiceChannelId);
+          try {
+            await audioTrack.close();
+            await room.disconnect();
+          } catch {
+            // ignore cleanup errors
+          }
+          await cleanupTempDir(tempDir);
+          playNext(voiceChannelId);
+        }
+      }
     };
 
     ffmpeg.stdout?.on("data", (chunk: Buffer) => {
@@ -128,22 +147,10 @@ export async function playTrack(
       processFrames();
     });
 
-    // When ffmpeg finishes, clean up and play next
-    ffmpeg.on("close", async () => {
-      stopped = true;
-      console.log(`[music] Track finished (${frameCount} frames total)`);
-      const player = activePlayers.get(voiceChannelId);
-      if (player?.ffmpeg === ffmpeg) {
-        activePlayers.delete(voiceChannelId);
-        try {
-          await audioTrack.close();
-          await room.disconnect();
-        } catch {
-          // ignore cleanup errors
-        }
-        await cleanupTempDir(tempDir);
-        playNext(voiceChannelId);
-      }
+    // ffmpeg finished outputting data - don't stop, let processFrames drain the buffer
+    ffmpeg.on("close", () => {
+      ffmpegDone = true;
+      processFrames(); // kick in case processFrames is idle
     });
 
     ffmpeg.on("error", async (err) => {
