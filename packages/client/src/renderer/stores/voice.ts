@@ -15,6 +15,8 @@ interface VoiceState {
   joining: boolean;
   error: string;
   isMuted: boolean;
+  /** Per-participant volume (0-1), keyed by participant identity */
+  participantVolumes: Record<string, number>;
   /** Internal: set by VoiceSession when LiveKitRoom connects */
   _room: Room | null;
 
@@ -24,6 +26,7 @@ interface VoiceState {
   setRoom: (room: Room | null) => void;
   setMuted: (muted: boolean) => void;
   toggleMic: () => Promise<void>;
+  setParticipantVolume: (identity: string, volume: number) => void;
 }
 
 export const useVoiceStore = create<VoiceState>()((set, get) => ({
@@ -31,6 +34,7 @@ export const useVoiceStore = create<VoiceState>()((set, get) => ({
   joining: false,
   error: "",
   isMuted: false,
+  participantVolumes: {},
   _room: null,
 
   join: async (serverId, channelId, channelName) => {
@@ -56,7 +60,7 @@ export const useVoiceStore = create<VoiceState>()((set, get) => ({
   },
 
   disconnect: () => {
-    set({ connection: null, error: "", isMuted: false, _room: null });
+    set({ connection: null, error: "", isMuted: false, participantVolumes: {}, _room: null });
   },
 
   clearError: () => set({ error: "" }),
@@ -70,5 +74,19 @@ export const useVoiceStore = create<VoiceState>()((set, get) => ({
     if (!_room) return;
     await _room.localParticipant.setMicrophoneEnabled(isMuted);
     set({ isMuted: !isMuted });
+  },
+
+  setParticipantVolume: (identity, volume) => {
+    const { _room, participantVolumes } = get();
+    // Apply to LiveKit participant
+    if (_room) {
+      for (const p of _room.remoteParticipants.values()) {
+        if (p.identity === identity) {
+          p.setVolume(volume);
+          break;
+        }
+      }
+    }
+    set({ participantVolumes: { ...participantVolumes, [identity]: volume } });
   },
 }));

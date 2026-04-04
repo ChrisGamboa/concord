@@ -13,6 +13,7 @@ import { avatarColor } from "../lib/avatar";
 import { playJoinSelf, playDisconnect, playUserJoined, playUserLeft } from "../lib/sounds";
 import { createRnnoiseTrack } from "../lib/rnnoise-processor";
 import { useVoiceStore } from "../stores/voice";
+import type { RemoteParticipant } from "livekit-client";
 
 // ---- Join prompt: shown when viewing a voice channel you're not connected to ----
 
@@ -174,6 +175,33 @@ function useCallTimer() {
   return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 }
 
+// ---- Volume slider for individual participants ----
+
+function VolumeSlider({ identity }: { identity: string }) {
+  const volume = useVoiceStore((s) => s.participantVolumes[identity] ?? 1);
+  const setVolume = useVoiceStore((s) => s.setParticipantVolume);
+
+  return (
+    <div className="voice-volume" onClick={(e) => e.stopPropagation()}>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.5 }}>
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+        {volume > 0 && <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />}
+        {volume > 0.5 && <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />}
+      </svg>
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.05"
+        value={volume}
+        onChange={(e) => setVolume(identity, parseFloat(e.target.value))}
+        className="voice-volume-slider"
+        title={`Volume: ${Math.round(volume * 100)}%`}
+      />
+    </div>
+  );
+}
+
 // ---- Full voice UI (rendered inside LiveKitRoom when viewing the channel) ----
 
 function VoiceContent({
@@ -218,6 +246,18 @@ function VoiceContent({
 
     prevParticipantIds.current = currentIds;
   }, [participants, localParticipant.identity]);
+
+  // Apply stored volume levels to remote participants
+  const participantVolumes = useVoiceStore((s) => s.participantVolumes);
+  useEffect(() => {
+    for (const p of participants) {
+      if (p.identity === localParticipant.identity) continue;
+      const stored = participantVolumes[p.identity];
+      if (stored !== undefined) {
+        (p as RemoteParticipant).setVolume?.(stored);
+      }
+    }
+  }, [participants, participantVolumes, localParticipant.identity]);
 
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -397,6 +437,7 @@ function VoiceContent({
                       <MicOffIcon /> Muted
                     </span>
                   )}
+                  {!isLocal && <VolumeSlider identity={p.identity} />}
                 </div>
               );
             })}
