@@ -79,7 +79,7 @@ export function spawnFfmpegStream(audioUrl: string) {
     "-f", "s16le",        // raw PCM 16-bit little-endian
     "-acodec", "pcm_s16le",
     "-ar", "48000",        // 48kHz sample rate (Opus standard)
-    "-ac", "2",            // stereo
+    "-ac", "1",            // mono (avoids Opus codec collision with browser stereo params)
     "-",                   // output to stdout
   ], {
     stdio: ["ignore", "pipe", "pipe"],
