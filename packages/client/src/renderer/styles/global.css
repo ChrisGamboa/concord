@@ -115,6 +115,27 @@ a {
   flex-shrink: 0;
 }
 
+.voice-ctx-mute {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px;
+  margin-top: 4px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.voice-ctx-mute:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+
 .voice-volume-slider {
   -webkit-appearance: none;
   appearance: none;
