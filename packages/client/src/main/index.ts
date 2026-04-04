@@ -1,11 +1,9 @@
-import { app, BrowserWindow, desktopCapturer, shell, Notification, ipcMain } from "electron";
+import { app, BrowserWindow, session, shell, Notification, ipcMain } from "electron";
 import { join } from "path";
 import { is } from "@electron-toolkit/utils";
 
-let mainWindow: BrowserWindow | null = null;
-
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  const mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 940,
@@ -18,9 +16,9 @@ function createWindow() {
   });
 
   mainWindow.on("ready-to-show", () => {
-    mainWindow!.show();
+    mainWindow.show();
     if (is.dev) {
-      mainWindow!.webContents.openDevTools({ mode: "bottom" });
+      mainWindow.webContents.openDevTools({ mode: "bottom" });
     }
   });
 
@@ -43,20 +41,18 @@ ipcMain.on("show-notification", (_event, { title, body }: { title: string; body:
   }
 });
 
-// Screen sharing: return available sources to renderer
-ipcMain.handle("get-screen-sources", async () => {
-  const sources = await desktopCapturer.getSources({
-    types: ["screen", "window"],
-    thumbnailSize: { width: 320, height: 180 },
-  });
-  return sources.map((s) => ({
-    id: s.id,
-    name: s.name,
-    thumbnail: s.thumbnail.toDataURL(),
-  }));
-});
-
 app.whenReady().then(() => {
+  // Screen sharing: use the native OS picker (macOS Sequoia+, Windows, etc.)
+  // This properly handles window-specific capture on all platforms.
+  // With useSystemPicker, the OS native picker handles source selection directly.
+  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+    // Fallback if system picker isn't available: grant first screen
+    const { desktopCapturer } = require("electron");
+    desktopCapturer.getSources({ types: ["screen"] }).then((sources: any[]) => {
+      callback({ video: sources[0] });
+    });
+  }, { useSystemPicker: true });
+
   createWindow();
 
   app.on("activate", () => {

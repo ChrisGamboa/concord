@@ -8,8 +8,7 @@ import {
   useTracks,
   VideoTrack,
 } from "@livekit/components-react";
-import { Track, VideoPresets, LocalVideoTrack } from "livekit-client";
-import { ScreenPicker } from "./ScreenPicker";
+import { Track, VideoPresets } from "livekit-client";
 import { avatarColor, avatarUrl } from "../lib/avatar";
 import { playJoinSelf, playDisconnect, playUserJoined, playUserLeft } from "../lib/sounds";
 import { createRnnoiseTrack } from "../lib/rnnoise-processor";
@@ -409,53 +408,16 @@ function VoiceContent({
     setIsCameraOn(next);
   };
 
-  const [showScreenPicker, setShowScreenPicker] = useState(false);
-  const screenTrackRef = useRef<LocalVideoTrack | null>(null);
-
   const toggleScreenShare = async () => {
-    if (isScreenSharing) {
-      // Stop sharing
-      if (screenTrackRef.current) {
-        await localParticipant.unpublishTrack(screenTrackRef.current);
-        screenTrackRef.current.stop();
-        screenTrackRef.current = null;
-      }
-      setIsScreenSharing(false);
-    } else {
-      // Show picker
-      setShowScreenPicker(true);
-    }
-  };
-
-  const handleScreenSourceSelected = async (sourceId: string) => {
-    setShowScreenPicker(false);
+    const next = !isScreenSharing;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          mandatory: {
-            chromeMediaSource: "desktop",
-            chromeMediaSourceId: sourceId,
-            maxWidth: 1920,
-            maxHeight: 1080,
-            maxFrameRate: 60,
-          },
-        } as any,
+      await localParticipant.setScreenShareEnabled(next, {
+        resolution: { width: 1920, height: 1080, frameRate: 60 },
+        contentHint: "detail",
       });
-      const videoTrack = stream.getVideoTracks()[0];
-      const track = new LocalVideoTrack(videoTrack, undefined, false);
-      await localParticipant.publishTrack(track, {
-        source: Track.Source.ScreenShare,
-        videoCodec: "vp9",
-        videoEncoding: {
-          maxBitrate: 5_000_000,
-          maxFramerate: 60,
-        },
-      });
-      screenTrackRef.current = track;
-      setIsScreenSharing(true);
-    } catch (err) {
-      console.error("[screenshare] Failed:", err);
+      setIsScreenSharing(next);
+    } catch {
+      // User cancelled the picker
     }
   };
 
@@ -655,14 +617,6 @@ function VoiceContent({
           </button>
         </div>
       </div>
-
-      {/* Screen source picker */}
-      {showScreenPicker && (
-        <ScreenPicker
-          onSelect={handleScreenSourceSelected}
-          onCancel={() => setShowScreenPicker(false)}
-        />
-      )}
 
       {/* Right-click volume menu */}
       {volumeMenu && (() => {
