@@ -93,6 +93,7 @@ export function VoiceSession({ isViewing }: { isViewing: boolean }) {
       }}
       style={isViewing ? styles.room : styles.roomHidden}
     >
+      <VoiceStoreSync />
       <RoomAudioRenderer />
       {isViewing && (
         <VoiceContent
@@ -135,6 +136,25 @@ const PhoneOffIcon = () => (
     <line x1="23" y1="1" x2="1" y2="23" />
   </svg>
 );
+
+/** Syncs LiveKit room state to the voice store so components outside LiveKitRoom can read/control it */
+function VoiceStoreSync() {
+  const room = useRoomContext();
+  const { localParticipant } = useLocalParticipant();
+  const setRoom = useVoiceStore((s) => s.setRoom);
+  const setMuted = useVoiceStore((s) => s.setMuted);
+
+  useEffect(() => {
+    setRoom(room);
+    return () => setRoom(null);
+  }, [room, setRoom]);
+
+  useEffect(() => {
+    setMuted(!localParticipant.isMicrophoneEnabled);
+  }, [localParticipant.isMicrophoneEnabled, setMuted]);
+
+  return null;
+}
 
 function useCallTimer() {
   const [elapsed, setElapsed] = useState(0);
