@@ -434,7 +434,7 @@ function VoiceContent({
                   style={{
                     width: "100%",
                     height: "100%",
-                    objectFit: "cover",
+                    objectFit: "contain",
                   }}
                 />
                 <span style={styles.videoLabel}>
@@ -466,7 +466,7 @@ function VoiceContent({
                   >
                     {!isBot && getParticipantAvatar(p.metadata) ? (
                       <img
-                        style={{ ...styles.participantAvatarSmall, objectFit: "cover" }}
+                        style={{ ...styles.participantAvatarSmall, objectFit: "contain" }}
                         src={getParticipantAvatar(p.metadata)!}
                         alt=""
                       />
@@ -518,7 +518,7 @@ function VoiceContent({
                   >
                     {!isBot && getParticipantAvatar(p.metadata) ? (
                       <img
-                        style={{ ...styles.participantAvatarLarge, objectFit: "cover" }}
+                        style={{ ...styles.participantAvatarLarge, objectFit: "contain" }}
                         src={getParticipantAvatar(p.metadata)!}
                         alt=""
                       />
@@ -742,17 +742,17 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: 0,
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-    gridAutoRows: "1fr",
     gap: "4px",
     padding: "8px",
-    overflow: "hidden",
+    overflowY: "auto" as const,
+    alignContent: "center",
   },
   videoTile: {
     position: "relative" as const,
     background: "#000",
     borderRadius: "8px",
     overflow: "hidden",
-    minHeight: 0,
+    aspectRatio: "16/9",
   },
   videoLabel: {
     position: "absolute" as const,
