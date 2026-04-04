@@ -512,9 +512,8 @@ a {
   padding: 0;
   margin-bottom: 8px;
   break-inside: avoid;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 100%;
+  display: inline-block;
   transition: transform 0.1s, box-shadow 0.1s;
 }
 
