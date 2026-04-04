@@ -82,6 +82,7 @@ export function VoiceSession({ isViewing }: { isViewing: boolean }) {
         publishDefaults: {
           audioPreset: { maxBitrate: 128_000 },
           dtx: false,
+          red: false,
           videoCodec: "vp9",
           screenShareEncoding: {
             maxBitrate: 5_000_000,
