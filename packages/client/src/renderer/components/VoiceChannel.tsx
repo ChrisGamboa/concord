@@ -175,29 +175,81 @@ function useCallTimer() {
   return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 }
 
-// ---- Volume slider for individual participants ----
+// ---- Right-click volume menu for participants ----
 
-function VolumeSlider({ identity }: { identity: string }) {
+function useParticipantContextMenu() {
+  const [menu, setMenu] = useState<{ identity: string; x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("contextmenu", close);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("contextmenu", close);
+    };
+  }, [menu]);
+
+  const onContextMenu = useCallback((e: React.MouseEvent, identity: string) => {
+    e.preventDefault();
+    setMenu({ identity, x: e.clientX, y: e.clientY });
+  }, []);
+
+  return { menu, onContextMenu, closeMenu: () => setMenu(null) };
+}
+
+function ParticipantVolumeMenu({
+  identity,
+  name,
+  x,
+  y,
+}: {
+  identity: string;
+  name: string;
+  x: number;
+  y: number;
+}) {
   const volume = useVoiceStore((s) => s.participantVolumes[identity] ?? 1);
   const setVolume = useVoiceStore((s) => s.setParticipantVolume);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Adjust position so menu doesn't go off-screen
+  const [pos, setPos] = useState({ left: x, top: y });
+  useEffect(() => {
+    if (menuRef.current) {
+      const rect = menuRef.current.getBoundingClientRect();
+      const left = Math.min(x, window.innerWidth - rect.width - 8);
+      const top = Math.min(y, window.innerHeight - rect.height - 8);
+      setPos({ left, top });
+    }
+  }, [x, y]);
 
   return (
-    <div className="voice-volume" onClick={(e) => e.stopPropagation()}>
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.5 }}>
-        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-        {volume > 0 && <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />}
-        {volume > 0.5 && <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />}
-      </svg>
-      <input
-        type="range"
-        min="0"
-        max="1"
-        step="0.05"
-        value={volume}
-        onChange={(e) => setVolume(identity, parseFloat(e.target.value))}
-        className="voice-volume-slider"
-        title={`Volume: ${Math.round(volume * 100)}%`}
-      />
+    <div
+      ref={menuRef}
+      className="voice-ctx-menu"
+      style={{ left: pos.left, top: pos.top }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="voice-ctx-header">{name}</div>
+      <div className="voice-ctx-row">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+          {volume > 0 && <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />}
+          {volume > 0.5 && <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />}
+        </svg>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          value={volume}
+          onChange={(e) => setVolume(identity, parseFloat(e.target.value))}
+          className="voice-volume-slider"
+        />
+        <span className="voice-ctx-pct">{Math.round(volume * 100)}%</span>
+      </div>
     </div>
   );
 }
@@ -214,6 +266,7 @@ function VoiceContent({
   const room = useRoomContext();
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
+  const { menu: volumeMenu, onContextMenu: onParticipantRightClick } = useParticipantContextMenu();
 
   // Track participant join/leave for sound effects
   const prevParticipantIds = useRef<Set<string>>(new Set());
@@ -363,7 +416,11 @@ function VoiceContent({
               const isMicMuted = !isBot && !p.isMicrophoneEnabled;
               const isLocal = p.identity === localParticipant.identity;
               return (
-                <div key={p.identity} style={styles.participantCompact}>
+                <div
+                  key={p.identity}
+                  style={styles.participantCompact}
+                  onContextMenu={!isLocal ? (e) => onParticipantRightClick(e, p.identity) : undefined}
+                >
                   <div
                     style={{
                       ...styles.speakingIndicator,
@@ -401,7 +458,11 @@ function VoiceContent({
               const isMicMuted = !isBot && !p.isMicrophoneEnabled;
               const isLocal = p.identity === localParticipant.identity;
               return (
-                <div key={p.identity} style={styles.participantCard}>
+                <div
+                  key={p.identity}
+                  style={styles.participantCard}
+                  onContextMenu={!isLocal ? (e) => onParticipantRightClick(e, p.identity) : undefined}
+                >
                   <div
                     style={{
                       ...styles.speakingRing,
@@ -437,7 +498,6 @@ function VoiceContent({
                       <MicOffIcon /> Muted
                     </span>
                   )}
-                  {!isLocal && <VolumeSlider identity={p.identity} />}
                 </div>
               );
             })}
@@ -500,6 +560,21 @@ function VoiceContent({
           </button>
         </div>
       </div>
+
+      {/* Right-click volume menu */}
+      {volumeMenu && (() => {
+        const p = participants.find((p) => p.identity === volumeMenu.identity);
+        if (!p) return null;
+        const isBot = p.identity === "concord-music-bot";
+        return (
+          <ParticipantVolumeMenu
+            identity={volumeMenu.identity}
+            name={isBot ? "Music Bot" : (p.name ?? p.identity)}
+            x={volumeMenu.x}
+            y={volumeMenu.y}
+          />
+        );
+      })()}
     </div>
   );
 }

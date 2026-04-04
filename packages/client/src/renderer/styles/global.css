@@ -76,22 +76,50 @@ a {
   border-radius: 4px;
 }
 
-/* ---- Per-participant volume slider ---- */
+/* ---- Participant context menu (volume) ---- */
 
-.voice-volume {
+.voice-ctx-menu {
+  position: fixed;
+  z-index: 200;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  min-width: 180px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.voice-ctx-header {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  padding: 4px 6px 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+
+.voice-ctx-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-top: 2px;
+  gap: 8px;
+  padding: 2px 6px;
   color: var(--text-muted);
+}
+
+.voice-ctx-pct {
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 28px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .voice-volume-slider {
   -webkit-appearance: none;
   appearance: none;
-  width: 64px;
+  flex: 1;
   height: 4px;
-  background: var(--bg-primary);
+  background: var(--bg-tertiary);
   border-radius: 2px;
   outline: none;
   cursor: pointer;
@@ -100,8 +128,8 @@ a {
 .voice-volume-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   background: var(--text-secondary);
   border-radius: 50%;
   cursor: pointer;
