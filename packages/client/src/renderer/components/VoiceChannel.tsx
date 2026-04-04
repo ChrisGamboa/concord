@@ -321,71 +321,74 @@ function VoiceContent({
         </span>
       </div>
 
-      {/* Video grid */}
-      {videoTracks.length > 0 && (
-        <div style={styles.videoGrid}>
-          {videoTracks.map((trackRef) => (
-            <div
-              key={trackRef.publication.trackSid}
-              style={styles.videoTile}
-            >
-              <VideoTrack
-                trackRef={trackRef}
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "contain",
-                }}
-              />
-              <span style={styles.videoLabel}>
-                {trackRef.participant.name ?? trackRef.participant.identity}
-                {trackRef.source === Track.Source.ScreenShare
-                  ? " (Screen)"
-                  : ""}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Participant list */}
-      <div style={styles.participants}>
-        {participants.map((p) => {
-          const isBot = p.identity === "concord-music-bot";
-          const isMicMuted = !isBot && !p.isMicrophoneEnabled;
-          const isLocal = p.identity === localParticipant.identity;
-          return (
-            <div key={p.identity} style={styles.participant}>
+      {/* Scrollable content area */}
+      <div style={styles.scrollArea}>
+        {/* Video grid */}
+        {videoTracks.length > 0 && (
+          <div style={styles.videoGrid}>
+            {videoTracks.map((trackRef) => (
               <div
-                style={{
-                  ...styles.speakingIndicator,
-                  borderColor: p.isSpeaking ? "var(--success)" : "transparent",
-                }}
+                key={trackRef.publication.trackSid}
+                style={styles.videoTile}
               >
-                <div style={{ ...styles.participantAvatar, background: isBot ? "#57f287" : avatarColor(p.identity) }}>
-                  {isBot ? "M" : (p.name ?? "?").charAt(0).toUpperCase()}
-                </div>
-              </div>
-              <span
-                style={{
-                  ...styles.participantName,
-                  color: p.isSpeaking ? "var(--success)" : isBot ? "var(--success)" : "var(--text-secondary)",
-                }}
-              >
-                {isBot ? "Music Bot" : (p.name ?? p.identity)}
-                {isLocal ? " (You)" : ""}
-              </span>
-              {isMicMuted && (
-                <span style={styles.mutedBadge} title="Muted">
-                  <MicOffIcon />
+                <VideoTrack
+                  trackRef={trackRef}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "contain",
+                  }}
+                />
+                <span style={styles.videoLabel}>
+                  {trackRef.participant.name ?? trackRef.participant.identity}
+                  {trackRef.source === Track.Source.ScreenShare
+                    ? " (Screen)"
+                    : ""}
                 </span>
-              )}
-            </div>
-          );
-        })}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Participant list */}
+        <div style={styles.participants}>
+          {participants.map((p) => {
+            const isBot = p.identity === "concord-music-bot";
+            const isMicMuted = !isBot && !p.isMicrophoneEnabled;
+            const isLocal = p.identity === localParticipant.identity;
+            return (
+              <div key={p.identity} style={styles.participant}>
+                <div
+                  style={{
+                    ...styles.speakingIndicator,
+                    borderColor: p.isSpeaking ? "var(--success)" : "transparent",
+                  }}
+                >
+                  <div style={{ ...styles.participantAvatar, background: isBot ? "#57f287" : avatarColor(p.identity) }}>
+                    {isBot ? "M" : (p.name ?? "?").charAt(0).toUpperCase()}
+                  </div>
+                </div>
+                <span
+                  style={{
+                    ...styles.participantName,
+                    color: p.isSpeaking ? "var(--success)" : isBot ? "var(--success)" : "var(--text-secondary)",
+                  }}
+                >
+                  {isBot ? "Music Bot" : (p.name ?? p.identity)}
+                  {isLocal ? " (You)" : ""}
+                </span>
+                {isMicMuted && (
+                  <span style={styles.mutedBadge} title="Muted">
+                    <MicOffIcon />
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Controls */}
+      {/* Controls - pinned at bottom */}
       <div style={styles.controlBar}>
         <div style={styles.controlBarInfo}>
           <span style={styles.callTimer}>{callTime}</span>
@@ -475,12 +478,16 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column" as const,
     background: "var(--bg-chat)",
+    minHeight: 0,
+    overflow: "hidden",
   },
   voiceContainer: {
     flex: 1,
     display: "flex",
     flexDirection: "column" as const,
     height: "100%",
+    minHeight: 0,
+    overflow: "hidden",
   },
   header: {
     padding: "12px 16px",
@@ -492,14 +499,17 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     fontSize: "14px",
   },
-  videoGrid: {
+  scrollArea: {
     flex: 1,
+    minHeight: 0,
+    overflowY: "auto" as const,
+    paddingBottom: "48px", // space for music player bar
+  },
+  videoGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
     gap: "4px",
     padding: "8px",
-    minHeight: 0,
-    overflow: "auto",
   },
   videoTile: {
     position: "relative" as const,
