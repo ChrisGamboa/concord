@@ -8,7 +8,7 @@ import {
   TrackPublishOptions,
   TrackSource,
 } from "@livekit/rtc-node";
-import { getAudioStreamInfo, spawnFfmpegStream } from "./ytdlp.js";
+import { downloadAudio, spawnFfmpegStream, cleanupTempDir } from "./ytdlp.js";
 import { popNext, setPlaying, setNotPlaying } from "./queue.js";
 import { createLiveKitToken, voiceRoomName } from "../livekit.js";
 import { env } from "../env.js";
@@ -25,13 +25,14 @@ interface ActivePlayer {
   ffmpeg: ChildProcess;
   room: Room;
   track: MusicQueueItem;
+  tempDir: string;
 }
 
 const activePlayers = new Map<string, ActivePlayer>();
 
 /**
  * Start playing a track in a voice channel by joining the LiveKit room
- * as a bot participant and publishing audio from yt-dlp piped through ffmpeg.
+ * as a bot participant and streaming audio from a downloaded file.
  */
 export async function playTrack(
   voiceChannelId: string,
@@ -43,7 +44,8 @@ export async function playTrack(
   await stopPlayback(voiceChannelId);
 
   try {
-    const { streamUrl, title, httpHeaders } = await getAudioStreamInfo(track.url);
+    // Download audio to temp file (yt-dlp handles DASH/auth/format conversion)
+    const { filePath, tempDir, title } = await downloadAudio(track.url);
     const roomName = voiceRoomName(voiceChannelId);
 
     // Create a token for the music bot to join the room
@@ -72,10 +74,10 @@ export async function playTrack(
     publishOptions.dtx = false;
     await room.localParticipant!.publishTrack(audioTrack, publishOptions);
 
-    // Spawn ffmpeg with proper HTTP headers for the CDN URL
-    const ffmpeg = spawnFfmpegStream(streamUrl, httpHeaders);
+    // Stream from the downloaded file via ffmpeg
+    const ffmpeg = spawnFfmpegStream(filePath);
 
-    activePlayers.set(voiceChannelId, { ffmpeg, room, track });
+    activePlayers.set(voiceChannelId, { ffmpeg, room, track, tempDir });
     setPlaying(voiceChannelId, { ...track, title });
 
     console.log(`[music] Playing "${title}" in ${roomName}`);
@@ -94,7 +96,6 @@ export async function playTrack(
         const frameData = buffer.subarray(0, BYTES_PER_FRAME);
         buffer = buffer.subarray(BYTES_PER_FRAME);
 
-        // Copy to a new aligned buffer for Int16Array
         const aligned = new ArrayBuffer(BYTES_PER_FRAME);
         new Uint8Array(aligned).set(frameData);
         const int16 = new Int16Array(aligned);
@@ -140,6 +141,7 @@ export async function playTrack(
         } catch {
           // ignore cleanup errors
         }
+        await cleanupTempDir(tempDir);
         playNext(voiceChannelId);
       }
     });
@@ -156,6 +158,7 @@ export async function playTrack(
         } catch {
           // ignore cleanup errors
         }
+        await cleanupTempDir(tempDir);
         setNotPlaying(voiceChannelId);
       }
     });
@@ -193,6 +196,7 @@ export async function stopPlayback(voiceChannelId: string): Promise<void> {
     } catch {
       // ignore
     }
+    await cleanupTempDir(player.tempDir);
     activePlayers.delete(voiceChannelId);
   }
   setNotPlaying(voiceChannelId);

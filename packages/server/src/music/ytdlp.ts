@@ -1,5 +1,8 @@
 import { spawn, execFile, type ChildProcess } from "child_process";
 import { promisify } from "util";
+import { mkdtemp, rm } from "fs/promises";
+import { join } from "path";
+import { tmpdir } from "os";
 import type { MusicSearchResult } from "@concord/shared";
 
 const execFileAsync = promisify(execFile);
@@ -40,71 +43,58 @@ export async function searchYouTube(
 }
 
 /**
- * Get the direct audio stream URL and HTTP headers for a YouTube video.
+ * Download audio to a temp file using yt-dlp, then return metadata and file path.
+ * yt-dlp handles all YouTube auth, DASH segments, and format conversion.
  */
-export async function getAudioStreamInfo(url: string): Promise<{
-  streamUrl: string;
+export async function downloadAudio(url: string): Promise<{
+  filePath: string;
+  tempDir: string;
   title: string;
   duration: number;
-  httpHeaders: Record<string, string>;
 }> {
-  console.log(`[yt-dlp] Getting audio stream info for: ${url}`);
+  const tempDir = await mkdtemp(join(tmpdir(), "concord-music-"));
+  const outputTemplate = join(tempDir, "audio.%(ext)s");
+
+  console.log(`[yt-dlp] Downloading audio for: ${url}`);
   const { stdout } = await execFileAsync("yt-dlp", [
     url,
-    "--dump-json",
     "-f", "bestaudio",
-    "--no-download",
+    "-x",                     // extract audio
+    "--audio-format", "opus", // convert to opus (fast, good quality)
+    "-o", outputTemplate,
+    "--print-json",
     "--no-warnings",
-  ], { timeout: 30_000 });
+  ], { timeout: 120_000 }); // 2 min timeout for download
 
   const data = JSON.parse(stdout.trim());
-  if (!data.url) {
-    throw new Error(`yt-dlp returned no stream URL for: ${url}`);
-  }
-  const httpHeaders: Record<string, string> = data.http_headers ?? {};
-  console.log(`[yt-dlp] Got stream URL for "${data.title}" (${data.duration}s)`);
+  // yt-dlp renames the file after post-processing
+  const filePath = data.filepath ?? data._filename ?? join(tempDir, "audio.opus");
+  console.log(`[yt-dlp] Downloaded "${data.title}" (${data.duration}s) -> ${filePath}`);
+
   return {
-    streamUrl: data.url,
+    filePath,
+    tempDir,
     title: data.title ?? "Unknown",
     duration: data.duration ?? 0,
-    httpHeaders,
   };
 }
 
 /**
- * Spawn an ffmpeg process that reads from a URL (with proper HTTP headers)
- * and outputs raw PCM audio.
+ * Spawn ffmpeg to read a local audio file and output raw PCM.
  */
-export function spawnFfmpegStream(audioUrl: string, httpHeaders: Record<string, string>): ChildProcess {
-  // Build ffmpeg HTTP header string: "Key: Value\r\nKey: Value\r\n"
-  const headerStr = Object.entries(httpHeaders)
-    .map(([k, v]) => `${k}: ${v}`)
-    .join("\r\n");
-
-  const args: string[] = [];
-
-  if (headerStr) {
-    args.push("-headers", headerStr + "\r\n");
-  }
-
-  args.push(
-    "-reconnect", "1",
-    "-reconnect_streamed", "1",
-    "-reconnect_delay_max", "5",
-    "-i", audioUrl,
+export function spawnFfmpegStream(filePath: string): ChildProcess {
+  const proc = spawn("ffmpeg", [
+    "-i", filePath,
     "-vn",
     "-f", "s16le",
     "-acodec", "pcm_s16le",
     "-ar", "48000",
     "-ac", "2",
     "-",
-  );
-
-  const proc = spawn("ffmpeg", args, {
+  ], {
     stdio: ["ignore", "pipe", "pipe"],
   });
 
-  // Log ffmpeg errors for debugging
   let stderrBuf = "";
   proc.stderr?.on("data", (chunk: Buffer) => { stderrBuf += chunk.toString(); });
   proc.on("close", (code) => {
@@ -114,6 +104,17 @@ export function spawnFfmpegStream(audioUrl: string, httpHeaders: Record<string, 
   });
 
   return proc;
+}
+
+/**
+ * Clean up a temp directory.
+ */
+export async function cleanupTempDir(tempDir: string): Promise<void> {
+  try {
+    await rm(tempDir, { recursive: true, force: true });
+  } catch {
+    // ignore cleanup errors
+  }
 }
 
 /**
