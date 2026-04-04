@@ -282,12 +282,14 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
   header: {
-    padding: "12px 16px",
+    height: "48px",
+    padding: "0 16px",
     borderBottom: "1px solid var(--bg-primary)",
     boxShadow: "0 1px 0 rgba(0,0,0,0.2)",
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
+    flexShrink: 0,
   },
   serverName: {
     fontSize: "15px",
