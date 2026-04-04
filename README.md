@@ -6,13 +6,21 @@ Self-hostable Discord alternative built with TypeScript.
 
 - Text channels with real-time messaging (WebSocket)
 - Voice chat, video chat (1080p60), and screen sharing via LiveKit
+- **Persistent voice sessions** -- stay connected while browsing text channels
 - Music streaming from YouTube into voice channels (yt-dlp + LiveKit)
+  - Debounced search-as-you-type
+  - Queue management with drag-to-remove and clear
+  - Pause/resume playback (affects all participants)
+  - Skip and stop controls
+  - Prefetches next track for near-gapless playback
+  - Two-column panel layout (search + queue side by side)
+- **Per-participant volume control** -- right-click any participant to adjust their volume or mute them (client-side only)
 - File uploads with drag-and-drop and inline image embeds
 - Typing indicators and user presence (online/offline)
 - Message editing and deletion
 - Permission system (bitmask roles)
 - Desktop notifications
-- Krisp ML noise suppression for voice
+- RNNoise ML noise suppression for voice (WebAssembly AudioWorklet)
 
 ## Tech Stack
 
@@ -102,14 +110,19 @@ The Electron app opens with DevTools (in dev mode). Register an account and crea
 - Click a voice channel in the sidebar
 - Click "Join Voice" to connect
 - Use the control bar: Mic (toggle mute), Cam (toggle camera), Screen (share screen), Leave
-- Other participants appear in the voice channel listing in the sidebar
+- **Voice persists across navigation** -- switch to text channels while staying in the call
+- The sidebar shows your voice connection status with mute toggle, return-to-call, and disconnect buttons
+- Right-click any participant to adjust their volume or mute them on your client
+- Audio-only calls show large centered participant cards; video calls show a responsive grid
 
 ### Music
-- While viewing a voice channel, the music bar appears at the bottom
-- Click it to expand the panel
-- Search YouTube and click a result to queue it
-- The music bot joins the voice room and streams audio to all participants
-- Use Skip/Stop to control playback
+- While connected to a voice channel, the music bar appears at the bottom
+- Click it to expand the panel with search (left) and queue (right)
+- Type to search YouTube -- results appear as you type (debounced)
+- Click a result to queue it; the music bot joins and streams audio to all participants
+- Controls: Pause/Resume, Skip, Stop
+- The next queued track is prefetched in the background for minimal gap between songs
+- Queue songs while browsing text channels -- the music bar stays visible
 
 **Note:** Music requires `yt-dlp` and `ffmpeg` installed on the machine running the server.
 
