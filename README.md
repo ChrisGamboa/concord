@@ -15,6 +15,7 @@ Self-hostable Discord alternative built with TypeScript.
   - Prefetches next track for near-gapless playback
   - Two-column panel layout (search + queue side by side)
 - **Per-participant volume control** -- right-click any participant to adjust their volume or mute them (client-side only)
+- **User profiles** -- customizable display name and avatar (auto-cropped to 256x256 WebP)
 - File uploads with drag-and-drop and inline image embeds
 - Typing indicators and user presence (online/offline)
 - Message editing and deletion
@@ -28,6 +29,7 @@ Self-hostable Discord alternative built with TypeScript.
 - **Server:** Fastify + Prisma + PostgreSQL + Redis
 - **Real-time:** WebSockets (chat) + LiveKit WebRTC (voice/video)
 - **Music:** yt-dlp + ffmpeg + @livekit/rtc-node (server-side audio injection)
+- **Image processing:** sharp (avatar resize/crop)
 
 ## Prerequisites
 
@@ -126,11 +128,13 @@ The Electron app opens with DevTools (in dev mode). Register an account and crea
 
 **Note:** Music requires `yt-dlp` and `ffmpeg` installed on the machine running the server.
 
-### Settings
-- Click the "S" button at the bottom of the server list
-- Configure audio input/output devices and camera
-- Toggle desktop notifications
-- Log out from here
+### Profile & Settings
+- Click the gear icon at the bottom of the server list to open Settings
+- **My Account**: profile preview card, upload/remove avatar, edit display name inline
+- **Notifications**: toggle desktop notifications with a switch
+- **Voice & Audio**: select input/output devices
+- **Video**: select camera
+- Log out from the sidebar
 
 ## Environment Variables
 
