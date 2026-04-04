@@ -124,6 +124,11 @@ export const api = {
   musicStop: (voiceChannelId: string) =>
     request<MusicState>(`/music/stop/${voiceChannelId}`, { method: "POST" }),
 
+  musicRemoveFromQueue: (voiceChannelId: string, index: number) =>
+    request<MusicState>(`/music/queue/${voiceChannelId}/${index}`, {
+      method: "DELETE",
+    }),
+
   musicClearQueue: (voiceChannelId: string) =>
     request<MusicState>(`/music/queue/${voiceChannelId}`, { method: "DELETE" }),
 

@@ -1,4 +1,10 @@
-import { useState, useEffect, useCallback, type FormEvent } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  type ChangeEvent,
+} from "react";
 import { useParams } from "react-router-dom";
 import { useChatStore } from "../stores/chat";
 import { ChannelType } from "@concord/shared";
@@ -17,6 +23,8 @@ export function MusicPlayer() {
   const [searching, setSearching] = useState(false);
   const [musicState, setMusicState] = useState<MusicState | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Clear stale state when leaving voice channel
   useEffect(() => {
@@ -41,23 +49,50 @@ export function MusicPlayer() {
     return () => clearInterval(interval);
   }, [voiceChannelId]);
 
-  const handleSearch = useCallback(
-    async (e: FormEvent) => {
-      e.preventDefault();
-      if (!searchQuery.trim()) return;
+  // Focus search input when panel opens
+  useEffect(() => {
+    if (expanded) {
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [expanded]);
+
+  // Debounced search
+  const doSearch = useCallback(
+    async (query: string) => {
+      if (!query.trim()) {
+        setSearchResults([]);
+        return;
+      }
       setSearching(true);
       try {
-        const res = await api.musicSearch(searchQuery.trim());
+        const res = await api.musicSearch(query.trim());
         setSearchResults(res.results);
-      } catch (err) {
-        console.error("Search failed:", err);
+      } catch {
         setSearchResults([]);
       } finally {
         setSearching(false);
       }
     },
-    [searchQuery]
+    []
   );
+
+  const handleSearchInput = useCallback(
+    (e: ChangeEvent<HTMLInputElement>) => {
+      const value = e.target.value;
+      setSearchQuery(value);
+
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => doSearch(value), 300);
+    },
+    [doSearch]
+  );
+
+  // Cleanup debounce on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
 
   const handleAddToQueue = useCallback(
     async (result: MusicSearchResult) => {
@@ -75,6 +110,21 @@ export function MusicPlayer() {
     [voiceChannelId]
   );
 
+  const handleRemoveFromQueue = useCallback(
+    async (index: number) => {
+      if (!voiceChannelId) return;
+      const state = await api.musicRemoveFromQueue(voiceChannelId, index);
+      setMusicState(state);
+    },
+    [voiceChannelId]
+  );
+
+  const handleClearQueue = useCallback(async () => {
+    if (!voiceChannelId) return;
+    const state = await api.musicClearQueue(voiceChannelId);
+    setMusicState(state);
+  }, [voiceChannelId]);
+
   const handleSkip = useCallback(async () => {
     if (!voiceChannelId) return;
     const state = await api.musicSkip(voiceChannelId);
@@ -89,101 +139,196 @@ export function MusicPlayer() {
 
   if (!isVoiceChannel || !voiceChannelId) return null;
 
+  const isPlaying = musicState?.isPlaying && musicState.currentTrack;
+  const hasQueue = musicState && musicState.queue.length > 0;
+
   return (
-    <div style={styles.container}>
-      <button
+    <div className="music-player">
+      {/* Collapsed bar */}
+      <div
+        className={`music-bar ${!isPlaying ? "music-bar-idle" : ""}`}
         onClick={() => setExpanded(!expanded)}
-        style={styles.toggleButton}
       >
-        {musicState?.isPlaying ? "Now Playing" : "Music"}
-        {musicState?.isPlaying && musicState.currentTrack && (
-          <span style={styles.nowPlayingText}>
-            {" "}
-            - {musicState.currentTrack.title}
+        {isPlaying && musicState.currentTrack?.thumbnail ? (
+          <img
+            className="music-bar-thumbnail"
+            src={musicState.currentTrack.thumbnail}
+            alt=""
+          />
+        ) : null}
+
+        <div className="music-bar-info">
+          <span className="music-bar-label">
+            {isPlaying ? "Now Playing" : "Music"}
           </span>
-        )}
-      </button>
-
-      {expanded && (
-        <div style={styles.panel}>
-          {/* Now Playing */}
-          {musicState?.currentTrack && (
-            <div style={styles.nowPlaying}>
-              <div style={styles.trackInfo}>
-                <span style={styles.trackTitle}>
-                  {musicState.currentTrack.title}
-                </span>
-                <span style={styles.trackDuration}>
-                  {formatDuration(musicState.currentTrack.duration)}
-                </span>
-              </div>
-              <div style={styles.playbackControls}>
-                <button onClick={handleSkip} style={styles.smallButton}>
-                  Skip
-                </button>
-                <button onClick={handleStop} style={styles.smallButton}>
-                  Stop
-                </button>
-              </div>
-            </div>
+          {isPlaying && (
+            <span className="music-bar-title">
+              {musicState.currentTrack!.title}
+            </span>
           )}
+        </div>
 
-          {/* Queue */}
-          {musicState && musicState.queue.length > 0 && (
-            <div style={styles.queue}>
-              <span style={styles.queueLabel}>
-                Queue ({musicState.queue.length})
+        {isPlaying && (
+          <div
+            className="music-bar-controls"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="music-ctrl-btn"
+              onClick={handleSkip}
+              title="Skip"
+            >
+              {ICON_SKIP}
+            </button>
+            <button
+              className="music-ctrl-btn music-ctrl-btn--danger"
+              onClick={handleStop}
+              title="Stop"
+            >
+              {ICON_STOP}
+            </button>
+          </div>
+        )}
+
+        <span
+          className={`music-chevron ${expanded ? "music-chevron--open" : ""}`}
+        >
+          {ICON_CHEVRON}
+        </span>
+      </div>
+
+      {/* Expandable panel */}
+      <div className={`music-panel ${expanded ? "music-panel--open" : ""}`}>
+        {/* Now Playing detail */}
+        {isPlaying && (
+          <div className="music-now-playing">
+            {musicState.currentTrack?.thumbnail ? (
+              <img
+                className="music-now-thumb"
+                src={musicState.currentTrack.thumbnail}
+                alt=""
+              />
+            ) : (
+              <div className="music-now-thumb-placeholder">{ICON_NOTE}</div>
+            )}
+            <div className="music-now-info">
+              <span className="music-now-label">Now Playing</span>
+              <span className="music-now-title">
+                {musicState.currentTrack!.title}
               </span>
-              {musicState.queue.map((item, i) => (
-                <div key={item.id} style={styles.queueItem}>
-                  <span style={styles.queueIndex}>{i + 1}.</span>
-                  <span style={styles.queueTitle}>{item.title}</span>
-                  <span style={styles.trackDuration}>
+              <span className="music-now-duration">
+                {formatDuration(musicState.currentTrack!.duration)}
+              </span>
+            </div>
+            <div className="music-bar-controls">
+              <button
+                className="music-ctrl-btn"
+                onClick={handleSkip}
+                title="Skip"
+              >
+                {ICON_SKIP}
+              </button>
+              <button
+                className="music-ctrl-btn music-ctrl-btn--danger"
+                onClick={handleStop}
+                title="Stop"
+              >
+                {ICON_STOP}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Queue */}
+        {hasQueue && (
+          <div className="music-queue-list">
+            <div className="music-queue-header">
+              <span className="music-queue-label">
+                Up Next ({musicState.queue.length})
+              </span>
+              <button className="music-queue-clear" onClick={handleClearQueue}>
+                Clear
+              </button>
+            </div>
+            {musicState.queue.map((item, i) => (
+              <div key={item.id} className="music-queue-item">
+                <span className="music-queue-index">{i + 1}</span>
+                {item.thumbnail ? (
+                  <img
+                    className="music-queue-thumb"
+                    src={item.thumbnail}
+                    alt=""
+                  />
+                ) : null}
+                <div className="music-queue-info">
+                  <span className="music-queue-title">{item.title}</span>
+                  <span className="music-queue-duration">
                     {formatDuration(item.duration)}
                   </span>
                 </div>
-              ))}
-            </div>
-          )}
-
-          {/* Search */}
-          <form onSubmit={handleSearch} style={styles.searchForm}>
-            <input
-              style={styles.searchInput}
-              placeholder="Search YouTube..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            <button
-              style={styles.searchButton}
-              type="submit"
-              disabled={searching}
-            >
-              {searching ? "..." : "Search"}
-            </button>
-          </form>
-
-          {/* Results */}
-          {searchResults.length > 0 && (
-            <div style={styles.results}>
-              {searchResults.map((result) => (
                 <button
-                  key={result.id}
-                  onClick={() => handleAddToQueue(result)}
-                  style={styles.resultItem}
+                  className="music-queue-remove"
+                  onClick={() => handleRemoveFromQueue(i)}
+                  title="Remove"
                 >
-                  <div style={styles.resultInfo}>
-                    <span style={styles.resultTitle}>{result.title}</span>
-                    <span style={styles.trackDuration}>
-                      {formatDuration(result.duration)}
-                    </span>
-                  </div>
+                  {ICON_CLOSE}
                 </button>
-              ))}
-            </div>
-          )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Search */}
+        <div className="music-search">
+          <span className="music-search-icon">{ICON_SEARCH}</span>
+          <input
+            ref={inputRef}
+            className="music-search-input"
+            placeholder="Search for a song..."
+            value={searchQuery}
+            onChange={handleSearchInput}
+          />
+          {searching && <span className="music-search-spinner">{ICON_LOADING}</span>}
         </div>
-      )}
+
+        {/* Results */}
+        {searchResults.length > 0 && (
+          <div className="music-results">
+            {searchResults.map((result) => (
+              <button
+                key={result.id}
+                className="music-result"
+                onClick={() => handleAddToQueue(result)}
+              >
+                {result.thumbnail ? (
+                  <img
+                    className="music-result-thumb"
+                    src={result.thumbnail}
+                    alt=""
+                  />
+                ) : (
+                  <div className="music-result-thumb" />
+                )}
+                <div className="music-result-info">
+                  <span className="music-result-title">{result.title}</span>
+                  <span className="music-result-duration">
+                    {formatDuration(result.duration)}
+                  </span>
+                </div>
+                <span className="music-result-add">+ Add</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!isPlaying && !hasQueue && searchResults.length === 0 && !searching && (
+          <div className="music-empty">
+            <div className="music-empty-icon">{ICON_NOTE}</div>
+            Search for a song to get started
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -195,168 +340,46 @@ function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    position: "fixed",
-    bottom: 0,
-    left: "var(--server-list-width)",
-    right: 0,
-    zIndex: 100,
-  },
-  toggleButton: {
-    width: "100%",
-    padding: "8px 16px",
-    background: "var(--bg-primary)",
-    color: "var(--text-primary)",
-    border: "none",
-    borderTop: "1px solid var(--border)",
-    cursor: "pointer",
-    fontSize: "12px",
-    fontWeight: 600,
-    textAlign: "left",
-    display: "flex",
-    alignItems: "center",
-  },
-  nowPlayingText: {
-    fontWeight: 400,
-    color: "var(--text-secondary)",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  panel: {
-    background: "var(--bg-secondary)",
-    borderTop: "1px solid var(--border)",
-    maxHeight: "400px",
-    overflowY: "auto",
-    padding: "12px",
-  },
-  nowPlaying: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "8px 12px",
-    background: "var(--bg-tertiary)",
-    borderRadius: "6px",
-    marginBottom: "8px",
-  },
-  trackInfo: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "2px",
-    minWidth: 0,
-    flex: 1,
-  },
-  trackTitle: {
-    fontSize: "13px",
-    fontWeight: 600,
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-  },
-  trackDuration: {
-    fontSize: "11px",
-    color: "var(--text-muted)",
-  },
-  playbackControls: {
-    display: "flex",
-    gap: "4px",
-    flexShrink: 0,
-    marginLeft: "12px",
-  },
-  smallButton: {
-    padding: "4px 10px",
-    background: "var(--bg-primary)",
-    color: "var(--text-secondary)",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-    fontSize: "12px",
-    fontWeight: 600,
-  },
-  queue: {
-    marginBottom: "8px",
-  },
-  queueLabel: {
-    fontSize: "11px",
-    fontWeight: 700,
-    textTransform: "uppercase",
-    color: "var(--text-muted)",
-    display: "block",
-    marginBottom: "4px",
-  },
-  queueItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    padding: "4px 8px",
-    fontSize: "13px",
-  },
-  queueIndex: {
-    color: "var(--text-muted)",
-    fontSize: "12px",
-    width: "20px",
-  },
-  queueTitle: {
-    flex: 1,
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-  },
-  searchForm: {
-    display: "flex",
-    gap: "8px",
-    marginBottom: "8px",
-  },
-  searchInput: {
-    flex: 1,
-    padding: "8px 12px",
-    background: "var(--input-bg)",
-    border: "none",
-    borderRadius: "4px",
-    color: "var(--text-primary)",
-    fontSize: "13px",
-    outline: "none",
-  },
-  searchButton: {
-    padding: "8px 16px",
-    background: "var(--accent)",
-    color: "white",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-    fontSize: "13px",
-    fontWeight: 600,
-  },
-  results: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "2px",
-  },
-  resultItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    padding: "8px",
-    background: "transparent",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-    textAlign: "left",
-    color: "var(--text-primary)",
-    width: "100%",
-  },
-  resultInfo: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "2px",
-    minWidth: 0,
-    flex: 1,
-  },
-  resultTitle: {
-    fontSize: "13px",
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-  },
-};
+// SVG icons as inline JSX to avoid external dependencies
+
+const ICON_SKIP = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+    <path d="M3 3l7 5-7 5V3zm8 0h2v10h-2V3z" />
+  </svg>
+);
+
+const ICON_STOP = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+    <rect x="3" y="3" width="10" height="10" rx="1" />
+  </svg>
+);
+
+const ICON_CHEVRON = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+    <path d="M4.47 5.47a.75.75 0 011.06 0L8 7.94l2.47-2.47a.75.75 0 111.06 1.06l-3 3a.75.75 0 01-1.06 0l-3-3a.75.75 0 010-1.06z" />
+  </svg>
+);
+
+const ICON_SEARCH = (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+    <path d="M11.742 10.344a6.5 6.5 0 10-1.397 1.398h-.001l3.85 3.85a1 1 0 001.415-1.414l-3.85-3.85zm-5.242.156a4.5 4.5 0 110-9 4.5 4.5 0 010 9z" />
+  </svg>
+);
+
+const ICON_NOTE = (
+  <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
+    <path d="M6 13c0 1.105-1.12 2-2.5 2S1 14.105 1 13s1.12-2 2.5-2 2.5.895 2.5 2zm9-2c0 1.105-1.12 2-2.5 2s-2.5-.895-2.5-2 1.12-2 2.5-2 2.5.895 2.5 2zM15 1v9h-2V3H6v1H4V1h11z" />
+  </svg>
+);
+
+const ICON_CLOSE = (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+    <path d="M4.646 4.646a.5.5 0 01.708 0L8 7.293l2.646-2.647a.5.5 0 01.708.708L8.707 8l2.647 2.646a.5.5 0 01-.708.708L8 8.707l-2.646 2.647a.5.5 0 01-.708-.708L7.293 8 4.646 5.354a.5.5 0 010-.708z" />
+  </svg>
+);
+
+const ICON_LOADING = (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+    <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 2a5 5 0 110 10V3z" opacity="0.6" />
+  </svg>
+);
