@@ -84,31 +84,33 @@ export function GifPicker({
           onChange={handleInput}
         />
       </div>
-      <div className="gif-picker-grid">
-        {loading && results.length === 0 && (
-          <div className="gif-picker-status">Loading...</div>
-        )}
-        {error && (
-          <div className="gif-picker-status">{error}</div>
-        )}
-        {results.map((gif) => (
-          <button
-            key={gif.id}
-            className="gif-picker-item"
-            onClick={() => onSelect(gif.url)}
-            title={gif.title}
-          >
-            <img
-              src={gif.previewUrl}
-              alt={gif.title}
-              loading="lazy"
-              style={{ aspectRatio: `${gif.width}/${gif.height}` }}
-            />
-          </button>
-        ))}
-        {!loading && results.length === 0 && !error && (
-          <div className="gif-picker-status">No results</div>
-        )}
+      <div className="gif-picker-grid-wrap">
+        <div className="gif-picker-grid">
+          {loading && results.length === 0 && (
+            <div className="gif-picker-status">Loading...</div>
+          )}
+          {error && (
+            <div className="gif-picker-status">{error}</div>
+          )}
+          {results.map((gif) => (
+            <button
+              key={gif.id}
+              className="gif-picker-item"
+              onClick={() => onSelect(gif.url)}
+              title={gif.title}
+            >
+              <img
+                src={gif.previewUrl}
+                alt={gif.title}
+                loading="lazy"
+                style={{ aspectRatio: `${gif.width}/${gif.height}` }}
+              />
+            </button>
+          ))}
+          {!loading && results.length === 0 && !error && (
+            <div className="gif-picker-status">No results</div>
+          )}
+        </div>
       </div>
       <div className="gif-picker-footer">
         Powered by KLIPY

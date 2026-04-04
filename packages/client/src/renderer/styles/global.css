@@ -493,13 +493,17 @@ a {
   color: var(--text-muted);
 }
 
-.gif-picker-grid {
+.gif-picker-grid-wrap {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
+}
+
+.gif-picker-grid {
   padding: 8px;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 6px;
-  align-content: start;
 }
 
 .gif-picker-item {
