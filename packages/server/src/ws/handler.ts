@@ -185,8 +185,17 @@ async function handleMessage(
     case "delete_message": {
       const toDelete = await prisma.message.findUnique({
         where: { id: msg.messageId },
+        include: { channel: { select: { serverId: true } } },
       });
-      if (!toDelete || toDelete.authorId !== userId) return;
+      if (!toDelete) return;
+
+      // Allow if author OR has MANAGE_MESSAGES permission
+      if (toDelete.authorId !== userId) {
+        const { checkPermission } = await import("../permissions.js");
+        const { Permissions } = await import("@concord/shared");
+        const canManage = await checkPermission(userId, toDelete.channel.serverId, Permissions.MANAGE_MESSAGES);
+        if (!canManage) return;
+      }
 
       await prisma.message.delete({ where: { id: msg.messageId } });
 

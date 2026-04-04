@@ -1,6 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "../db.js";
+import { Permissions } from "@concord/shared";
 import { createLiveKitToken, roomService, voiceRoomName } from "../livekit.js";
+import { checkPermission } from "../permissions.js";
 import { env } from "../env.js";
 
 export const voiceRoutes: FastifyPluginAsync = async (app) => {
@@ -111,6 +113,72 @@ export const voiceRoutes: FastifyPluginAsync = async (app) => {
       } catch {
         // Room doesn't exist yet (no one has joined)
         return { participants: [] };
+      }
+    }
+  );
+
+  // Kick a participant from the voice channel
+  app.post<{ Params: { channelId: string; targetId: string } }>(
+    "/:channelId/kick/:targetId",
+    async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      const { channelId, targetId } = request.params;
+
+      const channel = await prisma.channel.findUnique({
+        where: { id: channelId },
+        select: { serverId: true },
+      });
+      if (!channel) return reply.code(404).send({ error: "Channel not found" });
+
+      if (!await checkPermission(userId, channel.serverId, Permissions.KICK_MEMBERS)) {
+        return reply.code(403).send({ error: "Missing KICK_MEMBERS permission" });
+      }
+
+      const roomName = voiceRoomName(channelId);
+      try {
+        await roomService.removeParticipant(roomName, targetId);
+        return { kicked: true };
+      } catch {
+        return reply.code(404).send({ error: "Participant not in voice channel" });
+      }
+    }
+  );
+
+  // Server-mute a participant (mutes them for everyone)
+  app.post<{ Params: { channelId: string; targetId: string }; Body: { muted: boolean } }>(
+    "/:channelId/mute/:targetId",
+    async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      const { channelId, targetId } = request.params;
+      const { muted } = request.body;
+
+      const channel = await prisma.channel.findUnique({
+        where: { id: channelId },
+        select: { serverId: true },
+      });
+      if (!channel) return reply.code(404).send({ error: "Channel not found" });
+
+      if (!await checkPermission(userId, channel.serverId, Permissions.ADMIN)) {
+        return reply.code(403).send({ error: "Missing ADMIN permission" });
+      }
+
+      const roomName = voiceRoomName(channelId);
+      try {
+        const participants = await roomService.listParticipants(roomName);
+        const participant = participants.find((p) => p.identity === targetId);
+        if (!participant) {
+          return reply.code(404).send({ error: "Participant not in voice channel" });
+        }
+
+        // Mute/unmute all audio tracks for this participant
+        for (const track of participant.tracks) {
+          if (track.type === 1) { // AUDIO type
+            await roomService.mutePublishedTrack(roomName, targetId, track.sid, muted);
+          }
+        }
+        return { muted };
+      } catch (err) {
+        return reply.code(500).send({ error: "Failed to mute participant" });
       }
     }
   );
