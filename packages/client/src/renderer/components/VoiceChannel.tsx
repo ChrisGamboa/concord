@@ -8,7 +8,7 @@ import {
   useTracks,
   VideoTrack,
 } from "@livekit/components-react";
-import { Track, VideoPresets, RoomEvent, type RemoteTrackPublication, type RemoteParticipant } from "livekit-client";
+import { Track, VideoPresets } from "livekit-client";
 import { avatarColor } from "../lib/avatar";
 import { playJoinSelf, playDisconnect, playUserJoined, playUserLeft } from "../lib/sounds";
 import { createRnnoiseTrack } from "../lib/rnnoise-processor";
@@ -97,7 +97,6 @@ export function VoiceSession({ isViewing }: { isViewing: boolean }) {
     >
       <VoiceStoreSync />
       <RoomAudioRenderer />
-      <ScreenShareAudioRenderer />
       {isViewing && (
         <VoiceContent
           channelName={connection.channelName}
@@ -139,75 +138,6 @@ const PhoneOffIcon = () => (
     <line x1="23" y1="1" x2="1" y2="23" />
   </svg>
 );
-
-/**
- * Handles screenshare audio tracks (music bot) using direct Room events.
- * RoomAudioRenderer may not reliably handle screenshare audio, so we
- * listen for TrackSubscribed/TrackUnsubscribed and play via Audio elements.
- */
-function ScreenShareAudioRenderer() {
-  const room = useRoomContext();
-  const audioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
-
-  useEffect(() => {
-    const attachTrack = (
-      track: RemoteTrackPublication["track"],
-      publication: RemoteTrackPublication,
-    ) => {
-      if (!track || publication.source !== Track.Source.ScreenShareAudio) return;
-      const sid = publication.trackSid;
-      if (!sid || audioRefs.current.has(sid)) return;
-
-      const mediaTrack = track.mediaStreamTrack;
-      if (!mediaTrack) return;
-
-      const audio = new Audio();
-      audio.srcObject = new MediaStream([mediaTrack]);
-      audio.play().catch((err) => console.warn("[screenshare-audio] play failed:", err));
-      audioRefs.current.set(sid, audio);
-      console.log("[screenshare-audio] Attached track", sid);
-    };
-
-    const detachTrack = (
-      _track: unknown,
-      publication: RemoteTrackPublication,
-    ) => {
-      const sid = publication.trackSid;
-      if (!sid) return;
-      const audio = audioRefs.current.get(sid);
-      if (audio) {
-        audio.pause();
-        audio.srcObject = null;
-        audioRefs.current.delete(sid);
-        console.log("[screenshare-audio] Detached track", sid);
-      }
-    };
-
-    // Attach any already-subscribed screenshare audio tracks
-    for (const participant of room.remoteParticipants.values()) {
-      for (const publication of participant.trackPublications.values()) {
-        if (publication.track && publication.source === Track.Source.ScreenShareAudio) {
-          attachTrack(publication.track, publication as RemoteTrackPublication);
-        }
-      }
-    }
-
-    room.on(RoomEvent.TrackSubscribed, attachTrack);
-    room.on(RoomEvent.TrackUnsubscribed, detachTrack);
-
-    return () => {
-      room.off(RoomEvent.TrackSubscribed, attachTrack);
-      room.off(RoomEvent.TrackUnsubscribed, detachTrack);
-      for (const audio of audioRefs.current.values()) {
-        audio.pause();
-        audio.srcObject = null;
-      }
-      audioRefs.current.clear();
-    };
-  }, [room]);
-
-  return null;
-}
 
 /** Syncs LiveKit room state to the voice store so components outside LiveKitRoom can read/control it */
 function VoiceStoreSync() {
