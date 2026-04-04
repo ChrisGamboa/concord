@@ -470,7 +470,7 @@ function VoiceContent({
                   >
                     {!isBot && getParticipantAvatar(p.metadata) ? (
                       <img
-                        style={{ ...styles.participantAvatarSmall, objectFit: "contain" }}
+                        style={{ ...styles.participantAvatarSmall, objectFit: "cover" }}
                         src={getParticipantAvatar(p.metadata)!}
                         alt=""
                       />
@@ -522,7 +522,7 @@ function VoiceContent({
                   >
                     {!isBot && getParticipantAvatar(p.metadata) ? (
                       <img
-                        style={{ ...styles.participantAvatarLarge, objectFit: "contain" }}
+                        style={{ ...styles.participantAvatarLarge, objectFit: "cover" }}
                         src={getParticipantAvatar(p.metadata)!}
                         alt=""
                       />
@@ -711,6 +711,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   speakingRing: {
     borderRadius: "50%",
+    overflow: "hidden",
     transition: "box-shadow 0.2s ease",
   },
   participantAvatarLarge: {
