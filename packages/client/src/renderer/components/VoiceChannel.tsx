@@ -170,25 +170,6 @@ function VoiceStoreSync() {
   return null;
 }
 
-function useCallTimer() {
-  const joinedAt = useVoiceStore((s) => s.joinedAt);
-  const [elapsed, setElapsed] = useState(0);
-
-  useEffect(() => {
-    if (!joinedAt) return;
-    // Immediately compute current elapsed time
-    setElapsed(Math.floor((Date.now() - joinedAt) / 1000));
-    const interval = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - joinedAt) / 1000));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [joinedAt]);
-
-  const mins = Math.floor(elapsed / 60);
-  const secs = elapsed % 60;
-  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-}
-
 // ---- Right-click volume menu for participants ----
 
 function useParticipantContextMenu() {
@@ -354,7 +335,6 @@ function VoiceContent({
 
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const callTime = useCallTimer();
 
   // Apply RNNoise to microphone track for noise suppression
   const rnnoiseCleanupRef = useRef<(() => void) | null>(null);
@@ -567,11 +547,6 @@ function VoiceContent({
 
       {/* Controls */}
       <div style={styles.controlBar}>
-        <div style={styles.controlBarInfo}>
-          <span style={styles.callTimer}>{callTime}</span>
-          <span style={styles.callChannel}>{channelName}</span>
-        </div>
-
         <div style={styles.controls}>
           <button
             className="hover-brighten"
@@ -821,23 +796,6 @@ const styles: Record<string, React.CSSProperties> = {
     background: "var(--bg-secondary)",
     padding: "12px 16px",
     flexShrink: 0,
-  },
-  controlBarInfo: {
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: "8px",
-    marginBottom: "10px",
-  },
-  callTimer: {
-    fontSize: "13px",
-    fontWeight: 600,
-    color: "var(--success)",
-    fontVariantNumeric: "tabular-nums",
-  },
-  callChannel: {
-    fontSize: "12px",
-    color: "var(--text-muted)",
   },
   controls: {
     display: "flex",

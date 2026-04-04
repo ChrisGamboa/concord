@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useChatStore } from "../stores/chat";
 import { useVoiceStore } from "../stores/voice";
@@ -18,6 +18,23 @@ export function ChannelSidebar() {
   const voiceDisconnect = useVoiceStore((s) => s.disconnect);
   const voiceMuted = useVoiceStore((s) => s.isMuted);
   const voiceToggleMic = useVoiceStore((s) => s.toggleMic);
+  const voiceJoinedAt = useVoiceStore((s) => s.joinedAt);
+
+  // Call timer
+  const [timerElapsed, setTimerElapsed] = useState(0);
+  useEffect(() => {
+    if (!voiceJoinedAt) { setTimerElapsed(0); return; }
+    setTimerElapsed(Math.floor((Date.now() - voiceJoinedAt) / 1000));
+    const interval = setInterval(() => {
+      setTimerElapsed(Math.floor((Date.now() - voiceJoinedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [voiceJoinedAt]);
+  const callTime = useMemo(() => {
+    const m = Math.floor(timerElapsed / 60);
+    const s = timerElapsed % 60;
+    return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  }, [timerElapsed]);
 
   const textChannels = channels.filter((c) => c.type === ChannelType.Text);
   const voiceChannels = channels.filter((c) => c.type === ChannelType.Voice);
@@ -181,6 +198,7 @@ export function ChannelSidebar() {
             <span style={styles.voiceStatusLabel}>Voice Connected</span>
             <span style={styles.voiceStatusChannel}>
               {voiceConnection.channelName}
+              <span style={styles.voiceStatusTimer}>{callTime}</span>
             </span>
           </div>
           <div style={styles.voiceStatusActions}>
@@ -387,6 +405,14 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap" as const,
     overflow: "hidden",
     textOverflow: "ellipsis",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+  },
+  voiceStatusTimer: {
+    fontSize: "11px",
+    color: "var(--text-muted)",
+    fontVariantNumeric: "tabular-nums",
   },
   voiceStatusActions: {
     display: "flex",
