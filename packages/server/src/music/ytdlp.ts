@@ -40,13 +40,15 @@ export async function searchYouTube(
 }
 
 /**
- * Get metadata (title, duration) for a YouTube video without downloading.
+ * Get the direct audio stream URL and HTTP headers for a YouTube video.
  */
-export async function getTrackMetadata(url: string): Promise<{
+export async function getAudioStreamInfo(url: string): Promise<{
+  streamUrl: string;
   title: string;
   duration: number;
+  httpHeaders: Record<string, string>;
 }> {
-  console.log(`[yt-dlp] Getting metadata for: ${url}`);
+  console.log(`[yt-dlp] Getting audio stream info for: ${url}`);
   const { stdout } = await execFileAsync("yt-dlp", [
     url,
     "--dump-json",
@@ -56,68 +58,62 @@ export async function getTrackMetadata(url: string): Promise<{
   ], { timeout: 30_000 });
 
   const data = JSON.parse(stdout.trim());
-  console.log(`[yt-dlp] Got metadata for "${data.title}" (${data.duration}s)`);
+  if (!data.url) {
+    throw new Error(`yt-dlp returned no stream URL for: ${url}`);
+  }
+  const httpHeaders: Record<string, string> = data.http_headers ?? {};
+  console.log(`[yt-dlp] Got stream URL for "${data.title}" (${data.duration}s)`);
   return {
+    streamUrl: data.url,
     title: data.title ?? "Unknown",
     duration: data.duration ?? 0,
+    httpHeaders,
   };
 }
 
 /**
- * Spawn yt-dlp piped to ffmpeg to stream audio as raw PCM.
- * yt-dlp handles HTTP auth/headers, ffmpeg converts to PCM.
- * Returns the ffmpeg process (read stdout for PCM data).
- * Also returns the yt-dlp process so both can be cleaned up.
+ * Spawn an ffmpeg process that reads from a URL (with proper HTTP headers)
+ * and outputs raw PCM audio.
  */
-export function spawnAudioStream(videoUrl: string): {
-  ffmpeg: ChildProcess;
-  ytdlp: ChildProcess;
-} {
-  // yt-dlp streams audio to stdout
-  const ytdlp = spawn("yt-dlp", [
-    "-f", "bestaudio",
-    "-o", "-",
-    "--no-warnings",
-    videoUrl,
-  ], {
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+export function spawnFfmpegStream(audioUrl: string, httpHeaders: Record<string, string>): ChildProcess {
+  // Build ffmpeg HTTP header string: "Key: Value\r\nKey: Value\r\n"
+  const headerStr = Object.entries(httpHeaders)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join("\r\n");
 
-  // ffmpeg reads from stdin (piped from yt-dlp) and outputs raw PCM
-  const ffmpeg = spawn("ffmpeg", [
-    "-i", "pipe:0",
+  const args: string[] = [];
+
+  if (headerStr) {
+    args.push("-headers", headerStr + "\r\n");
+  }
+
+  args.push(
+    "-reconnect", "1",
+    "-reconnect_streamed", "1",
+    "-reconnect_delay_max", "5",
+    "-i", audioUrl,
+    "-vn",
     "-f", "s16le",
     "-acodec", "pcm_s16le",
     "-ar", "48000",
     "-ac", "2",
     "-",
-  ], {
-    stdio: ["pipe", "pipe", "pipe"],
+  );
+
+  const proc = spawn("ffmpeg", args, {
+    stdio: ["ignore", "pipe", "pipe"],
   });
 
-  // Pipe yt-dlp stdout -> ffmpeg stdin
-  ytdlp.stdout!.pipe(ffmpeg.stdin!);
-
-  // Log errors from both processes
-  let ytdlpStderr = "";
-  ytdlp.stderr?.on("data", (chunk: Buffer) => { ytdlpStderr += chunk.toString(); });
-  ytdlp.on("close", (code) => {
-    if (code !== 0 && ytdlpStderr) {
-      console.error(`[yt-dlp] stream exited ${code}:`, ytdlpStderr.slice(-300));
-    }
-    // Close ffmpeg's stdin when yt-dlp finishes
-    ffmpeg.stdin?.end();
-  });
-
-  let ffmpegStderr = "";
-  ffmpeg.stderr?.on("data", (chunk: Buffer) => { ffmpegStderr += chunk.toString(); });
-  ffmpeg.on("close", (code) => {
-    if (code !== 0 && code !== null && ffmpegStderr) {
-      console.error(`[ffmpeg] exited ${code}:`, ffmpegStderr.slice(-300));
+  // Log ffmpeg errors for debugging
+  let stderrBuf = "";
+  proc.stderr?.on("data", (chunk: Buffer) => { stderrBuf += chunk.toString(); });
+  proc.on("close", (code) => {
+    if (code !== 0 && code !== null && stderrBuf) {
+      console.error(`[ffmpeg] exited ${code}:`, stderrBuf.slice(-500));
     }
   });
 
-  return { ffmpeg, ytdlp };
+  return proc;
 }
 
 /**

@@ -8,7 +8,7 @@ import {
   TrackPublishOptions,
   TrackSource,
 } from "@livekit/rtc-node";
-import { getTrackMetadata, spawnAudioStream } from "./ytdlp.js";
+import { getAudioStreamInfo, spawnFfmpegStream } from "./ytdlp.js";
 import { popNext, setPlaying, setNotPlaying } from "./queue.js";
 import { createLiveKitToken, voiceRoomName } from "../livekit.js";
 import { env } from "../env.js";
@@ -23,7 +23,6 @@ const BOT_IDENTITY = "concord-music-bot";
 
 interface ActivePlayer {
   ffmpeg: ChildProcess;
-  ytdlp: ChildProcess;
   room: Room;
   track: MusicQueueItem;
 }
@@ -44,7 +43,7 @@ export async function playTrack(
   await stopPlayback(voiceChannelId);
 
   try {
-    const { title } = await getTrackMetadata(track.url);
+    const { streamUrl, title, httpHeaders } = await getAudioStreamInfo(track.url);
     const roomName = voiceRoomName(voiceChannelId);
 
     // Create a token for the music bot to join the room
@@ -73,10 +72,10 @@ export async function playTrack(
     publishOptions.dtx = false;
     await room.localParticipant!.publishTrack(audioTrack, publishOptions);
 
-    // Spawn yt-dlp piped to ffmpeg for audio streaming
-    const { ffmpeg, ytdlp } = spawnAudioStream(track.url);
+    // Spawn ffmpeg with proper HTTP headers for the CDN URL
+    const ffmpeg = spawnFfmpegStream(streamUrl, httpHeaders);
 
-    activePlayers.set(voiceChannelId, { ffmpeg, ytdlp, room, track });
+    activePlayers.set(voiceChannelId, { ffmpeg, room, track });
     setPlaying(voiceChannelId, { ...track, title });
 
     console.log(`[music] Playing "${title}" in ${roomName}`);
@@ -188,7 +187,6 @@ export function playNext(voiceChannelId: string): void {
 export async function stopPlayback(voiceChannelId: string): Promise<void> {
   const player = activePlayers.get(voiceChannelId);
   if (player) {
-    player.ytdlp.kill("SIGTERM");
     player.ffmpeg.kill("SIGTERM");
     try {
       await player.room.disconnect();
