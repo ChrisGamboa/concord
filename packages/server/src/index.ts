@@ -20,7 +20,7 @@ import { stopAll as stopAllMusic } from "./music/player.js";
 
 const app = Fastify({ logger: true });
 
-await app.register(cors, { origin: true });
+await app.register(cors, { origin: true, methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] });
 await app.register(jwt, { secret: env.JWT_SECRET });
 await app.register(websocket);
 await app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024 } });
