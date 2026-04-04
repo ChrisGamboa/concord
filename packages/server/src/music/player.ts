@@ -8,7 +8,7 @@ import {
   TrackPublishOptions,
   TrackSource,
 } from "@livekit/rtc-node";
-import { getAudioStreamUrl, spawnFfmpegStream } from "./ytdlp.js";
+import { getTrackMetadata, spawnAudioStream } from "./ytdlp.js";
 import { popNext, setPlaying, setNotPlaying } from "./queue.js";
 import { createLiveKitToken, voiceRoomName } from "../livekit.js";
 import { env } from "../env.js";
@@ -23,6 +23,7 @@ const BOT_IDENTITY = "concord-music-bot";
 
 interface ActivePlayer {
   ffmpeg: ChildProcess;
+  ytdlp: ChildProcess;
   room: Room;
   track: MusicQueueItem;
 }
@@ -31,7 +32,7 @@ const activePlayers = new Map<string, ActivePlayer>();
 
 /**
  * Start playing a track in a voice channel by joining the LiveKit room
- * as a bot participant and publishing audio from ffmpeg.
+ * as a bot participant and publishing audio from yt-dlp piped through ffmpeg.
  */
 export async function playTrack(
   voiceChannelId: string,
@@ -43,7 +44,7 @@ export async function playTrack(
   await stopPlayback(voiceChannelId);
 
   try {
-    const { streamUrl, title } = await getAudioStreamUrl(track.url);
+    const { title } = await getTrackMetadata(track.url);
     const roomName = voiceRoomName(voiceChannelId);
 
     // Create a token for the music bot to join the room
@@ -69,18 +70,18 @@ export async function playTrack(
     const audioTrack = LocalAudioTrack.createAudioTrack("music", audioSource);
     const publishOptions = new TrackPublishOptions();
     publishOptions.source = TrackSource.SOURCE_MICROPHONE;
-    publishOptions.dtx = false; // Don't use discontinuous transmission for music
+    publishOptions.dtx = false;
     await room.localParticipant!.publishTrack(audioTrack, publishOptions);
 
-    // Spawn ffmpeg to extract audio
-    const ffmpeg = spawnFfmpegStream(streamUrl);
+    // Spawn yt-dlp piped to ffmpeg for audio streaming
+    const { ffmpeg, ytdlp } = spawnAudioStream(track.url);
 
-    activePlayers.set(voiceChannelId, { ffmpeg, room, track });
+    activePlayers.set(voiceChannelId, { ffmpeg, ytdlp, room, track });
     setPlaying(voiceChannelId, { ...track, title });
 
     console.log(`[music] Playing "${title}" in ${roomName}`);
 
-    // Pipe ffmpeg PCM output into LiveKit audio frames using a sequential queue
+    // Pipe ffmpeg PCM output into LiveKit audio frames
     let buffer = Buffer.alloc(0);
     let processing = false;
     let stopped = false;
@@ -187,6 +188,7 @@ export function playNext(voiceChannelId: string): void {
 export async function stopPlayback(voiceChannelId: string): Promise<void> {
   const player = activePlayers.get(voiceChannelId);
   if (player) {
+    player.ytdlp.kill("SIGTERM");
     player.ffmpeg.kill("SIGTERM");
     try {
       await player.room.disconnect();

@@ -1,4 +1,4 @@
-import { spawn, execFile } from "child_process";
+import { spawn, execFile, type ChildProcess } from "child_process";
 import { promisify } from "util";
 import type { MusicSearchResult } from "@concord/shared";
 
@@ -40,15 +40,13 @@ export async function searchYouTube(
 }
 
 /**
- * Get the direct audio stream URL for a YouTube video.
- * Returns the best audio-only format URL.
+ * Get metadata (title, duration) for a YouTube video without downloading.
  */
-export async function getAudioStreamUrl(url: string): Promise<{
-  streamUrl: string;
+export async function getTrackMetadata(url: string): Promise<{
   title: string;
   duration: number;
 }> {
-  console.log(`[yt-dlp] Getting audio stream URL for: ${url}`);
+  console.log(`[yt-dlp] Getting metadata for: ${url}`);
   const { stdout } = await execFileAsync("yt-dlp", [
     url,
     "--dump-json",
@@ -58,43 +56,68 @@ export async function getAudioStreamUrl(url: string): Promise<{
   ], { timeout: 30_000 });
 
   const data = JSON.parse(stdout.trim());
-  if (!data.url) {
-    throw new Error(`yt-dlp returned no stream URL for: ${url}`);
-  }
-  console.log(`[yt-dlp] Got stream URL for "${data.title}" (${data.duration}s)`);
+  console.log(`[yt-dlp] Got metadata for "${data.title}" (${data.duration}s)`);
   return {
-    streamUrl: data.url,
     title: data.title ?? "Unknown",
     duration: data.duration ?? 0,
   };
 }
 
 /**
- * Spawn an ffmpeg process that reads from a URL and outputs raw PCM audio.
- * Returns the spawned process (pipe stdout for audio data).
+ * Spawn yt-dlp piped to ffmpeg to stream audio as raw PCM.
+ * yt-dlp handles HTTP auth/headers, ffmpeg converts to PCM.
+ * Returns the ffmpeg process (read stdout for PCM data).
+ * Also returns the yt-dlp process so both can be cleaned up.
  */
-export function spawnFfmpegStream(audioUrl: string) {
-  const proc = spawn("ffmpeg", [
-    "-i", audioUrl,
-    "-f", "s16le",        // raw PCM 16-bit little-endian
-    "-acodec", "pcm_s16le",
-    "-ar", "48000",        // 48kHz sample rate (Opus standard)
-    "-ac", "2",            // stereo
-    "-",                   // output to stdout
+export function spawnAudioStream(videoUrl: string): {
+  ffmpeg: ChildProcess;
+  ytdlp: ChildProcess;
+} {
+  // yt-dlp streams audio to stdout
+  const ytdlp = spawn("yt-dlp", [
+    "-f", "bestaudio",
+    "-o", "-",
+    "--no-warnings",
+    videoUrl,
   ], {
     stdio: ["ignore", "pipe", "pipe"],
   });
 
-  // Log ffmpeg errors for debugging
-  let stderrBuf = "";
-  proc.stderr?.on("data", (chunk: Buffer) => { stderrBuf += chunk.toString(); });
-  proc.on("close", (code) => {
-    if (code !== 0 && stderrBuf) {
-      console.error(`[ffmpeg] exited ${code}:`, stderrBuf.slice(-500));
+  // ffmpeg reads from stdin (piped from yt-dlp) and outputs raw PCM
+  const ffmpeg = spawn("ffmpeg", [
+    "-i", "pipe:0",
+    "-f", "s16le",
+    "-acodec", "pcm_s16le",
+    "-ar", "48000",
+    "-ac", "2",
+    "-",
+  ], {
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+
+  // Pipe yt-dlp stdout -> ffmpeg stdin
+  ytdlp.stdout!.pipe(ffmpeg.stdin!);
+
+  // Log errors from both processes
+  let ytdlpStderr = "";
+  ytdlp.stderr?.on("data", (chunk: Buffer) => { ytdlpStderr += chunk.toString(); });
+  ytdlp.on("close", (code) => {
+    if (code !== 0 && ytdlpStderr) {
+      console.error(`[yt-dlp] stream exited ${code}:`, ytdlpStderr.slice(-300));
+    }
+    // Close ffmpeg's stdin when yt-dlp finishes
+    ffmpeg.stdin?.end();
+  });
+
+  let ffmpegStderr = "";
+  ffmpeg.stderr?.on("data", (chunk: Buffer) => { ffmpegStderr += chunk.toString(); });
+  ffmpeg.on("close", (code) => {
+    if (code !== 0 && code !== null && ffmpegStderr) {
+      console.error(`[ffmpeg] exited ${code}:`, ffmpegStderr.slice(-300));
     }
   });
 
-  return proc;
+  return { ffmpeg, ytdlp };
 }
 
 /**
