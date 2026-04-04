@@ -1,5 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useAuthStore } from "../stores/auth";
+import { api } from "../lib/api";
+import { avatarColor } from "../lib/avatar";
+
+const SERVER_BASE = "http://localhost:3001";
 
 interface MediaDeviceOption {
   deviceId: string;
@@ -11,8 +15,64 @@ type Section = "account" | "notifications" | "audio" | "video";
 export function SettingsPage({ onClose }: { onClose: () => void }) {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const updateUser = useAuthStore((s) => s.updateUser);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [activeSection, setActiveSection] = useState<Section>("account");
+
+  // Profile editing
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState(user?.displayName ?? "");
+  const [saving, setSaving] = useState(false);
+  const [profileMsg, setProfileMsg] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSaveName = async () => {
+    if (!nameInput.trim() || nameInput.trim() === user?.displayName) {
+      setEditingName(false);
+      return;
+    }
+    setSaving(true);
+    setProfileMsg("");
+    try {
+      const res = await api.updateProfile({ displayName: nameInput.trim() });
+      updateUser(res.user);
+      setEditingName(false);
+      setProfileMsg("Display name updated");
+    } catch (err) {
+      setProfileMsg(err instanceof Error ? err.message : "Failed to update");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAvatarUpload = async (file: File) => {
+    if (!file.type.startsWith("image/")) return;
+    setSaving(true);
+    setProfileMsg("");
+    try {
+      const res = await api.updateProfile({ avatar: file });
+      updateUser(res.user);
+      setProfileMsg("Avatar updated");
+    } catch (err) {
+      setProfileMsg(err instanceof Error ? err.message : "Failed to upload");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemoveAvatar = async () => {
+    setSaving(true);
+    setProfileMsg("");
+    try {
+      const res = await api.updateProfile({ removeAvatar: true });
+      updateUser(res.user);
+      setProfileMsg("Avatar removed");
+    } catch (err) {
+      setProfileMsg(err instanceof Error ? err.message : "Failed to remove");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -168,15 +228,110 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
           {activeSection === "account" && (
             <div className="settings-section">
               <h2 className="settings-section-title">My Account</h2>
-              <div className="settings-card">
+
+              {/* Profile preview card */}
+              <div className="settings-profile-card">
+                <div className="settings-profile-banner" style={{ background: avatarColor(user?.id ?? "") }} />
+                <div className="settings-profile-body">
+                  <div className="settings-avatar-wrapper">
+                    {user?.avatarUrl ? (
+                      <img
+                        className="settings-avatar"
+                        src={`${SERVER_BASE}${user.avatarUrl}`}
+                        alt=""
+                      />
+                    ) : (
+                      <div
+                        className="settings-avatar"
+                        style={{ background: avatarColor(user?.id ?? ""), display: "flex", alignItems: "center", justifyContent: "center", fontSize: "32px", fontWeight: 700, color: "white" }}
+                      >
+                        {(user?.displayName ?? "?").charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <button
+                      className="settings-avatar-edit"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={saving}
+                      title="Change avatar"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                        <circle cx="12" cy="13" r="4" />
+                      </svg>
+                    </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleAvatarUpload(file);
+                        e.target.value = "";
+                      }}
+                    />
+                  </div>
+                  <div className="settings-profile-info">
+                    <span className="settings-profile-name">{user?.displayName}</span>
+                    <span className="settings-profile-username">{user?.username}</span>
+                  </div>
+                </div>
+              </div>
+
+              {profileMsg && (
+                <div className="settings-profile-msg">{profileMsg}</div>
+              )}
+
+              {/* Editable fields */}
+              <div className="settings-card" style={{ marginTop: "16px" }}>
                 <div className="settings-field">
                   <span className="settings-label">Username</span>
                   <span className="settings-value">{user?.username}</span>
                 </div>
                 <div className="settings-field">
                   <span className="settings-label">Display Name</span>
-                  <span className="settings-value">{user?.displayName}</span>
+                  {editingName ? (
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      <input
+                        className="settings-inline-input"
+                        value={nameInput}
+                        onChange={(e) => setNameInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleSaveName();
+                          if (e.key === "Escape") { setEditingName(false); setNameInput(user?.displayName ?? ""); }
+                        }}
+                        autoFocus
+                        maxLength={64}
+                        disabled={saving}
+                      />
+                      <button className="settings-save-btn" onClick={handleSaveName} disabled={saving}>
+                        Save
+                      </button>
+                      <button className="settings-cancel-btn" onClick={() => { setEditingName(false); setNameInput(user?.displayName ?? ""); }}>
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      className="settings-edit-btn"
+                      onClick={() => { setEditingName(true); setNameInput(user?.displayName ?? ""); }}
+                    >
+                      {user?.displayName}
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
+                {user?.avatarUrl && (
+                  <div className="settings-field">
+                    <span className="settings-label">Avatar</span>
+                    <button className="settings-remove-btn" onClick={handleRemoveAvatar} disabled={saving}>
+                      Remove Avatar
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
