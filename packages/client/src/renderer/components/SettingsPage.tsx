@@ -1,9 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useAuthStore } from "../stores/auth";
 import { api } from "../lib/api";
-import { avatarColor } from "../lib/avatar";
-
-const SERVER_BASE = "http://localhost:3001";
+import { avatarColor, avatarUrl } from "../lib/avatar";
 
 interface MediaDeviceOption {
   deviceId: string;
@@ -234,10 +232,10 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                 <div className="settings-profile-banner" style={{ background: avatarColor(user?.id ?? "") }} />
                 <div className="settings-profile-body">
                   <div className="settings-avatar-wrapper">
-                    {user?.avatarUrl ? (
+                    {avatarUrl(user?.avatarUrl) ? (
                       <img
                         className="settings-avatar"
-                        src={`${SERVER_BASE}${user.avatarUrl}`}
+                        src={avatarUrl(user?.avatarUrl)!}
                         alt=""
                       />
                     ) : (

@@ -5,7 +5,7 @@ import { useAuthStore } from "../stores/auth";
 import { usePresenceStore } from "../stores/presence";
 import { sendWs } from "../lib/ws";
 import { api } from "../lib/api";
-import { avatarColor } from "../lib/avatar";
+import { avatarColor, avatarUrl } from "../lib/avatar";
 
 const IMAGE_REGEX = /\.(png|jpe?g|gif|webp)$/i;
 const UPLOAD_URL_REGEX = /^\/uploads\/.+/;
@@ -304,9 +304,17 @@ export function ChatArea() {
               onMouseEnter={() => setHoveredMsgId(msg.id)}
               onMouseLeave={() => setHoveredMsgId(null)}
             >
-              <div style={{ ...styles.avatar, background: avatarColor(msg.authorId) }}>
-                {(msg.author?.displayName ?? "?").charAt(0).toUpperCase()}
-              </div>
+              {avatarUrl(msg.author?.avatarUrl) ? (
+                <img
+                  style={{ ...styles.avatar, objectFit: "cover" }}
+                  src={avatarUrl(msg.author?.avatarUrl)!}
+                  alt=""
+                />
+              ) : (
+                <div style={{ ...styles.avatar, background: avatarColor(msg.authorId) }}>
+                  {(msg.author?.displayName ?? "?").charAt(0).toUpperCase()}
+                </div>
+              )}
               <div style={styles.messageContent}>
                 <div style={styles.messageHeader}>
                   <span style={styles.authorName}>

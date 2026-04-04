@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { usePresenceStore } from "../stores/presence";
 import type { ServerMember, PublicUser } from "@concord/shared";
-import { avatarColor } from "../lib/avatar";
+import { avatarColor, avatarUrl } from "../lib/avatar";
 
 interface MemberWithOnline extends ServerMember {
   user?: PublicUser;
@@ -77,9 +77,13 @@ function MemberItem({
   return (
     <div className="hover-bg" style={{ ...styles.member, opacity: isOnline ? 1 : 0.4 }}>
       <div style={styles.avatarWrapper}>
-        <div style={{ ...styles.avatar, background: avatarColor(member.userId) }}>
-          {(member.user?.displayName ?? "?").charAt(0).toUpperCase()}
-        </div>
+        {avatarUrl(member.user?.avatarUrl) ? (
+          <img style={{ ...styles.avatar, objectFit: "cover" }} src={avatarUrl(member.user?.avatarUrl)!} alt="" />
+        ) : (
+          <div style={{ ...styles.avatar, background: avatarColor(member.userId) }}>
+            {(member.user?.displayName ?? "?").charAt(0).toUpperCase()}
+          </div>
+        )}
         <div
           style={{
             ...styles.statusDot,
