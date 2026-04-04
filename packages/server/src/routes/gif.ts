@@ -55,7 +55,7 @@ export const gifRoutes: FastifyPluginAsync = async (app) => {
           .map((g) => ({
             id: String(g.id),
             title: g.title ?? "",
-            previewUrl: g.file.sm.gif.url,
+            previewUrl: g.file.md.gif.url,
             url: g.file.md.gif.url,
             mp4Url: g.file.md.mp4?.url ?? null,
             width: g.file.md.gif.width,
