@@ -3,12 +3,21 @@ import { join } from "path";
 import { is } from "@electron-toolkit/utils";
 
 function createWindow() {
+  const isMac = process.platform === "darwin";
+
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 940,
     minHeight: 600,
     show: false,
+    titleBarStyle: isMac ? "hiddenInset" : "hidden",
+    titleBarOverlay: !isMac ? {
+      color: "#1e1f22",
+      symbolColor: "#b5bac1",
+      height: 36,
+    } : undefined,
+    trafficLightPosition: isMac ? { x: 12, y: 12 } : undefined,
     webPreferences: {
       preload: join(__dirname, "../preload/index.mjs"),
       sandbox: false,
