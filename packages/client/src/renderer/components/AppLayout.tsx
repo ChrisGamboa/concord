@@ -13,7 +13,6 @@ import { VoiceJoinPrompt, VoiceSession } from "./VoiceChannel";
 import { MusicPlayer } from "./MusicPlayer";
 import { MemberList } from "./MemberList";
 import { SettingsPage } from "./SettingsPage";
-import { ScreenPicker } from "./ScreenPicker";
 
 export function AppLayout() {
   const { serverId, channelId } = useParams();
@@ -157,7 +156,6 @@ export function AppLayout() {
         <MusicPlayer />
       </div>
       {showSettings && <SettingsPage onClose={() => setShowSettings(false)} />}
-      <ScreenPicker />
     </div>
   );
 }
