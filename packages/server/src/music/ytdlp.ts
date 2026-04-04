@@ -1,6 +1,6 @@
 import { spawn, execFile, type ChildProcess } from "child_process";
 import { promisify } from "util";
-import { mkdtemp, rm } from "fs/promises";
+import { mkdtemp, rm, stat, readdir } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import type { MusicSearchResult } from "@concord/shared";
@@ -66,7 +66,23 @@ export async function downloadAudio(url: string): Promise<{
 
   const data = JSON.parse(stdout.trim());
   const filePath = data._filename ?? data.filename ?? join(tempDir, "audio");
-  console.log(`[yt-dlp] Downloaded "${data.title}" (${data.duration}s) -> ${filePath}`);
+
+  // Debug: verify file exists and check size
+  const files = await readdir(tempDir);
+  console.log(`[yt-dlp] Temp dir contents: ${files.join(", ")}`);
+  try {
+    const fileStat = await stat(filePath);
+    console.log(`[yt-dlp] Downloaded "${data.title}" (${data.duration}s) -> ${filePath} (${(fileStat.size / 1024).toFixed(0)}KB)`);
+  } catch {
+    console.error(`[yt-dlp] File not found at ${filePath}, dir contents: ${files.join(", ")}`);
+    // Try to find the actual file
+    if (files.length > 0) {
+      const actualPath = join(tempDir, files[0]);
+      const actualStat = await stat(actualPath);
+      console.log(`[yt-dlp] Using actual file: ${actualPath} (${(actualStat.size / 1024).toFixed(0)}KB)`);
+      return { filePath: actualPath, tempDir, title: data.title ?? "Unknown", duration: data.duration ?? 0 };
+    }
+  }
 
   return {
     filePath,
@@ -95,9 +111,9 @@ export function spawnFfmpegStream(filePath: string): ChildProcess {
   let stderrBuf = "";
   proc.stderr?.on("data", (chunk: Buffer) => { stderrBuf += chunk.toString(); });
   proc.on("close", (code) => {
-    if (code !== 0 && code !== null && stderrBuf) {
-      console.error(`[ffmpeg] exited ${code}:`, stderrBuf.slice(-500));
-    }
+    // Always log ffmpeg exit for debugging
+    const lastLines = stderrBuf.split("\n").filter(Boolean).slice(-5).join("\n");
+    console.log(`[ffmpeg] exited with code ${code}. Last stderr:\n${lastLines}`);
   });
 
   return proc;
