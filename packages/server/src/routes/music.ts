@@ -7,7 +7,7 @@ import {
   removeFromQueue,
   clearQueue,
 } from "../music/queue.js";
-import { playTrack, skipTrack, stopPlayback } from "../music/player.js";
+import { playTrack, skipTrack, stopPlayback, onQueueChanged } from "../music/player.js";
 import type { MusicQueueItem } from "@concord/shared";
 
 export const musicRoutes: FastifyPluginAsync = async (app) => {
@@ -85,6 +85,9 @@ export const musicRoutes: FastifyPluginAsync = async (app) => {
             console.error("[music] playTrack failed:", err);
           });
         }
+      } else {
+        // Currently playing - prefetch next if this is the first queued track
+        onQueueChanged(voiceChannelId);
       }
 
       return getState(voiceChannelId);

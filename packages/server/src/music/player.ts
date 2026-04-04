@@ -9,7 +9,7 @@ import {
   TrackSource,
 } from "@livekit/rtc-node";
 import { downloadAudio, spawnFfmpegStream, cleanupTempDir } from "./ytdlp.js";
-import { popNext, setPlaying, setNotPlaying } from "./queue.js";
+import { getQueue, popNext, setPlaying, setNotPlaying } from "./queue.js";
 import { createLiveKitToken, voiceRoomName } from "../livekit.js";
 import { env } from "../env.js";
 import type { MusicQueueItem } from "@concord/shared";
@@ -28,7 +28,83 @@ interface ActivePlayer {
   tempDir: string;
 }
 
+interface PrefetchedTrack {
+  trackUrl: string;
+  filePath: string;
+  tempDir: string;
+  title: string;
+  duration: number;
+}
+
 const activePlayers = new Map<string, ActivePlayer>();
+const prefetchCache = new Map<string, PrefetchedTrack>();
+const prefetchInFlight = new Map<string, Promise<PrefetchedTrack | null>>();
+
+/**
+ * Prefetch the next track in a channel's queue (if any).
+ * Runs in the background, doesn't block playback.
+ */
+function prefetchNext(voiceChannelId: string): void {
+  const queue = getQueue(voiceChannelId);
+  if (queue.length === 0) return;
+
+  const nextTrack = queue[0];
+  const existing = prefetchCache.get(voiceChannelId);
+  if (existing && existing.trackUrl === nextTrack.url) return; // already cached
+
+  // Don't start a duplicate prefetch
+  if (prefetchInFlight.has(voiceChannelId)) return;
+
+  console.log(`[music] Prefetching next track: "${nextTrack.title}"`);
+  const promise = downloadAudio(nextTrack.url)
+    .then(({ filePath, tempDir, title, duration }) => {
+      const cached: PrefetchedTrack = {
+        trackUrl: nextTrack.url,
+        filePath,
+        tempDir,
+        title,
+        duration,
+      };
+      prefetchCache.set(voiceChannelId, cached);
+      prefetchInFlight.delete(voiceChannelId);
+      console.log(`[music] Prefetch complete: "${title}"`);
+      return cached;
+    })
+    .catch((err) => {
+      console.warn(`[music] Prefetch failed:`, err);
+      prefetchInFlight.delete(voiceChannelId);
+      return null;
+    });
+
+  prefetchInFlight.set(voiceChannelId, promise);
+}
+
+/**
+ * Clear prefetch cache for a channel (e.g. on queue clear, stop, or skip).
+ */
+async function clearPrefetch(voiceChannelId: string): Promise<void> {
+  prefetchInFlight.delete(voiceChannelId);
+  const cached = prefetchCache.get(voiceChannelId);
+  if (cached) {
+    prefetchCache.delete(voiceChannelId);
+    await cleanupTempDir(cached.tempDir);
+  }
+}
+
+/**
+ * Try to get a prefetched download for a track. Returns null if not cached or URL doesn't match.
+ */
+function consumePrefetch(
+  voiceChannelId: string,
+  trackUrl: string
+): PrefetchedTrack | null {
+  const cached = prefetchCache.get(voiceChannelId);
+  if (cached && cached.trackUrl === trackUrl) {
+    prefetchCache.delete(voiceChannelId);
+    return cached;
+  }
+  return null;
+}
 
 /**
  * Start playing a track in a voice channel by joining the LiveKit room
@@ -44,18 +120,32 @@ export async function playTrack(
   await stopPlayback(voiceChannelId);
 
   try {
-    // Download audio to temp file (yt-dlp handles DASH/auth/format conversion)
-    const { filePath, tempDir, title } = await downloadAudio(track.url);
+    // Check prefetch cache first
+    let filePath: string;
+    let tempDir: string;
+    let title: string;
+
+    const cached = consumePrefetch(voiceChannelId, track.url);
+    if (cached) {
+      console.log(`[music] Using prefetched audio for "${cached.title}"`);
+      filePath = cached.filePath;
+      tempDir = cached.tempDir;
+      title = cached.title;
+    } else {
+      const download = await downloadAudio(track.url);
+      filePath = download.filePath;
+      tempDir = download.tempDir;
+      title = download.title;
+    }
+
     const roomName = voiceRoomName(voiceChannelId);
 
-    // Create a token for the music bot to join the room
     const token = await createLiveKitToken(
       BOT_IDENTITY,
       "Music Bot",
       roomName
     );
 
-    // Connect to the LiveKit room
     const room = new Room();
     await room.connect(env.LIVEKIT_URL, token, {
       autoSubscribe: false,
@@ -66,7 +156,6 @@ export async function playTrack(
       console.log(`[music] Bot room disconnected, reason: ${reason}`);
     });
 
-    // Create audio source and track
     const audioSource = new AudioSource(SAMPLE_RATE, CHANNELS);
     const audioTrack = LocalAudioTrack.createAudioTrack("music", audioSource);
     const publishOptions = new TrackPublishOptions();
@@ -74,7 +163,6 @@ export async function playTrack(
     publishOptions.dtx = false;
     await room.localParticipant!.publishTrack(audioTrack, publishOptions);
 
-    // Stream from the downloaded file via ffmpeg
     const ffmpeg = spawnFfmpegStream(filePath);
 
     activePlayers.set(voiceChannelId, { ffmpeg, room, track, tempDir });
@@ -82,8 +170,10 @@ export async function playTrack(
 
     console.log(`[music] Playing "${title}" in ${roomName}`);
 
+    // Start prefetching the next track in the background
+    prefetchNext(voiceChannelId);
+
     // Buffer all PCM data from ffmpeg, then drain at real-time rate via captureFrame.
-    // ffmpeg runs at ~150x speed so it finishes in ~1s, but we need to play for minutes.
     let buffer = Buffer.alloc(0);
     let processing = false;
     let stopped = false;
@@ -147,10 +237,9 @@ export async function playTrack(
       processFrames();
     });
 
-    // ffmpeg finished outputting data - don't stop, let processFrames drain the buffer
     ffmpeg.on("close", () => {
       ffmpegDone = true;
-      processFrames(); // kick in case processFrames is idle
+      processFrames();
     });
 
     ffmpeg.on("error", async (err) => {
@@ -206,6 +295,7 @@ export async function stopPlayback(voiceChannelId: string): Promise<void> {
     await cleanupTempDir(player.tempDir);
     activePlayers.delete(voiceChannelId);
   }
+  await clearPrefetch(voiceChannelId);
   setNotPlaying(voiceChannelId);
 }
 
@@ -225,10 +315,27 @@ export function isPlaying(voiceChannelId: string): boolean {
 }
 
 /**
+ * Called when queue changes (add/remove) to trigger prefetch if needed.
+ */
+export function onQueueChanged(voiceChannelId: string): void {
+  if (activePlayers.has(voiceChannelId)) {
+    prefetchNext(voiceChannelId);
+  }
+}
+
+/**
  * Stop all active players. Called during server shutdown.
  */
 export async function stopAll(): Promise<void> {
   const channelIds = Array.from(activePlayers.keys());
   await Promise.all(channelIds.map((id) => stopPlayback(id)));
+
+  // Clean up any remaining prefetch files
+  for (const [id, cached] of prefetchCache) {
+    await cleanupTempDir(cached.tempDir);
+  }
+  prefetchCache.clear();
+  prefetchInFlight.clear();
+
   console.log(`[music] Stopped ${channelIds.length} active player(s)`);
 }
