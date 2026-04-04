@@ -512,6 +512,9 @@ a {
   padding: 0;
   margin-bottom: 8px;
   break-inside: avoid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: transform 0.1s, box-shadow 0.1s;
 }
 
