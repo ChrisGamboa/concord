@@ -123,7 +123,6 @@ const styles: Record<string, React.CSSProperties> = {
     background: "var(--bg-secondary)",
     overflowY: "auto",
     padding: "12px 8px",
-    paddingTop: "calc(12px + var(--titlebar-height))",
     flexShrink: 0,
   },
   section: {

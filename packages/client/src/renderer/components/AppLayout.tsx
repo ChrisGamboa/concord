@@ -173,7 +173,8 @@ export function AppLayout() {
 const styles: Record<string, React.CSSProperties> = {
   layout: {
     display: "flex",
-    height: "100%",
+    flex: 1,
+    minHeight: 0,
   },
   contentColumn: {
     flex: 1,
