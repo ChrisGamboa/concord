@@ -651,7 +651,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderTop: "1px solid var(--bg-primary)",
     background: "var(--bg-secondary)",
     padding: "12px 16px",
-    paddingBottom: "60px",
     flexShrink: 0,
   },
   controlBarInfo: {

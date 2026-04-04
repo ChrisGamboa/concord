@@ -79,11 +79,7 @@ a {
 /* ---- Music Player ---- */
 
 .music-player {
-  position: fixed;
-  bottom: 0;
-  left: var(--server-list-width);
-  right: 0;
-  z-index: 100;
+  flex-shrink: 0;
 }
 
 .music-bar {

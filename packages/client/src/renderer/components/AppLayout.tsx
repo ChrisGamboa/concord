@@ -117,39 +117,43 @@ export function AppLayout() {
   return (
     <div style={styles.layout}>
       <ServerList loading={serversLoading} />
-      {serverId && <ChannelSidebar />}
+      <div style={styles.contentColumn}>
+        <div style={styles.contentRow}>
+          {serverId && <ChannelSidebar />}
 
-      {/* Voice session - always mounted when connected, visible or hidden */}
-      {voiceConnection && (
-        <VoiceSession isViewing={!!isViewingActiveVoice} />
-      )}
+          {/* Voice session - always mounted when connected, visible or hidden */}
+          {voiceConnection && (
+            <VoiceSession isViewing={!!isViewingActiveVoice} />
+          )}
 
-      {/* Join prompt for unconnected voice channels */}
-      {channelId && isViewingUnconnectedVoice && (
-        <VoiceJoinPrompt
-          channelId={channelId}
-          channelName={currentChannel?.name ?? "voice"}
-        />
-      )}
+          {/* Join prompt for unconnected voice channels */}
+          {channelId && isViewingUnconnectedVoice && (
+            <VoiceJoinPrompt
+              channelId={channelId}
+              channelName={currentChannel?.name ?? "voice"}
+            />
+          )}
 
-      {/* Text channel */}
-      {channelId && !isVoiceChannel && <ChatArea />}
+          {/* Text channel */}
+          {channelId && !isVoiceChannel && <ChatArea />}
 
-      {serverId && !channelId && (
-        <div style={styles.welcome}>
-          <p style={{ color: "var(--text-muted)" }}>Loading channels...</p>
+          {serverId && !channelId && (
+            <div style={styles.welcome}>
+              <p style={{ color: "var(--text-muted)" }}>Loading channels...</p>
+            </div>
+          )}
+          {serverId && !isVoiceChannel && channelId && <MemberList />}
+          {!serverId && (
+            <div style={styles.welcome}>
+              <h2>Welcome to Concord</h2>
+              <p style={{ color: "var(--text-secondary)", marginTop: "8px" }}>
+                Select or create a server to get started
+              </p>
+            </div>
+          )}
         </div>
-      )}
-      {serverId && !isVoiceChannel && channelId && <MemberList />}
-      {!serverId && (
-        <div style={styles.welcome}>
-          <h2>Welcome to Concord</h2>
-          <p style={{ color: "var(--text-secondary)", marginTop: "8px" }}>
-            Select or create a server to get started
-          </p>
-        </div>
-      )}
-      <MusicPlayer />
+        <MusicPlayer />
+      </div>
       {showSettings && <SettingsPage onClose={() => setShowSettings(false)} />}
     </div>
   );
@@ -159,6 +163,18 @@ const styles: Record<string, React.CSSProperties> = {
   layout: {
     display: "flex",
     height: "100%",
+  },
+  contentColumn: {
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    minWidth: 0,
+    minHeight: 0,
+  },
+  contentRow: {
+    flex: 1,
+    display: "flex",
+    minHeight: 0,
   },
   welcome: {
     flex: 1,
