@@ -13,6 +13,7 @@ import { VoiceJoinPrompt, VoiceSession } from "./VoiceChannel";
 import { MusicPlayer } from "./MusicPlayer";
 import { MemberList } from "./MemberList";
 import { SettingsPage } from "./SettingsPage";
+import { ServerSettings } from "./ServerSettings";
 
 export function AppLayout() {
   const { serverId, channelId } = useParams();
@@ -72,12 +73,18 @@ export function AppLayout() {
   const userId = useAuthStore((s) => s.user?.id);
   const { setUserOnline, setUserOffline, addTyping } = usePresenceStore();
   const [showSettings, setShowSettings] = useState(false);
+  const [showServerSettings, setShowServerSettings] = useState(false);
 
-  // Listen for settings open event from ServerList
+  // Listen for settings open events
   useEffect(() => {
     const handler = () => setShowSettings(true);
+    const serverHandler = () => setShowServerSettings(true);
     window.addEventListener("concord:open-settings", handler);
-    return () => window.removeEventListener("concord:open-settings", handler);
+    window.addEventListener("concord:open-server-settings", serverHandler);
+    return () => {
+      window.removeEventListener("concord:open-settings", handler);
+      window.removeEventListener("concord:open-server-settings", serverHandler);
+    };
   }, []);
 
   // Handle incoming WebSocket messages
@@ -156,6 +163,9 @@ export function AppLayout() {
         <MusicPlayer />
       </div>
       {showSettings && <SettingsPage onClose={() => setShowSettings(false)} />}
+      {showServerSettings && serverId && (
+        <ServerSettings serverId={serverId} onClose={() => setShowServerSettings(false)} />
+      )}
     </div>
   );
 }
