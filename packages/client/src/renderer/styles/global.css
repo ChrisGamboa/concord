@@ -497,12 +497,10 @@ a {
 .gif-picker-grid {
   flex: 1;
   min-height: 0;
-  overflow-y: scroll;
+  overflow-y: auto;
   padding: 8px;
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  grid-auto-rows: 110px;
-  gap: 6px;
+  column-count: 2;
+  column-gap: 6px;
 }
 
 .gif-picker-item {
@@ -512,6 +510,8 @@ a {
   overflow: hidden;
   cursor: pointer;
   padding: 0;
+  margin-bottom: 6px;
+  break-inside: avoid;
   transition: transform 0.1s, box-shadow 0.1s;
 }
 
@@ -523,8 +523,6 @@ a {
 .gif-picker-item img {
   display: block;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 .gif-picker-status {
