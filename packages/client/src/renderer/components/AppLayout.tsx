@@ -127,8 +127,9 @@ export function AppLayout() {
           )}
 
           {/* Join prompt for unconnected voice channels */}
-          {channelId && isViewingUnconnectedVoice && (
+          {channelId && serverId && isViewingUnconnectedVoice && (
             <VoiceJoinPrompt
+              serverId={serverId}
               channelId={channelId}
               channelName={currentChannel?.name ?? "voice"}
             />

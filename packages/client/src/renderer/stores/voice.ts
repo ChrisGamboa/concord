@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 interface VoiceConnection {
   url: string;
   token: string;
+  serverId: string;
   channelId: string;
   channelName: string;
 }
@@ -17,7 +18,7 @@ interface VoiceState {
   /** Internal: set by VoiceSession when LiveKitRoom connects */
   _room: Room | null;
 
-  join: (channelId: string, channelName: string) => Promise<void>;
+  join: (serverId: string, channelId: string, channelName: string) => Promise<void>;
   disconnect: () => void;
   clearError: () => void;
   setRoom: (room: Room | null) => void;
@@ -32,7 +33,7 @@ export const useVoiceStore = create<VoiceState>()((set, get) => ({
   isMuted: false,
   _room: null,
 
-  join: async (channelId, channelName) => {
+  join: async (serverId, channelId, channelName) => {
     set({ joining: true, error: "" });
     try {
       const res = await api.joinVoiceChannel(channelId);
@@ -40,6 +41,7 @@ export const useVoiceStore = create<VoiceState>()((set, get) => ({
         connection: {
           url: res.url,
           token: res.token,
+          serverId,
           channelId,
           channelName,
         },

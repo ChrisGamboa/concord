@@ -211,7 +211,7 @@ export function ChannelSidebar() {
                 style={styles.voiceStatusBtn}
                 onClick={() =>
                   navigate(
-                    `/channels/${serverId}/${voiceConnection.channelId}`
+                    `/channels/${voiceConnection.serverId}/${voiceConnection.channelId}`
                   )
                 }
                 title="Return to voice channel"

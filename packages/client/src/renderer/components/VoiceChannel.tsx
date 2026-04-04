@@ -17,9 +17,11 @@ import { useVoiceStore } from "../stores/voice";
 // ---- Join prompt: shown when viewing a voice channel you're not connected to ----
 
 export function VoiceJoinPrompt({
+  serverId,
   channelId,
   channelName,
 }: {
+  serverId: string;
   channelId: string;
   channelName: string;
 }) {
@@ -28,7 +30,7 @@ export function VoiceJoinPrompt({
   return (
     <div style={styles.disconnected}>
       <button
-        onClick={() => join(channelId, channelName)}
+        onClick={() => join(serverId, channelId, channelName)}
         style={styles.joinButton}
         disabled={joining}
       >
