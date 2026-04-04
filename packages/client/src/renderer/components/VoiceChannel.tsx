@@ -9,10 +9,13 @@ import {
   VideoTrack,
 } from "@livekit/components-react";
 import { Track, VideoPresets } from "livekit-client";
+import { Permissions, hasPermission } from "@concord/shared";
+import { api } from "../lib/api";
 import { avatarColor, avatarUrl } from "../lib/avatar";
 import { playJoinSelf, playDisconnect, playUserJoined, playUserLeft } from "../lib/sounds";
 import { createRnnoiseTrack } from "../lib/rnnoise-processor";
 import { useVoiceStore } from "../stores/voice";
+import { useAuthStore } from "../stores/auth";
 import type { RemoteParticipant } from "livekit-client";
 
 /** Extract avatar URL from LiveKit participant metadata */
@@ -199,17 +202,25 @@ function ParticipantVolumeMenu({
   name,
   x,
   y,
+  channelId,
+  myPermissions,
+  onAction,
 }: {
   identity: string;
   name: string;
   x: number;
   y: number;
+  channelId?: string;
+  myPermissions: number;
+  onAction?: () => void;
 }) {
   const volume = useVoiceStore((s) => s.participantVolumes[identity] ?? 1);
   const setVolume = useVoiceStore((s) => s.setParticipantVolume);
   const mute = useVoiceStore((s) => s.muteParticipant);
   const unmute = useVoiceStore((s) => s.unmuteParticipant);
   const menuRef = useRef<HTMLDivElement>(null);
+  const canKick = hasPermission(myPermissions, Permissions.KICK_MEMBERS);
+  const canServerMute = hasPermission(myPermissions, Permissions.ADMIN);
 
   // Adjust position so menu doesn't go off-screen
   const [pos, setPos] = useState({ left: x, top: y });
@@ -271,6 +282,47 @@ function ParticipantVolumeMenu({
           </>
         )}
       </button>
+
+      {/* Mod actions */}
+      {(canServerMute || canKick) && channelId && (
+        <>
+          <div style={{ height: "1px", background: "var(--border)", margin: "4px 0" }} />
+          {canServerMute && (
+            <button
+              className="voice-ctx-mute"
+              onClick={async () => {
+                await api.voiceMute(channelId, identity, true);
+                onAction?.();
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="1" y1="1" x2="23" y2="23" />
+                <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
+                <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2c0 .76-.13 1.49-.35 2.17" />
+              </svg>
+              Server Mute
+            </button>
+          )}
+          {canKick && (
+            <button
+              className="voice-ctx-mute"
+              style={{ color: "var(--danger)" }}
+              onClick={async () => {
+                await api.voiceKick(channelId, identity);
+                onAction?.();
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="8.5" cy="7" r="4" />
+                <line x1="18" y1="8" x2="23" y2="13" />
+                <line x1="23" y1="8" x2="18" y2="13" />
+              </svg>
+              Kick from Voice
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -288,6 +340,18 @@ function VoiceContent({
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
   const { menu: volumeMenu, onContextMenu: onParticipantRightClick } = useParticipantContextMenu();
+  const voiceChannelId = useVoiceStore((s) => s.connection?.channelId);
+  const voiceServerId = useVoiceStore((s) => s.connection?.serverId);
+  const authUserId = useAuthStore((s) => s.user?.id);
+
+  // Fetch current user's permissions for this server
+  const [myPermissions, setMyPermissions] = useState(0);
+  useEffect(() => {
+    if (!voiceServerId || !authUserId) return;
+    api.getMyPermissions(voiceServerId, authUserId).then((res) => {
+      setMyPermissions(res.permissions);
+    }).catch(() => {});
+  }, [voiceServerId, authUserId]);
 
   // Track participant join/leave for sound effects
   const prevParticipantIds = useRef<Set<string>>(new Set());
@@ -607,6 +671,8 @@ function VoiceContent({
             name={isBot ? "Music Bot" : (p.name ?? p.identity)}
             x={volumeMenu.x}
             y={volumeMenu.y}
+            channelId={voiceChannelId}
+            myPermissions={myPermissions}
           />
         );
       })()}

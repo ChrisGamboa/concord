@@ -6,6 +6,7 @@ import { usePresenceStore } from "../stores/presence";
 import { sendWs } from "../lib/ws";
 import { api } from "../lib/api";
 import { avatarColor, avatarUrl } from "../lib/avatar";
+import { Permissions, hasPermission } from "@concord/shared";
 
 const IMAGE_REGEX = /\.(png|jpe?g|gif|webp)$/i;
 const UPLOAD_URL_REGEX = /^\/uploads\/.+/;
@@ -40,7 +41,18 @@ export function ChatArea() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { serverId } = useParams() as { serverId?: string };
   const channel = channels.find((c) => c.id === channelId);
+
+  // Fetch permissions for moderation actions
+  const [myPermissions, setMyPermissions] = useState(0);
+  useEffect(() => {
+    if (!serverId || !userId) return;
+    api.getMyPermissions(serverId, userId).then((res) => {
+      setMyPermissions(res.permissions);
+    }).catch(() => {});
+  }, [serverId, userId]);
+  const canModerate = hasPermission(myPermissions, Permissions.MANAGE_MESSAGES);
 
   // Load messages and subscribe to WS channel
   useEffect(() => {
@@ -264,7 +276,7 @@ export function ChatArea() {
                 <div style={styles.groupedContent}>
                   {isEditingG ? (
                     <MessageActions
-                      msgId={msg.id} content={msg.content} isOwn={isOwnG}
+                      msgId={msg.id} content={msg.content} isOwn={isOwnG} canModerate={canModerate}
                       isHovered={isHoveredG} isEditing={true} editContent={editContent}
                       confirmDeleteId={confirmDeleteId}
                       onStartEdit={handleStartEdit} onDelete={handleDelete}
@@ -280,7 +292,7 @@ export function ChatArea() {
                 </div>
                 {!isEditingG && (
                   <MessageActions
-                    msgId={msg.id} content={msg.content} isOwn={isOwnG}
+                    msgId={msg.id} content={msg.content} isOwn={isOwnG} canModerate={canModerate}
                     isHovered={isHoveredG} isEditing={false} editContent={editContent}
                     confirmDeleteId={confirmDeleteId}
                     onStartEdit={handleStartEdit} onDelete={handleDelete}
@@ -329,7 +341,7 @@ export function ChatArea() {
                 </div>
                 {isEditing ? (
                   <MessageActions
-                    msgId={msg.id} content={msg.content} isOwn={isOwn}
+                    msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate}
                     isHovered={isHovered} isEditing={true} editContent={editContent}
                     confirmDeleteId={confirmDeleteId}
                     onStartEdit={handleStartEdit} onDelete={handleDelete}
@@ -345,7 +357,7 @@ export function ChatArea() {
               </div>
               {!isEditing && (
                 <MessageActions
-                  msgId={msg.id} content={msg.content} isOwn={isOwn}
+                  msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate}
                   isHovered={isHovered} isEditing={false} editContent={editContent}
                   confirmDeleteId={confirmDeleteId}
                   onStartEdit={handleStartEdit} onDelete={handleDelete}
@@ -400,6 +412,7 @@ function MessageActions({
   msgId,
   content,
   isOwn,
+  canModerate,
   isHovered,
   isEditing,
   editContent,
@@ -413,6 +426,7 @@ function MessageActions({
   msgId: string;
   content: string;
   isOwn: boolean;
+  canModerate: boolean;
   isHovered: boolean;
   isEditing: boolean;
   editContent: string;
@@ -443,16 +457,19 @@ function MessageActions({
     );
   }
 
-  if (!isOwn || !isHovered) return null;
+  const showActions = isHovered && (isOwn || canModerate);
+  if (!showActions) return null;
 
   return (
     <div style={styles.actionBar}>
-      <button
-        style={styles.actionButton}
-        onClick={() => onStartEdit(msgId, content)}
-      >
-        Edit
-      </button>
+      {isOwn && (
+        <button
+          style={styles.actionButton}
+          onClick={() => onStartEdit(msgId, content)}
+        >
+          Edit
+        </button>
+      )}
       <button
         style={{
           ...styles.actionButton,
