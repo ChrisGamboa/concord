@@ -182,13 +182,13 @@ function useParticipantContextMenu() {
 
   useEffect(() => {
     if (!menu) return;
-    const close = () => setMenu(null);
-    window.addEventListener("click", close);
-    window.addEventListener("contextmenu", close);
-    return () => {
-      window.removeEventListener("click", close);
-      window.removeEventListener("contextmenu", close);
-    };
+    // Delay listener registration so the opening right-click doesn't immediately close it
+    const timer = setTimeout(() => {
+      const close = () => setMenu(null);
+      window.addEventListener("click", close, { once: true });
+      window.addEventListener("contextmenu", close, { once: true });
+    }, 0);
+    return () => clearTimeout(timer);
   }, [menu]);
 
   const onContextMenu = useCallback((e: React.MouseEvent, identity: string) => {
