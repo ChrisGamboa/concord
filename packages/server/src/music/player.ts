@@ -9,7 +9,7 @@ import {
   TrackSource,
 } from "@livekit/rtc-node";
 import { downloadAudio, spawnFfmpegStream, cleanupTempDir } from "./ytdlp.js";
-import { getQueue, popNext, setPlaying, setNotPlaying } from "./queue.js";
+import { getQueue, popNext, setPlaying, setPaused, setNotPlaying } from "./queue.js";
 import { createLiveKitToken, voiceRoomName } from "../livekit.js";
 import { env } from "../env.js";
 import type { MusicQueueItem } from "@concord/shared";
@@ -26,6 +26,8 @@ interface ActivePlayer {
   room: Room;
   track: MusicQueueItem;
   tempDir: string;
+  paused: boolean;
+  resumeFn: (() => void) | null;
 }
 
 interface PrefetchedTrack {
@@ -165,7 +167,8 @@ export async function playTrack(
 
     const ffmpeg = spawnFfmpegStream(filePath);
 
-    activePlayers.set(voiceChannelId, { ffmpeg, room, track, tempDir });
+    const playerState: ActivePlayer = { ffmpeg, room, track, tempDir, paused: false, resumeFn: null };
+    activePlayers.set(voiceChannelId, playerState);
     setPlaying(voiceChannelId, { ...track, title });
 
     console.log(`[music] Playing "${title}" in ${roomName}`);
@@ -184,7 +187,7 @@ export async function playTrack(
       if (processing) return;
       processing = true;
 
-      while (buffer.length >= BYTES_PER_FRAME && !stopped) {
+      while (buffer.length >= BYTES_PER_FRAME && !stopped && !playerState.paused) {
         const frameData = buffer.subarray(0, BYTES_PER_FRAME);
         buffer = buffer.subarray(BYTES_PER_FRAME);
 
@@ -231,6 +234,9 @@ export async function playTrack(
         }
       }
     };
+
+    // Store resume callback so pause/resume can restart the drain loop
+    playerState.resumeFn = () => processFrames();
 
     ffmpeg.stdout?.on("data", (chunk: Buffer) => {
       buffer = Buffer.concat([buffer, chunk]);
@@ -304,6 +310,32 @@ export async function stopPlayback(voiceChannelId: string): Promise<void> {
   await stopCurrentPlayer(voiceChannelId);
   await clearPrefetch(voiceChannelId);
   setNotPlaying(voiceChannelId);
+}
+
+/**
+ * Pause current playback (stops sending frames, buffer is preserved).
+ */
+export function pausePlayback(voiceChannelId: string): void {
+  const player = activePlayers.get(voiceChannelId);
+  if (player && !player.paused) {
+    player.paused = true;
+    setPaused(voiceChannelId, true);
+    console.log(`[music] Paused in channel ${voiceChannelId}`);
+  }
+}
+
+/**
+ * Resume paused playback.
+ */
+export function resumePlayback(voiceChannelId: string): void {
+  const player = activePlayers.get(voiceChannelId);
+  if (player && player.paused) {
+    player.paused = false;
+    setPaused(voiceChannelId, false);
+    console.log(`[music] Resumed in channel ${voiceChannelId}`);
+    // Restart the frame drain loop
+    player.resumeFn?.();
+  }
 }
 
 /**

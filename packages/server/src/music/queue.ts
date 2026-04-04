@@ -8,7 +8,7 @@ import type { MusicQueueItem, MusicState } from "@concord/shared";
 const channelQueues = new Map<string, MusicQueueItem[]>();
 const channelState = new Map<
   string,
-  { isPlaying: boolean; currentTrack: MusicQueueItem | null }
+  { isPlaying: boolean; isPaused: boolean; currentTrack: MusicQueueItem | null }
 >();
 
 export function getQueue(voiceChannelId: string): MusicQueueItem[] {
@@ -46,10 +46,12 @@ export function popNext(voiceChannelId: string): MusicQueueItem | null {
 export function getState(voiceChannelId: string): MusicState {
   const state = channelState.get(voiceChannelId) ?? {
     isPlaying: false,
+    isPaused: false,
     currentTrack: null,
   };
   return {
     isPlaying: state.isPlaying,
+    isPaused: state.isPaused,
     currentTrack: state.currentTrack,
     queue: getQueue(voiceChannelId),
     voiceChannelId,
@@ -62,13 +64,22 @@ export function setPlaying(
 ): void {
   channelState.set(voiceChannelId, {
     isPlaying: track !== null,
+    isPaused: false,
     currentTrack: track,
   });
+}
+
+export function setPaused(voiceChannelId: string, paused: boolean): void {
+  const state = channelState.get(voiceChannelId);
+  if (state) {
+    state.isPaused = paused;
+  }
 }
 
 export function setNotPlaying(voiceChannelId: string): void {
   channelState.set(voiceChannelId, {
     isPlaying: false,
+    isPaused: false,
     currentTrack: null,
   });
 }

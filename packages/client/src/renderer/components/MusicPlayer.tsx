@@ -112,6 +112,14 @@ export function MusicPlayer() {
     setMusicState(state);
   }, [voiceChannelId]);
 
+  const handlePauseResume = useCallback(async () => {
+    if (!voiceChannelId) return;
+    const state = musicState?.isPaused
+      ? await api.musicResume(voiceChannelId)
+      : await api.musicPause(voiceChannelId);
+    setMusicState(state);
+  }, [voiceChannelId, musicState?.isPaused]);
+
   const handleStop = useCallback(async () => {
     if (!voiceChannelId) return;
     const state = await api.musicStop(voiceChannelId);
@@ -121,6 +129,7 @@ export function MusicPlayer() {
   if (!voiceChannelId) return null;
 
   const isPlaying = musicState?.isPlaying && musicState.currentTrack;
+  const isPaused = musicState?.isPaused ?? false;
   const hasQueue = musicState && musicState.queue.length > 0;
 
   return (
@@ -140,7 +149,7 @@ export function MusicPlayer() {
 
         <div className="music-bar-info">
           <span className="music-bar-label">
-            {isPlaying ? "Now Playing" : "Music"}
+            {isPlaying ? (isPaused ? "Paused" : "Now Playing") : "Music"}
           </span>
           {isPlaying && (
             <span className="music-bar-title">
@@ -154,6 +163,13 @@ export function MusicPlayer() {
             className="music-bar-controls"
             onClick={(e) => e.stopPropagation()}
           >
+            <button
+              className="music-ctrl-btn"
+              onClick={handlePauseResume}
+              title={isPaused ? "Resume" : "Pause"}
+            >
+              {isPaused ? ICON_PLAY : ICON_PAUSE}
+            </button>
             <button className="music-ctrl-btn" onClick={handleSkip} title="Skip">
               {ICON_SKIP}
             </button>
@@ -187,7 +203,7 @@ export function MusicPlayer() {
               <div className="music-now-thumb-placeholder">{ICON_NOTE}</div>
             )}
             <div className="music-now-info">
-              <span className="music-now-label">Now Playing</span>
+              <span className="music-now-label">{isPaused ? "Paused" : "Now Playing"}</span>
               <span className="music-now-title">
                 {musicState.currentTrack!.title}
               </span>
@@ -196,6 +212,13 @@ export function MusicPlayer() {
               </span>
             </div>
             <div className="music-bar-controls">
+              <button
+                className="music-ctrl-btn"
+                onClick={handlePauseResume}
+                title={isPaused ? "Resume" : "Pause"}
+              >
+                {isPaused ? ICON_PLAY : ICON_PAUSE}
+              </button>
               <button className="music-ctrl-btn" onClick={handleSkip} title="Skip">
                 {ICON_SKIP}
               </button>
@@ -314,6 +337,19 @@ function formatDuration(seconds: number): string {
   const s = Math.floor(seconds % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
+
+const ICON_PAUSE = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+    <rect x="3" y="2" width="4" height="12" rx="1" />
+    <rect x="9" y="2" width="4" height="12" rx="1" />
+  </svg>
+);
+
+const ICON_PLAY = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+    <path d="M4 2l10 6-10 6V2z" />
+  </svg>
+);
 
 const ICON_SKIP = (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">

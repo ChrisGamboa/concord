@@ -124,6 +124,7 @@ export interface MusicQueueItem {
 
 export interface MusicState {
   isPlaying: boolean;
+  isPaused: boolean;
   currentTrack: MusicQueueItem | null;
   queue: MusicQueueItem[];
   voiceChannelId: string | null;

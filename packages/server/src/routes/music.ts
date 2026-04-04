@@ -7,7 +7,7 @@ import {
   removeFromQueue,
   clearQueue,
 } from "../music/queue.js";
-import { playTrack, skipTrack, stopPlayback, onQueueChanged } from "../music/player.js";
+import { playTrack, skipTrack, stopPlayback, pausePlayback, resumePlayback, onQueueChanged } from "../music/player.js";
 import type { MusicQueueItem } from "@concord/shared";
 
 export const musicRoutes: FastifyPluginAsync = async (app) => {
@@ -99,6 +99,24 @@ export const musicRoutes: FastifyPluginAsync = async (app) => {
     "/skip/:voiceChannelId",
     async (request) => {
       await skipTrack(request.params.voiceChannelId);
+      return getState(request.params.voiceChannelId);
+    }
+  );
+
+  // Pause playback
+  app.post<{ Params: { voiceChannelId: string } }>(
+    "/pause/:voiceChannelId",
+    async (request) => {
+      pausePlayback(request.params.voiceChannelId);
+      return getState(request.params.voiceChannelId);
+    }
+  );
+
+  // Resume playback
+  app.post<{ Params: { voiceChannelId: string } }>(
+    "/resume/:voiceChannelId",
+    async (request) => {
+      resumePlayback(request.params.voiceChannelId);
       return getState(request.params.voiceChannelId);
     }
   );

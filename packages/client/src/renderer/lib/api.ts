@@ -121,6 +121,12 @@ export const api = {
   musicSkip: (voiceChannelId: string) =>
     request<MusicState>(`/music/skip/${voiceChannelId}`, { method: "POST" }),
 
+  musicPause: (voiceChannelId: string) =>
+    request<MusicState>(`/music/pause/${voiceChannelId}`, { method: "POST" }),
+
+  musicResume: (voiceChannelId: string) =>
+    request<MusicState>(`/music/resume/${voiceChannelId}`, { method: "POST" }),
+
   musicStop: (voiceChannelId: string) =>
     request<MusicState>(`/music/stop/${voiceChannelId}`, { method: "POST" }),
 
