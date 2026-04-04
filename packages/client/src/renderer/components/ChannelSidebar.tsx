@@ -283,6 +283,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   header: {
     padding: "12px 16px",
+    paddingTop: "calc(12px + var(--titlebar-height))",
     borderBottom: "1px solid var(--bg-primary)",
     boxShadow: "0 1px 0 rgba(0,0,0,0.2)",
     display: "flex",
