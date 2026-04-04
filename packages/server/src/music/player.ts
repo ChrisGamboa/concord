@@ -1,6 +1,7 @@
 import type { ChildProcess } from "child_process";
 import {
   Room,
+  RoomEvent,
   AudioFrame,
   AudioSource,
   LocalAudioTrack,
@@ -14,10 +15,10 @@ import { env } from "../env.js";
 import type { MusicQueueItem } from "@concord/shared";
 
 const SAMPLE_RATE = 48000;
-const CHANNELS = 1;
+const CHANNELS = 2;
 const FRAME_DURATION_MS = 20;
 const SAMPLES_PER_FRAME = (SAMPLE_RATE * FRAME_DURATION_MS) / 1000; // 960
-const BYTES_PER_FRAME = SAMPLES_PER_FRAME * CHANNELS * 2; // 1920 bytes (16-bit mono)
+const BYTES_PER_FRAME = SAMPLES_PER_FRAME * CHANNELS * 2; // 3840 bytes (16-bit stereo)
 const BOT_IDENTITY = "concord-music-bot";
 
 interface ActivePlayer {
@@ -57,6 +58,10 @@ export async function playTrack(
     await room.connect(env.LIVEKIT_URL, token, {
       autoSubscribe: false,
       dynacast: false,
+    });
+
+    room.on(RoomEvent.Disconnected, (reason: unknown) => {
+      console.log(`[music] Bot room disconnected, reason: ${reason}`);
     });
 
     // Create audio source and track
