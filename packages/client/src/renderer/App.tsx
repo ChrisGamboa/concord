@@ -9,7 +9,6 @@ export function App() {
 
   return (
     <HashRouter>
-      <div className="titlebar">Concord</div>
       <Routes>
         {!token ? (
           <>
