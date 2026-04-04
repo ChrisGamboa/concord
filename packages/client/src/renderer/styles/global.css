@@ -498,19 +498,19 @@ a {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px;
+  padding: 10px 12px;
   column-count: 2;
-  column-gap: 6px;
+  column-gap: 8px;
 }
 
 .gif-picker-item {
   background: var(--bg-tertiary);
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   overflow: hidden;
   cursor: pointer;
   padding: 0;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   break-inside: avoid;
   transition: transform 0.1s, box-shadow 0.1s;
 }
