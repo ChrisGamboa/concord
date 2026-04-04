@@ -93,6 +93,43 @@ export const api = {
       method: "POST",
     }),
 
+  joinViaInvite: (code: string) =>
+    request<{ joined: boolean; serverId: string; serverName: string }>(`/servers/join/invite/${code}`, {
+      method: "POST",
+    }),
+
+  updateServer: async (serverId: string, data: { name?: string; icon?: File; removeIcon?: boolean }) => {
+    const formData = new FormData();
+    if (data.name) formData.append("name", data.name);
+    if (data.icon) formData.append("icon", data.icon);
+    if (data.removeIcon) formData.append("removeIcon", "true");
+
+    const headers: Record<string, string> = {};
+    if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
+
+    const res = await fetch(`${API_BASE}/servers/${serverId}`, {
+      method: "PATCH",
+      headers,
+      body: formData,
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
+    return res.json() as Promise<ServersResponse["servers"][0]>;
+  },
+
+  getInvites: (serverId: string) =>
+    request<{ invites: Array<{ code: string; createdBy: string; maxUses: number | null; uses: number; expiresAt: string | null; createdAt: string }> }>(
+      `/servers/${serverId}/invites`
+    ),
+
+  createInvite: (serverId: string, opts?: { maxUses?: number; expiresInHours?: number }) =>
+    request<{ invite: { code: string; maxUses: number | null; uses: number; expiresAt: string | null } }>(
+      `/servers/${serverId}/invites`,
+      { method: "POST", body: JSON.stringify(opts ?? {}) }
+    ),
+
+  deleteInvite: (serverId: string, code: string) =>
+    request<{ deleted: boolean }>(`/servers/${serverId}/invites/${code}`, { method: "DELETE" }),
+
   getMembers: (serverId: string) =>
     request<MembersResponse>(`/servers/${serverId}/members`),
 
