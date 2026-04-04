@@ -18,6 +18,7 @@ model User {
   messages       Message[]
   ownedServers   Server[]       @relation("ServerOwner")
   serverMembers  ServerMember[]
+  invites        Invite[]
 }
 
 model Server {
@@ -31,6 +32,22 @@ model Server {
   channels Channel[]
   roles    Role[]
   members  ServerMember[]
+  invites  Invite[]
+}
+
+model Invite {
+  code      String   @id
+  serverId  String
+  creatorId String
+  maxUses   Int?
+  uses      Int      @default(0)
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+
+  server  Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  creator User   @relation(fields: [creatorId], references: [id])
+
+  @@index([serverId])
 }
 
 model Channel {
