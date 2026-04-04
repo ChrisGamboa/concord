@@ -7,6 +7,7 @@ import { sendWs } from "../lib/ws";
 import { api } from "../lib/api";
 import { avatarColor, avatarUrl } from "../lib/avatar";
 import { Permissions, hasPermission } from "@concord/shared";
+import { GifPicker } from "./GifPicker";
 
 const IMAGE_REGEX = /\.(png|jpe?g|gif|webp)$/i;
 const UPLOAD_URL_REGEX = /^\/uploads\/.+/;
@@ -37,6 +38,7 @@ export function ChatArea() {
   const [editContent, setEditContent] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [showGifPicker, setShowGifPicker] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -371,7 +373,18 @@ export function ChatArea() {
         <div ref={messagesEndRef} />
       </div>
 
-      <div style={styles.inputArea}>
+      <div style={{ ...styles.inputArea, position: "relative" as const }}>
+        {showGifPicker && (
+          <GifPicker
+            onSelect={(gifUrl) => {
+              if (channelId) {
+                sendWs({ type: "send_message", channelId, content: gifUrl });
+              }
+              setShowGifPicker(false);
+            }}
+            onClose={() => setShowGifPicker(false)}
+          />
+        )}
         {uploadError && <div style={styles.uploadError}>{uploadError}</div>}
         {typingText && <div style={styles.typingIndicator}>{typingText}</div>}
         <form onSubmit={handleSubmit} style={styles.inputContainer}>
@@ -402,6 +415,14 @@ export function ChatArea() {
             disabled={uploading}
             autoFocus
           />
+          <button
+            type="button"
+            onClick={() => setShowGifPicker(!showGifPicker)}
+            style={styles.gifButton}
+            title="Send a GIF"
+          >
+            GIF
+          </button>
         </form>
       </div>
     </div>
@@ -483,8 +504,26 @@ function MessageActions({
   );
 }
 
-/** Renders message content with inline image previews for uploaded files. */
+const EXTERNAL_IMAGE_REGEX = /^https?:\/\/.+\.(gif|png|jpe?g|webp)(\?.*)?$/i;
+const EXTERNAL_GIF_DOMAIN_REGEX = /^https?:\/\/(static\.klipy\.com|media[0-9]*\.giphy\.com|media\.tenor\.com)\//i;
+
+/** Renders message content with inline image previews for uploaded files and GIFs. */
 function MessageBody({ content }: { content: string }) {
+  // External GIF/image URL (from Klipy, Giphy, Tenor, or any direct image link)
+  const trimmed = content.trim();
+  if (EXTERNAL_GIF_DOMAIN_REGEX.test(trimmed) || (EXTERNAL_IMAGE_REGEX.test(trimmed) && trimmed.startsWith("http"))) {
+    return (
+      <div>
+        <img
+          src={trimmed}
+          alt="GIF"
+          style={styles.gifEmbed}
+          loading="lazy"
+        />
+      </div>
+    );
+  }
+
   if (UPLOAD_URL_REGEX.test(content) && isImageUrl(content)) {
     return (
       <div>
@@ -756,5 +795,24 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--text-primary)",
     fontSize: "14px",
     outline: "none",
+  },
+  gifButton: {
+    padding: "6px 10px",
+    background: "var(--bg-secondary)",
+    border: "1px solid var(--border)",
+    borderRadius: "6px",
+    color: "var(--text-muted)",
+    fontSize: "11px",
+    fontWeight: 700,
+    cursor: "pointer",
+    flexShrink: 0,
+    letterSpacing: "0.02em",
+    transition: "color 0.15s, border-color 0.15s",
+  },
+  gifEmbed: {
+    maxWidth: "300px",
+    maxHeight: "250px",
+    borderRadius: "8px",
+    marginTop: "4px",
   },
 };

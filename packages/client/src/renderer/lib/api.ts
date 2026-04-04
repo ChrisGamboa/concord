@@ -124,6 +124,17 @@ export const api = {
   getMyPermissions: (serverId: string, userId: string) =>
     request<{ permissions: number }>(`/servers/${serverId}/members/${userId}/permissions`),
 
+  // GIFs
+  gifSearch: (q?: string, page?: number) => {
+    const params = new URLSearchParams({ limit: "20" });
+    if (q?.trim()) params.set("q", q.trim());
+    if (page) params.set("page", String(page));
+    return request<{
+      gifs: Array<{ id: string; title: string; previewUrl: string; url: string; mp4Url: string | null; width: number; height: number }>;
+      hasMore: boolean;
+    }>(`/gif/search?${params}`);
+  },
+
   // Voice moderation
   voiceKick: (channelId: string, targetId: string) =>
     request<{ kicked: boolean }>(`/voice/${channelId}/kick/${targetId}`, { method: "POST" }),
