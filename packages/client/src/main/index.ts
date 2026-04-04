@@ -2,8 +2,10 @@ import { app, BrowserWindow, desktopCapturer, session, shell, Notification, ipcM
 import { join } from "path";
 import { is } from "@electron-toolkit/utils";
 
+let mainWindow: BrowserWindow | null = null;
+
 function createWindow() {
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 940,
@@ -16,9 +18,9 @@ function createWindow() {
   });
 
   mainWindow.on("ready-to-show", () => {
-    mainWindow.show();
+    mainWindow!.show();
     if (is.dev) {
-      mainWindow.webContents.openDevTools({ mode: "bottom" });
+      mainWindow!.webContents.openDevTools({ mode: "bottom" });
     }
   });
 
@@ -41,13 +43,49 @@ ipcMain.on("show-notification", (_event, { title, body }: { title: string; body:
   }
 });
 
+// Screen source picker: renderer requests sources, user picks one, renderer replies
+ipcMain.handle("get-screen-sources", async () => {
+  const sources = await desktopCapturer.getSources({
+    types: ["screen", "window"],
+    thumbnailSize: { width: 320, height: 180 },
+  });
+  return sources.map((s) => ({
+    id: s.id,
+    name: s.name,
+    thumbnail: s.thumbnail.toDataURL(),
+    appIcon: s.appIcon?.toDataURL() ?? null,
+  }));
+});
+
 app.whenReady().then(() => {
-  // Allow screen sharing: provide the first screen source when getDisplayMedia is called
+  // Screen sharing: send sources to renderer for picking
   session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
     desktopCapturer.getSources({ types: ["screen", "window"] }).then((sources) => {
-      // Grant the first source (primary screen) -- Electron requires this handler
-      // for getDisplayMedia() to work. The user still sees the OS screen picker on macOS.
-      callback({ video: sources[0] });
+      // Send source list to renderer and wait for user selection
+      if (!mainWindow) {
+        callback({});
+        return;
+      }
+
+      mainWindow.webContents.send("screen-share-pick", sources.map((s) => ({
+        id: s.id,
+        name: s.name,
+        thumbnail: s.thumbnail.toDataURL(),
+      })));
+
+      // Wait for renderer to reply with selected source ID
+      ipcMain.once("screen-share-selected", (_event, sourceId: string | null) => {
+        if (!sourceId) {
+          callback({});
+          return;
+        }
+        const selected = sources.find((s) => s.id === sourceId);
+        if (selected) {
+          callback({ video: selected });
+        } else {
+          callback({});
+        }
+      });
     });
   });
 
