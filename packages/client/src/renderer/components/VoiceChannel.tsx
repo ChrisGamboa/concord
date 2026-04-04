@@ -97,6 +97,7 @@ export function VoiceSession({ isViewing }: { isViewing: boolean }) {
     >
       <VoiceStoreSync />
       <RoomAudioRenderer />
+      <ScreenShareAudioRenderer />
       {isViewing && (
         <VoiceContent
           channelName={connection.channelName}
@@ -138,6 +139,52 @@ const PhoneOffIcon = () => (
     <line x1="23" y1="1" x2="1" y2="23" />
   </svg>
 );
+
+/** Renders screenshare audio tracks (music bot). Always mounted inside LiveKitRoom. */
+function ScreenShareAudioRenderer() {
+  const screenShareAudioTracks = useTracks(
+    [Track.Source.ScreenShareAudio],
+    { onlySubscribed: false }
+  );
+
+  const audioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
+  useEffect(() => {
+    for (const trackRef of screenShareAudioTracks) {
+      const sid = trackRef.publication.trackSid;
+      if (!sid || !trackRef.publication.track) continue;
+      const mediaTrack = trackRef.publication.track.mediaStreamTrack;
+      if (!mediaTrack) continue;
+
+      if (!audioRefs.current.has(sid)) {
+        const audio = new Audio();
+        audio.srcObject = new MediaStream([mediaTrack]);
+        audio.play().catch(() => {});
+        audioRefs.current.set(sid, audio);
+      }
+    }
+
+    for (const [sid, audio] of audioRefs.current) {
+      if (!screenShareAudioTracks.some((t) => t.publication.trackSid === sid)) {
+        audio.pause();
+        audio.srcObject = null;
+        audioRefs.current.delete(sid);
+      }
+    }
+  }, [screenShareAudioTracks]);
+
+  // Clean up all audio elements on unmount
+  useEffect(() => {
+    return () => {
+      for (const audio of audioRefs.current.values()) {
+        audio.pause();
+        audio.srcObject = null;
+      }
+      audioRefs.current.clear();
+    };
+  }, []);
+
+  return null;
+}
 
 /** Syncs LiveKit room state to the voice store so components outside LiveKitRoom can read/control it */
 function VoiceStoreSync() {
@@ -265,36 +312,6 @@ function VoiceContent({
     { onlySubscribed: false }
   );
   const videoTracks = allVideoTracks.filter((t) => !t.publication.isMuted);
-
-  const screenShareAudioTracks = useTracks(
-    [Track.Source.ScreenShareAudio],
-    { onlySubscribed: false }
-  );
-
-  const audioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
-  useEffect(() => {
-    for (const trackRef of screenShareAudioTracks) {
-      const sid = trackRef.publication.trackSid;
-      if (!sid || !trackRef.publication.track) continue;
-      const mediaTrack = trackRef.publication.track.mediaStreamTrack;
-      if (!mediaTrack) continue;
-
-      if (!audioRefs.current.has(sid)) {
-        const audio = new Audio();
-        audio.srcObject = new MediaStream([mediaTrack]);
-        audio.play().catch(() => {});
-        audioRefs.current.set(sid, audio);
-      }
-    }
-
-    for (const [sid, audio] of audioRefs.current) {
-      if (!screenShareAudioTracks.some((t) => t.publication.trackSid === sid)) {
-        audio.pause();
-        audio.srcObject = null;
-        audioRefs.current.delete(sid);
-      }
-    }
-  }, [screenShareAudioTracks]);
 
   const isMuted = !localParticipant.isMicrophoneEnabled;
 
