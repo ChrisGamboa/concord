@@ -14,12 +14,14 @@ export async function createLiveKitToken(
   options?: {
     canPublish?: boolean;
     canSubscribe?: boolean;
+    metadata?: string;
   }
 ): Promise<string> {
   const token = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
     identity: userId,
     name: username,
     ttl: "6h",
+    metadata: options?.metadata,
   });
 
   token.addGrant({

@@ -38,17 +38,19 @@ export const voiceRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(403).send({ error: "Not a member of this server" });
       }
 
-      // Get user info for display name
+      // Get user info for display name and avatar
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { username: true, displayName: true },
+        select: { username: true, displayName: true, avatarUrl: true },
       });
 
       const roomName = voiceRoomName(channelId);
+      const metadata = JSON.stringify({ avatarUrl: user?.avatarUrl ?? null });
       const token = await createLiveKitToken(
         userId,
         user?.displayName ?? user?.username ?? "Unknown",
-        roomName
+        roomName,
+        { metadata }
       );
 
       return {

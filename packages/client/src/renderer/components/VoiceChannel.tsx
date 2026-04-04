@@ -9,11 +9,22 @@ import {
   VideoTrack,
 } from "@livekit/components-react";
 import { Track, VideoPresets } from "livekit-client";
-import { avatarColor } from "../lib/avatar";
+import { avatarColor, avatarUrl } from "../lib/avatar";
 import { playJoinSelf, playDisconnect, playUserJoined, playUserLeft } from "../lib/sounds";
 import { createRnnoiseTrack } from "../lib/rnnoise-processor";
 import { useVoiceStore } from "../stores/voice";
 import type { RemoteParticipant } from "livekit-client";
+
+/** Extract avatar URL from LiveKit participant metadata */
+function getParticipantAvatar(metadata?: string): string | null {
+  if (!metadata) return null;
+  try {
+    const data = JSON.parse(metadata);
+    return avatarUrl(data.avatarUrl) ?? null;
+  } catch {
+    return null;
+  }
+}
 
 // ---- Join prompt: shown when viewing a voice channel you're not connected to ----
 
@@ -453,9 +464,17 @@ function VoiceContent({
                       borderColor: p.isSpeaking ? "var(--success)" : "transparent",
                     }}
                   >
-                    <div style={{ ...styles.participantAvatarSmall, background: isBot ? "#57f287" : avatarColor(p.identity) }}>
-                      {isBot ? "M" : (p.name ?? "?").charAt(0).toUpperCase()}
-                    </div>
+                    {!isBot && getParticipantAvatar(p.metadata) ? (
+                      <img
+                        style={{ ...styles.participantAvatarSmall, objectFit: "cover" }}
+                        src={getParticipantAvatar(p.metadata)!}
+                        alt=""
+                      />
+                    ) : (
+                      <div style={{ ...styles.participantAvatarSmall, background: isBot ? "#57f287" : avatarColor(p.identity) }}>
+                        {isBot ? "M" : (p.name ?? "?").charAt(0).toUpperCase()}
+                      </div>
+                    )}
                   </div>
                   <span
                     style={{
@@ -497,14 +516,22 @@ function VoiceContent({
                         : "none",
                     }}
                   >
-                    <div
-                      style={{
-                        ...styles.participantAvatarLarge,
-                        background: isBot ? "#57f287" : avatarColor(p.identity),
-                      }}
-                    >
-                      {isBot ? "M" : (p.name ?? "?").charAt(0).toUpperCase()}
-                    </div>
+                    {!isBot && getParticipantAvatar(p.metadata) ? (
+                      <img
+                        style={{ ...styles.participantAvatarLarge, objectFit: "cover" }}
+                        src={getParticipantAvatar(p.metadata)!}
+                        alt=""
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          ...styles.participantAvatarLarge,
+                          background: isBot ? "#57f287" : avatarColor(p.identity),
+                        }}
+                      >
+                        {isBot ? "M" : (p.name ?? "?").charAt(0).toUpperCase()}
+                      </div>
+                    )}
                   </div>
                   <span
                     style={{
