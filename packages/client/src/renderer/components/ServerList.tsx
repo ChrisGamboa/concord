@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useChatStore } from "../stores/chat";
 import { api } from "../lib/api";
+import { avatarUrl } from "../lib/avatar";
 
 export function ServerList({ loading }: { loading?: boolean }) {
   const servers = useChatStore((s) => s.servers);
@@ -29,13 +30,20 @@ export function ServerList({ loading }: { loading?: boolean }) {
   const handleJoin = async () => {
     if (!inputValue.trim()) return;
     setError("");
+    const value = inputValue.trim();
     try {
-      await api.joinServer(inputValue.trim());
-      // Refresh server list
+      // Try as invite code first (8 hex chars), then fall back to server ID
+      let joinedServerId = value;
+      if (/^[a-f0-9]{8}$/i.test(value)) {
+        const result = await api.joinViaInvite(value);
+        joinedServerId = result.serverId;
+      } else {
+        await api.joinServer(value);
+      }
       const res = await api.getServers();
       setServers(res.servers);
       close();
-      navigate(`/channels/${inputValue.trim()}`);
+      navigate(`/channels/${joinedServerId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to join server");
     }
@@ -79,7 +87,11 @@ export function ServerList({ loading }: { loading?: boolean }) {
             }}
             title={server.name}
           >
-            {server.name.charAt(0).toUpperCase()}
+            {avatarUrl(server.iconUrl) ? (
+              <img src={avatarUrl(server.iconUrl)!} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit" }} />
+            ) : (
+              server.name.charAt(0).toUpperCase()
+            )}
           </button>
         ))}
 
@@ -146,11 +158,11 @@ export function ServerList({ loading }: { loading?: boolean }) {
       {showMenu && mode === "join" && (
         <div style={styles.popup}>
           <p style={styles.popupLabel}>Join an existing server</p>
-          <p style={styles.popupHint}>Enter the server ID to join</p>
+          <p style={styles.popupHint}>Enter an invite code or server ID</p>
           {error && <p style={styles.error}>{error}</p>}
           <input
             style={styles.input}
-            placeholder="Server ID"
+            placeholder="Invite code or server ID"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleJoin()}

@@ -2,6 +2,38 @@
 
 Self-hostable Discord alternative built with TypeScript.
 
+## Table of Contents
+
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Prerequisites](#prerequisites)
+  - [Installing ffmpeg and yt-dlp](#installing-ffmpeg-and-yt-dlp)
+- [Getting Started](#getting-started)
+- [Usage](#usage)
+  - [Text Chat](#text-chat)
+  - [Voice / Video / Screen Share](#voice--video--screen-share)
+  - [Music](#music)
+  - [Roles & Permissions](#roles--permissions)
+  - [Profile & Settings](#profile--settings)
+- [Environment Variables](#environment-variables)
+- [Testing](#testing)
+- [Project Structure](#project-structure)
+- [Building Distributables](#building-distributables)
+  - [Building the Server](#building-the-server)
+  - [Building the Electron Client](#building-the-electron-client)
+- [Hosting & Public Deployment](#hosting--public-deployment)
+  - [Architecture Overview](#architecture-overview)
+  - [Step 1: Provision a Server](#step-1-provision-a-server)
+  - [Step 2: Domain & SSL](#step-2-domain--ssl)
+  - [Step 3: Deploy Infrastructure (PostgreSQL, Redis, LiveKit)](#step-3-deploy-infrastructure-postgresql-redis-livekit)
+  - [Step 4: Deploy the Concord Server](#step-4-deploy-the-concord-server)
+  - [Step 5: Reverse Proxy with Nginx](#step-5-reverse-proxy-with-nginx)
+  - [Step 6: Make the Client Connect to Your Server](#step-6-make-the-client-connect-to-your-server)
+  - [Step 7: LiveKit Public Access](#step-7-livekit-public-access)
+  - [Step 8: Distribute the Client](#step-8-distribute-the-client)
+- [Production Checklist](#production-checklist)
+- [Stopping](#stopping)
+
 ## Features
 
 - Text channels with real-time messaging (WebSocket)
@@ -204,6 +236,399 @@ packages/
   server/     # Fastify API, WebSocket handler, Prisma ORM, music service
   client/     # Electron + React desktop app
 ```
+
+## Building Distributables
+
+### Building the Server
+
+The server is a standard Node.js app. Build it to JavaScript and run directly:
+
+```bash
+# Build TypeScript to dist/
+pnpm --filter @concord/server build
+
+# Generate Prisma client
+pnpm --filter @concord/server db:generate
+
+# Run in production
+cd packages/server
+NODE_ENV=production node dist/index.js
+```
+
+The `dist/` folder, `node_modules/`, `prisma/`, and your `.env` are all you need to deploy the server. You don't need the rest of the monorepo at runtime.
+
+### Building the Electron Client
+
+The client uses `electron-vite` for bundling but doesn't have a packaging tool configured yet. You need to add `electron-builder` to produce installable `.dmg` / `.exe` / `.AppImage` files.
+
+**1. Install electron-builder:**
+
+```bash
+pnpm --filter @concord/client add -D electron-builder
+```
+
+**2. Add an `electron-builder.yml` config** in `packages/client/`:
+
+```yaml
+appId: com.concord.app
+productName: Concord
+directories:
+  buildResources: build    # put icons here (icon.icns, icon.ico, icon.png)
+  output: release
+
+files:
+  - out/**/*
+  - node_modules/**/*
+  - package.json
+
+mac:
+  category: public.app-category.social-networking
+  target:
+    - dmg
+    - zip
+
+win:
+  target:
+    - nsis
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Network
+```
+
+**3. Add build scripts** to `packages/client/package.json`:
+
+```json
+{
+  "scripts": {
+    "build:dist": "electron-vite build && electron-builder --config electron-builder.yml",
+    "build:mac": "electron-vite build && electron-builder --mac --config electron-builder.yml",
+    "build:win": "electron-vite build && electron-builder --win --config electron-builder.yml",
+    "build:linux": "electron-vite build && electron-builder --linux --config electron-builder.yml"
+  }
+}
+```
+
+**4. Add app icons** in `packages/client/build/`:
+- `icon.icns` (macOS)
+- `icon.ico` (Windows)
+- `icon.png` (Linux, 512x512)
+
+**5. Build:**
+
+```bash
+pnpm --filter @concord/client build:mac    # produces .dmg + .zip in release/
+pnpm --filter @concord/client build:win    # produces .exe installer in release/
+pnpm --filter @concord/client build:linux  # produces .AppImage + .deb in release/
+```
+
+Output goes to `packages/client/release/`. Cross-compilation has limits -- build macOS on macOS, Windows on Windows (or use CI).
+
+**CI/CD tip:** Use GitHub Actions with `electron-builder` action to build all platforms automatically. The `electron-builder` docs have [ready-made workflow templates](https://www.electron.build/multi-platform-build).
+
+## Hosting & Public Deployment
+
+### Architecture Overview
+
+A public Concord deployment has these components, all of which need to be reachable by clients:
+
+```
+Clients (Electron apps)
+    |
+    |-- HTTPS --> Nginx --> Concord API server (Fastify, port 3001)
+    |                          |-- PostgreSQL (port 5432)
+    |                          |-- Redis (port 6379)
+    |
+    |-- WSS  --> Nginx --> Concord WebSocket (/ws)
+    |
+    |-- WebRTC --> LiveKit Server (ports 7880, 7881, 7882/udp)
+```
+
+PostgreSQL and Redis should **not** be publicly exposed -- only the API, WebSocket, and LiveKit need to be reachable from the internet.
+
+### Step 1: Provision a Server
+
+Any Linux VPS works. Recommended minimum specs:
+
+- **CPU:** 2 cores (4+ if you expect heavy voice/video usage)
+- **RAM:** 4 GB (LiveKit and ffmpeg are the hungry ones)
+- **Disk:** 20 GB+ (uploads and database will grow)
+- **OS:** Ubuntu 22.04 or Debian 12
+
+Providers: Hetzner, DigitalOcean, Linode, AWS EC2, etc.
+
+Install prerequisites on the server:
+
+```bash
+# Node.js 22
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# pnpm
+corepack enable && corepack prepare pnpm@latest --activate
+
+# Docker
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+
+# Music dependencies
+sudo apt install -y ffmpeg
+pip install yt-dlp
+```
+
+### Step 2: Domain & SSL
+
+Point a domain (e.g. `concord.example.com`) to your server's IP via an A record.
+
+Use Certbot for free SSL:
+
+```bash
+sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx -d concord.example.com
+```
+
+Certbot auto-renews via systemd timer.
+
+### Step 3: Deploy Infrastructure (PostgreSQL, Redis, LiveKit)
+
+Use the existing `docker-compose.yml` with production tweaks. Create a `docker-compose.prod.yml`:
+
+```yaml
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: concord
+      POSTGRES_PASSWORD: <strong-random-password>
+      POSTGRES_DB: concord
+    ports:
+      - "127.0.0.1:5432:5432"      # bind to localhost only
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --requirepass <redis-password>
+    ports:
+      - "127.0.0.1:6379:6379"      # bind to localhost only
+    volumes:
+      - redis_data:/data
+
+  livekit:
+    image: livekit/livekit-server:latest
+    restart: unless-stopped
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml
+    command: --config /etc/livekit.yaml
+
+volumes:
+  postgres_data:
+  redis_data:
+```
+
+Create a `livekit.yaml` for production LiveKit:
+
+```yaml
+port: 7880
+rtc:
+  tcp_port: 7881
+  port_range_start: 7882
+  port_range_end: 7882
+  use_external_ip: true
+keys:
+  your-api-key: <your-api-secret>
+```
+
+Generate a LiveKit key/secret pair:
+
+```bash
+# Any random strings work -- just keep them consistent between LiveKit config and your .env
+openssl rand -base64 32   # use as API secret
+```
+
+Start infrastructure:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
+### Step 4: Deploy the Concord Server
+
+Clone the repo on your server, install, and build:
+
+```bash
+git clone https://github.com/ChrisGamboa/concord.git
+cd concord
+pnpm install
+pnpm --filter @concord/server build
+pnpm --filter @concord/server db:push
+```
+
+Create `packages/server/.env` with production values:
+
+```bash
+DATABASE_URL=postgresql://concord:<db-password>@localhost:5432/concord
+REDIS_URL=redis://:<redis-password>@localhost:6379
+JWT_SECRET=<random-64-char-string>
+PORT=3001
+LIVEKIT_URL=wss://concord.example.com:7880
+LIVEKIT_API_KEY=your-api-key
+LIVEKIT_API_SECRET=<your-api-secret>
+KLIPY_API_KEY=<your-klipy-key>
+```
+
+Run with a process manager so it restarts on crash and boot:
+
+```bash
+# Install pm2
+npm install -g pm2
+
+# Start the server
+cd packages/server
+pm2 start dist/index.js --name concord-server
+
+# Save and set up startup
+pm2 save
+pm2 startup
+```
+
+### Step 5: Reverse Proxy with Nginx
+
+Nginx handles SSL termination, routes HTTP/WS traffic to Fastify, and (optionally) proxies LiveKit's WebSocket.
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name concord.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/concord.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/concord.example.com/privkey.pem;
+
+    client_max_body_size 25M;   # match Fastify's 25MB upload limit
+
+    # API routes
+    location /api/ {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # File uploads
+    location /uploads/ {
+        proxy_pass http://127.0.0.1:3001;
+    }
+
+    # WebSocket
+    location /ws {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 86400s;
+    }
+
+    # Health check
+    location /health {
+        proxy_pass http://127.0.0.1:3001;
+    }
+}
+
+# Redirect HTTP to HTTPS
+server {
+    listen 80;
+    server_name concord.example.com;
+    return 301 https://$host$request_uri;
+}
+```
+
+```bash
+sudo ln -s /etc/nginx/sites-available/concord /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### Step 6: Make the Client Connect to Your Server
+
+The client currently has hardcoded `localhost:3001` URLs in several files:
+
+- `packages/client/src/renderer/lib/api.ts` -- `API_BASE`
+- `packages/client/src/renderer/lib/ws.ts` -- WebSocket URL
+- `packages/client/src/renderer/lib/avatar.ts` -- `SERVER_BASE`
+- `packages/client/src/renderer/components/ChatArea.tsx` -- `SERVER_BASE`
+
+You need to make these configurable. The cleanest approach:
+
+**1.** Create a single config file (e.g. `packages/client/src/renderer/lib/config.ts`):
+
+```typescript
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3001";
+const WS_URL = import.meta.env.VITE_WS_URL || SERVER_URL.replace(/^http/, "ws");
+
+export { SERVER_URL, WS_URL };
+```
+
+**2.** Replace all hardcoded URLs to import from this config.
+
+**3.** Set the env at build time:
+
+```bash
+VITE_SERVER_URL=https://concord.example.com pnpm --filter @concord/client build:mac
+```
+
+This bakes the server URL into the Electron app at build time. Each distributable you produce points at a specific server.
+
+### Step 7: LiveKit Public Access
+
+LiveKit needs to be directly reachable by clients for WebRTC. You have two options:
+
+**Option A: Direct exposure (simpler)**
+
+Open ports 7880 (TCP), 7881 (TCP), and 7882 (UDP) on your firewall. Clients connect directly to `wss://concord.example.com:7880`. You'll need a separate SSL cert or use LiveKit's built-in TLS config in `livekit.yaml`:
+
+```yaml
+turn:
+  enabled: true
+  tls_port: 5349
+```
+
+**Option B: LiveKit Cloud (easier)**
+
+Use [LiveKit Cloud](https://cloud.livekit.io/) instead of self-hosting. Replace `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` in your `.env` with the values from your LiveKit Cloud project. This eliminates the need to manage WebRTC port forwarding, TURN servers, and LiveKit updates.
+
+### Step 8: Distribute the Client
+
+Once the client is built with your server URL baked in:
+
+- **macOS:** Distribute the `.dmg`. For Gatekeeper to not block it, you need an Apple Developer account ($99/yr) to code-sign and notarize. Without it, users must right-click > Open to bypass the warning.
+- **Windows:** Distribute the `.exe` installer from the NSIS build. Code-signing requires a certificate from a CA (DigiCert, Sectigo, etc.). Unsigned installers trigger SmartScreen warnings.
+- **Linux:** Distribute the `.AppImage` (universal) or `.deb` (Debian/Ubuntu). No signing requirements.
+
+Host the files anywhere: GitHub Releases, S3, your own server, etc. GitHub Releases is the easiest since it integrates with `electron-builder`'s publish feature.
+
+## Production Checklist
+
+- [ ] Change `JWT_SECRET` to a random string (64+ chars)
+- [ ] Set strong passwords for PostgreSQL and Redis
+- [ ] Bind PostgreSQL and Redis to `127.0.0.1` only (not public)
+- [ ] Configure a firewall (UFW) -- allow only 22, 80, 443, 7880-7882
+- [ ] Set up SSL with Certbot (auto-renew)
+- [ ] Use `pm2` or systemd to keep the server process alive
+- [ ] Set up database backups (`pg_dump` on a cron)
+- [ ] Make client URLs configurable via env vars (not hardcoded)
+- [ ] Code-sign the Electron app (macOS/Windows) if distributing publicly
+- [ ] Set up LiveKit with a real key pair (not `devkey`/`secret`)
+- [ ] Configure `uploads/` directory persistence (not lost on redeploy)
+- [ ] Set `NODE_ENV=production`
 
 ## Stopping
 
