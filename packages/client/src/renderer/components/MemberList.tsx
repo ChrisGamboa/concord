@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { usePresenceStore } from "../stores/presence";
-import type { ServerMember, PublicUser } from "@concord/shared";
+import type { ServerMember, PublicUser, Role } from "@concord/shared";
 import { avatarColor, avatarUrl } from "../lib/avatar";
 
 interface MemberWithOnline extends ServerMember {
@@ -13,6 +13,7 @@ interface MemberWithOnline extends ServerMember {
 export function MemberList() {
   const { serverId } = useParams();
   const [members, setMembers] = useState<MemberWithOnline[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
   const onlineUsers = usePresenceStore((s) => s.onlineUsers);
   const setOnlineUsers = usePresenceStore((s) => s.setOnlineUsers);
 
@@ -20,12 +21,14 @@ export function MemberList() {
     if (!serverId) return;
     api.getMembers(serverId).then((res) => {
       setMembers(res.members as MemberWithOnline[]);
-      // Initialize online state from REST response
       const onlineIds = (res.members as MemberWithOnline[])
         .filter((m) => m.online)
         .map((m) => m.userId);
       setOnlineUsers(onlineIds);
     });
+    api.getRoles(serverId).then((res) => {
+      setRoles(res.roles.filter((r) => r.position > 0)); // exclude @everyone
+    }).catch(() => {});
   }, [serverId, setOnlineUsers]);
 
   const online = members.filter((m) => onlineUsers.has(m.userId));
@@ -49,7 +52,7 @@ export function MemberList() {
             Online — {online.length}
           </span>
           {online.map((m) => (
-            <MemberItem key={m.userId} member={m} isOnline />
+            <MemberItem key={m.userId} member={m} isOnline roles={roles} />
           ))}
         </div>
       )}
@@ -59,7 +62,7 @@ export function MemberList() {
             Offline — {offline.length}
           </span>
           {offline.map((m) => (
-            <MemberItem key={m.userId} member={m} isOnline={false} />
+            <MemberItem key={m.userId} member={m} isOnline={false} roles={roles} />
           ))}
         </div>
       )}
@@ -70,10 +73,15 @@ export function MemberList() {
 function MemberItem({
   member,
   isOnline,
+  roles,
 }: {
   member: MemberWithOnline;
   isOnline: boolean;
+  roles: Role[];
 }) {
+  const memberRoles = roles.filter((r) => member.roleIds.includes(r.id));
+  const topRole = memberRoles[0]; // highest position (roles sorted by position desc)
+
   return (
     <div className="hover-bg" style={{ ...styles.member, opacity: isOnline ? 1 : 0.4 }}>
       <div style={styles.avatarWrapper}>
@@ -91,9 +99,20 @@ function MemberItem({
           }}
         />
       </div>
-      <span style={styles.memberName}>
-        {member.nickname ?? member.user?.displayName ?? member.user?.username ?? "Unknown"}
-      </span>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <span style={{ ...styles.memberName, color: topRole?.color ?? undefined }}>
+          {member.nickname ?? member.user?.displayName ?? member.user?.username ?? "Unknown"}
+        </span>
+        {memberRoles.length > 0 && (
+          <div style={styles.roleBadges}>
+            {memberRoles.map((r) => (
+              <span key={r.id} style={{ ...styles.roleBadge, borderColor: r.color ?? "var(--border)", color: r.color ?? "var(--text-muted)" }}>
+                {r.name}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -156,5 +175,20 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap",
     overflow: "hidden",
     textOverflow: "ellipsis",
+    display: "block",
+  },
+  roleBadges: {
+    display: "flex",
+    flexWrap: "wrap" as const,
+    gap: "3px",
+    marginTop: "2px",
+  },
+  roleBadge: {
+    fontSize: "10px",
+    fontWeight: 600,
+    padding: "0 4px",
+    borderRadius: "3px",
+    border: "1px solid",
+    lineHeight: "16px",
   },
 };
