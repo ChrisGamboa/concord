@@ -15,6 +15,8 @@ interface VoiceState {
   joining: boolean;
   error: string;
   isMuted: boolean;
+  /** Timestamp when the voice session started */
+  joinedAt: number | null;
   /** Per-participant volume (0-1), keyed by participant identity */
   participantVolumes: Record<string, number>;
   /** Saved volume before muting, for restore on unmute */
@@ -38,6 +40,7 @@ export const useVoiceStore = create<VoiceState>()((set, get) => ({
   joining: false,
   error: "",
   isMuted: false,
+  joinedAt: null,
   participantVolumes: {},
   _preMuteVolumes: {},
   _room: null,
@@ -55,6 +58,7 @@ export const useVoiceStore = create<VoiceState>()((set, get) => ({
           channelName,
         },
         joining: false,
+        joinedAt: Date.now(),
       });
     } catch (err) {
       set({
@@ -65,7 +69,7 @@ export const useVoiceStore = create<VoiceState>()((set, get) => ({
   },
 
   disconnect: () => {
-    set({ connection: null, error: "", isMuted: false, participantVolumes: {}, _preMuteVolumes: {}, _room: null });
+    set({ connection: null, error: "", isMuted: false, joinedAt: null, participantVolumes: {}, _preMuteVolumes: {}, _room: null });
   },
 
   clearError: () => set({ error: "" }),

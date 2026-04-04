@@ -171,15 +171,18 @@ function VoiceStoreSync() {
 }
 
 function useCallTimer() {
+  const joinedAt = useVoiceStore((s) => s.joinedAt);
   const [elapsed, setElapsed] = useState(0);
-  const startRef = useRef(Date.now());
 
   useEffect(() => {
+    if (!joinedAt) return;
+    // Immediately compute current elapsed time
+    setElapsed(Math.floor((Date.now() - joinedAt) / 1000));
     const interval = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
+      setElapsed(Math.floor((Date.now() - joinedAt) / 1000));
     }, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [joinedAt]);
 
   const mins = Math.floor(elapsed / 60);
   const secs = elapsed % 60;
