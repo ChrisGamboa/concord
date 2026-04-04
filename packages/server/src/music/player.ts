@@ -116,8 +116,8 @@ export async function playTrack(
 ): Promise<void> {
   console.log(`[music] Starting playback of "${track.title}" in channel ${voiceChannelId}`);
 
-  // Stop any existing playback
-  await stopPlayback(voiceChannelId);
+  // Stop any existing player (but keep prefetch for this track)
+  await stopCurrentPlayer(voiceChannelId);
 
   try {
     // Check prefetch cache first
@@ -281,9 +281,9 @@ export function playNext(voiceChannelId: string): void {
 }
 
 /**
- * Stop current playback and disconnect the bot from the room.
+ * Stop the current player without clearing prefetch (used for skip/advance).
  */
-export async function stopPlayback(voiceChannelId: string): Promise<void> {
+async function stopCurrentPlayer(voiceChannelId: string): Promise<void> {
   const player = activePlayers.get(voiceChannelId);
   if (player) {
     player.ffmpeg.kill("SIGTERM");
@@ -295,15 +295,22 @@ export async function stopPlayback(voiceChannelId: string): Promise<void> {
     await cleanupTempDir(player.tempDir);
     activePlayers.delete(voiceChannelId);
   }
+}
+
+/**
+ * Stop current playback and clear everything (prefetch, state).
+ */
+export async function stopPlayback(voiceChannelId: string): Promise<void> {
+  await stopCurrentPlayer(voiceChannelId);
   await clearPrefetch(voiceChannelId);
   setNotPlaying(voiceChannelId);
 }
 
 /**
- * Skip the current track and play the next one.
+ * Skip the current track and play the next one (preserves prefetch).
  */
 export async function skipTrack(voiceChannelId: string): Promise<void> {
-  await stopPlayback(voiceChannelId);
+  await stopCurrentPlayer(voiceChannelId);
   playNext(voiceChannelId);
 }
 
