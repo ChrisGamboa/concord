@@ -9,6 +9,7 @@ interface AuthState {
   user: User | null;
   login: (token: string, user: User) => void;
   logout: () => void;
+  updateUser: (user: User) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -26,6 +27,7 @@ export const useAuthStore = create<AuthState>()(
         disconnectWs();
         set({ token: null, user: null });
       },
+      updateUser: (user) => set({ user }),
     }),
     {
       name: "concord-auth",

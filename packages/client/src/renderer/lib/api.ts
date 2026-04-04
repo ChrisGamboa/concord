@@ -60,6 +60,24 @@ export const api = {
 
   getMe: () => request<{ user: AuthResponse["user"] }>("/auth/me"),
 
+  updateProfile: async (data: { displayName?: string; avatar?: File; removeAvatar?: boolean }) => {
+    const formData = new FormData();
+    if (data.displayName) formData.append("displayName", data.displayName);
+    if (data.avatar) formData.append("avatar", data.avatar);
+    if (data.removeAvatar) formData.append("removeAvatar", "true");
+
+    const headers: Record<string, string> = {};
+    if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
+
+    const res = await fetch(`${API_BASE}/auth/profile`, {
+      method: "PATCH",
+      headers,
+      body: formData,
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
+    return res.json() as Promise<{ user: AuthResponse["user"] }>;
+  },
+
   // Servers
   getServers: () => request<ServersResponse>("/servers"),
 
