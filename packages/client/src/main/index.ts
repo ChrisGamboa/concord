@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, Notification, ipcMain } from "electron";
+import { app, BrowserWindow, desktopCapturer, session, shell, Notification, ipcMain } from "electron";
 import { join } from "path";
 import { is } from "@electron-toolkit/utils";
 
@@ -42,6 +42,15 @@ ipcMain.on("show-notification", (_event, { title, body }: { title: string; body:
 });
 
 app.whenReady().then(() => {
+  // Allow screen sharing: provide the first screen source when getDisplayMedia is called
+  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+    desktopCapturer.getSources({ types: ["screen", "window"] }).then((sources) => {
+      // Grant the first source (primary screen) -- Electron requires this handler
+      // for getDisplayMedia() to work. The user still sees the OS screen picker on macOS.
+      callback({ video: sources[0] });
+    });
+  });
+
   createWindow();
 
   app.on("activate", () => {
