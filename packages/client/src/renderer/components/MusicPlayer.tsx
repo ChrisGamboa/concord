@@ -20,7 +20,6 @@ export function MusicPlayer() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Clear stale state when leaving voice channel
   useEffect(() => {
     if (!voiceChannelId) {
       setMusicState(null);
@@ -30,58 +29,46 @@ export function MusicPlayer() {
     }
   }, [voiceChannelId]);
 
-  // Poll music state
   useEffect(() => {
     if (!voiceChannelId) return;
-
     const fetchState = () => {
       api.musicGetState(voiceChannelId).then(setMusicState).catch(() => {});
     };
-
     fetchState();
     const interval = setInterval(fetchState, 3000);
     return () => clearInterval(interval);
   }, [voiceChannelId]);
 
-  // Focus search input when panel opens
   useEffect(() => {
-    if (expanded) {
-      setTimeout(() => inputRef.current?.focus(), 50);
-    }
+    if (expanded) setTimeout(() => inputRef.current?.focus(), 50);
   }, [expanded]);
 
-  // Debounced search
-  const doSearch = useCallback(
-    async (query: string) => {
-      if (!query.trim()) {
-        setSearchResults([]);
-        return;
-      }
-      setSearching(true);
-      try {
-        const res = await api.musicSearch(query.trim());
-        setSearchResults(res.results);
-      } catch {
-        setSearchResults([]);
-      } finally {
-        setSearching(false);
-      }
-    },
-    []
-  );
+  const doSearch = useCallback(async (query: string) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    setSearching(true);
+    try {
+      const res = await api.musicSearch(query.trim());
+      setSearchResults(res.results);
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }, []);
 
   const handleSearchInput = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
       const value = e.target.value;
       setSearchQuery(value);
-
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => doSearch(value), 300);
     },
     [doSearch]
   );
 
-  // Cleanup debounce on unmount
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -167,11 +154,7 @@ export function MusicPlayer() {
             className="music-bar-controls"
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              className="music-ctrl-btn"
-              onClick={handleSkip}
-              title="Skip"
-            >
+            <button className="music-ctrl-btn" onClick={handleSkip} title="Skip">
               {ICON_SKIP}
             </button>
             <button
@@ -184,16 +167,14 @@ export function MusicPlayer() {
           </div>
         )}
 
-        <span
-          className={`music-chevron ${expanded ? "music-chevron--open" : ""}`}
-        >
+        <span className={`music-chevron ${expanded ? "music-chevron--open" : ""}`}>
           {ICON_CHEVRON}
         </span>
       </div>
 
       {/* Expandable panel */}
       <div className={`music-panel ${expanded ? "music-panel--open" : ""}`}>
-        {/* Now Playing detail */}
+        {/* Now Playing - full width */}
         {isPlaying && (
           <div className="music-now-playing">
             {musicState.currentTrack?.thumbnail ? (
@@ -215,11 +196,7 @@ export function MusicPlayer() {
               </span>
             </div>
             <div className="music-bar-controls">
-              <button
-                className="music-ctrl-btn"
-                onClick={handleSkip}
-                title="Skip"
-              >
+              <button className="music-ctrl-btn" onClick={handleSkip} title="Skip">
                 {ICON_SKIP}
               </button>
               <button
@@ -233,95 +210,99 @@ export function MusicPlayer() {
           </div>
         )}
 
-        {/* Queue */}
-        {hasQueue && (
-          <div className="music-queue-list">
-            <div className="music-queue-header">
-              <span className="music-queue-label">
-                Up Next ({musicState.queue.length})
-              </span>
-              <button className="music-queue-clear" onClick={handleClearQueue}>
-                Clear
-              </button>
+        {/* Two-column layout: search left, queue right */}
+        <div className="music-columns">
+          {/* Left: search + results */}
+          <div className="music-col-search">
+            <div className="music-search">
+              <span className="music-search-icon">{ICON_SEARCH}</span>
+              <input
+                ref={inputRef}
+                className="music-search-input"
+                placeholder="Search for a song..."
+                value={searchQuery}
+                onChange={handleSearchInput}
+              />
+              {searching && (
+                <span className="music-search-spinner">{ICON_LOADING}</span>
+              )}
             </div>
-            {musicState.queue.map((item, i) => (
-              <div key={item.id} className="music-queue-item">
-                <span className="music-queue-index">{i + 1}</span>
-                {item.thumbnail ? (
-                  <img
-                    className="music-queue-thumb"
-                    src={item.thumbnail}
-                    alt=""
-                  />
-                ) : null}
-                <div className="music-queue-info">
-                  <span className="music-queue-title">{item.title}</span>
-                  <span className="music-queue-duration">
-                    {formatDuration(item.duration)}
-                  </span>
+
+            {searchResults.length > 0 && (
+              <div className="music-results">
+                {searchResults.map((result) => (
+                  <button
+                    key={result.id}
+                    className="music-result"
+                    onClick={() => handleAddToQueue(result)}
+                  >
+                    {result.thumbnail ? (
+                      <img
+                        className="music-result-thumb"
+                        src={result.thumbnail}
+                        alt=""
+                      />
+                    ) : (
+                      <div className="music-result-thumb" />
+                    )}
+                    <div className="music-result-info">
+                      <span className="music-result-title">{result.title}</span>
+                      <span className="music-result-duration">
+                        {formatDuration(result.duration)}
+                      </span>
+                    </div>
+                    <span className="music-result-add">+ Add</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {!isPlaying &&
+              !hasQueue &&
+              searchResults.length === 0 &&
+              !searching && (
+                <div className="music-empty">
+                  <div className="music-empty-icon">{ICON_NOTE}</div>
+                  Search for a song to get started
                 </div>
+              )}
+          </div>
+
+          {/* Right: queue */}
+          {hasQueue && (
+            <div className="music-col-queue">
+              <div className="music-queue-header">
+                <span className="music-queue-label">
+                  Up Next ({musicState.queue.length})
+                </span>
                 <button
-                  className="music-queue-remove"
-                  onClick={() => handleRemoveFromQueue(i)}
-                  title="Remove"
+                  className="music-queue-clear"
+                  onClick={handleClearQueue}
                 >
-                  {ICON_CLOSE}
+                  Clear
                 </button>
               </div>
-            ))}
-          </div>
-        )}
-
-        {/* Search */}
-        <div className="music-search">
-          <span className="music-search-icon">{ICON_SEARCH}</span>
-          <input
-            ref={inputRef}
-            className="music-search-input"
-            placeholder="Search for a song..."
-            value={searchQuery}
-            onChange={handleSearchInput}
-          />
-          {searching && <span className="music-search-spinner">{ICON_LOADING}</span>}
+              <div className="music-queue-scroll">
+                {musicState.queue.map((item, i) => (
+                  <div key={item.id} className="music-queue-item">
+                    <span className="music-queue-index">{i + 1}</span>
+                    <span className="music-queue-title">{item.title}</span>
+                    <span className="music-queue-duration">
+                      {formatDuration(item.duration)}
+                    </span>
+                    <button
+                      className="music-queue-remove"
+                      onClick={() => handleRemoveFromQueue(i)}
+                      title="Remove"
+                    >
+                      {ICON_CLOSE}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-
-        {/* Results */}
-        {searchResults.length > 0 && (
-          <div className="music-results">
-            {searchResults.map((result) => (
-              <button
-                key={result.id}
-                className="music-result"
-                onClick={() => handleAddToQueue(result)}
-              >
-                {result.thumbnail ? (
-                  <img
-                    className="music-result-thumb"
-                    src={result.thumbnail}
-                    alt=""
-                  />
-                ) : (
-                  <div className="music-result-thumb" />
-                )}
-                <div className="music-result-info">
-                  <span className="music-result-title">{result.title}</span>
-                  <span className="music-result-duration">
-                    {formatDuration(result.duration)}
-                  </span>
-                </div>
-                <span className="music-result-add">+ Add</span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Empty state */}
-        {!isPlaying && !hasQueue && searchResults.length === 0 && !searching && (
-          <div className="music-empty">
-            <div className="music-empty-icon">{ICON_NOTE}</div>
-            Search for a song to get started
-          </div>
-        )}
       </div>
     </div>
   );
@@ -333,8 +314,6 @@ function formatDuration(seconds: number): string {
   const s = Math.floor(seconds % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
-
-// SVG icons as inline JSX to avoid external dependencies
 
 const ICON_SKIP = (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
