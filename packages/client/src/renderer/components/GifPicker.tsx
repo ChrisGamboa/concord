@@ -102,10 +102,6 @@ export function GifPicker({
               src={gif.previewUrl}
               alt={gif.title}
               loading="lazy"
-              style={{
-                width: "100%",
-                aspectRatio: `${gif.width}/${gif.height}`,
-              }}
             />
           </button>
         ))}

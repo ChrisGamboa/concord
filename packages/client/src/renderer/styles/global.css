@@ -497,12 +497,12 @@ a {
 .gif-picker-grid {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow-y: scroll;
   padding: 8px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
+  grid-auto-rows: 110px;
   gap: 6px;
-  align-content: start;
 }
 
 .gif-picker-item {
@@ -523,6 +523,7 @@ a {
 .gif-picker-item img {
   display: block;
   width: 100%;
+  height: 100%;
   object-fit: cover;
 }
 
