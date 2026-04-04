@@ -9,61 +9,53 @@ import {
   VideoTrack,
 } from "@livekit/components-react";
 import { Track, VideoPresets } from "livekit-client";
-import { api } from "../lib/api";
 import { avatarColor } from "../lib/avatar";
 import { playJoinSelf, playDisconnect, playUserJoined, playUserLeft } from "../lib/sounds";
 import { createRnnoiseTrack } from "../lib/rnnoise-processor";
+import { useVoiceStore } from "../stores/voice";
 
-interface VoiceChannelProps {
+// ---- Join prompt: shown when viewing a voice channel you're not connected to ----
+
+export function VoiceJoinPrompt({
+  channelId,
+  channelName,
+}: {
   channelId: string;
   channelName: string;
+}) {
+  const { join, joining, error } = useVoiceStore();
+
+  return (
+    <div style={styles.disconnected}>
+      <button
+        onClick={() => join(channelId, channelName)}
+        style={styles.joinButton}
+        disabled={joining}
+      >
+        {joining ? "Joining..." : "Join Voice"}
+      </button>
+      {error && <p style={styles.error}>{error}</p>}
+    </div>
+  );
 }
 
-export function VoiceChannel({ channelId, channelName }: VoiceChannelProps) {
-  const [connectionInfo, setConnectionInfo] = useState<{
-    url: string;
-    token: string;
-  } | null>(null);
-  const [joining, setJoining] = useState(false);
-  const [error, setError] = useState("");
+// ---- Persistent voice session: always mounted in AppLayout when connected ----
 
-  const handleJoin = useCallback(async () => {
-    setJoining(true);
-    setError("");
-    try {
-      const res = await api.joinVoiceChannel(channelId);
-      setConnectionInfo({ url: res.url, token: res.token });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to join");
-    } finally {
-      setJoining(false);
-    }
-  }, [channelId]);
+export function VoiceSession({ isViewing }: { isViewing: boolean }) {
+  const connection = useVoiceStore((s) => s.connection);
+  const disconnect = useVoiceStore((s) => s.disconnect);
 
   const handleDisconnect = useCallback(() => {
-    setConnectionInfo(null);
+    disconnect();
     playDisconnect();
-  }, []);
+  }, [disconnect]);
 
-  if (!connectionInfo) {
-    return (
-      <div style={styles.disconnected}>
-        <button
-          onClick={handleJoin}
-          style={styles.joinButton}
-          disabled={joining}
-        >
-          {joining ? "Joining..." : "Join Voice"}
-        </button>
-        {error && <p style={styles.error}>{error}</p>}
-      </div>
-    );
-  }
+  if (!connection) return null;
 
   return (
     <LiveKitRoom
-      serverUrl={connectionInfo.url}
-      token={connectionInfo.token}
+      serverUrl={connection.url}
+      token={connection.token}
       connect={true}
       audio={true}
       video={false}
@@ -71,16 +63,14 @@ export function VoiceChannel({ channelId, channelName }: VoiceChannelProps) {
       onDisconnected={handleDisconnect}
       onError={(err) => {
         console.error("[livekit] error", err);
-        // Don't disconnect for non-fatal processor errors
         if (err.message?.includes("Audio context")) return;
-        setError(err.message);
-        setConnectionInfo(null);
+        disconnect();
       }}
       options={{
         audioCaptureDefaults: {
           autoGainControl: true,
           echoCancellation: true,
-          noiseSuppression: false, // RNNoise handles this
+          noiseSuppression: false,
           channelCount: 2,
           sampleRate: 48000,
         },
@@ -88,9 +78,7 @@ export function VoiceChannel({ channelId, channelName }: VoiceChannelProps) {
           resolution: VideoPresets.h1080.resolution,
         },
         publishDefaults: {
-          audioPreset: {
-            maxBitrate: 128_000,
-          },
+          audioPreset: { maxBitrate: 128_000 },
           dtx: false,
           videoCodec: "vp9",
           screenShareEncoding: {
@@ -103,13 +91,15 @@ export function VoiceChannel({ channelId, channelName }: VoiceChannelProps) {
           },
         },
       }}
-      style={styles.room}
+      style={isViewing ? styles.room : styles.roomHidden}
     >
-      <VoiceContent
-        channelName={channelName}
-        onLeave={handleDisconnect}
-      />
       <RoomAudioRenderer />
+      {isViewing && (
+        <VoiceContent
+          channelName={connection.channelName}
+          onLeave={handleDisconnect}
+        />
+      )}
     </LiveKitRoom>
   );
 }
@@ -162,6 +152,8 @@ function useCallTimer() {
   return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 }
 
+// ---- Full voice UI (rendered inside LiveKitRoom when viewing the channel) ----
+
 function VoiceContent({
   channelName,
   onLeave,
@@ -180,7 +172,6 @@ function VoiceContent({
   useEffect(() => {
     const currentIds = new Set(participants.map((p) => p.identity));
 
-    // Skip the initial load (don't play sounds for everyone already in the room)
     if (!initialLoadDone.current) {
       initialLoadDone.current = true;
       prevParticipantIds.current = currentIds;
@@ -189,15 +180,13 @@ function VoiceContent({
 
     const prev = prevParticipantIds.current;
 
-    // Someone new joined (not us)
     for (const id of currentIds) {
       if (!prev.has(id) && id !== localParticipant.identity) {
         playUserJoined();
-        break; // one sound per batch
+        break;
       }
     }
 
-    // Someone left (not us)
     for (const id of prev) {
       if (!currentIds.has(id) && id !== localParticipant.identity) {
         playUserLeft();
@@ -207,6 +196,7 @@ function VoiceContent({
 
     prevParticipantIds.current = currentIds;
   }, [participants, localParticipant.identity]);
+
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const callTime = useCallTimer();
@@ -224,15 +214,12 @@ function VoiceContent({
       if (!mediaTrack || cancelled) return;
 
       try {
-        // Clean up previous processor if any
         rnnoiseCleanupRef.current?.();
 
         const { processedTrack, cleanup } = await createRnnoiseTrack(mediaTrack);
         if (cancelled) { cleanup(); return; }
 
         rnnoiseCleanupRef.current = cleanup;
-
-        // Replace the mic track with the processed one
         await micPub!.track!.replaceTrack(processedTrack);
         console.log("[rnnoise] Noise suppression enabled");
       } catch (err) {
@@ -240,7 +227,6 @@ function VoiceContent({
       }
     };
 
-    // Delay to ensure track is fully published
     const timer = setTimeout(applyRnnoise, 500);
     return () => {
       cancelled = true;
@@ -248,7 +234,6 @@ function VoiceContent({
     };
   }, [localParticipant, localParticipant.isMicrophoneEnabled]);
 
-  // Clean up RNNoise on unmount
   useEffect(() => {
     return () => { rnnoiseCleanupRef.current?.(); };
   }, []);
@@ -259,13 +244,11 @@ function VoiceContent({
   );
   const videoTracks = allVideoTracks.filter((t) => !t.publication.isMuted);
 
-  // Explicitly subscribe to screenshare audio tracks (music bot)
   const screenShareAudioTracks = useTracks(
     [Track.Source.ScreenShareAudio],
     { onlySubscribed: false }
   );
 
-  // Attach screenshare audio to hidden audio elements
   const audioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
   useEffect(() => {
     for (const trackRef of screenShareAudioTracks) {
@@ -282,7 +265,6 @@ function VoiceContent({
       }
     }
 
-    // Clean up removed tracks
     for (const [sid, audio] of audioRefs.current) {
       if (!screenShareAudioTracks.some((t) => t.publication.trackSid === sid)) {
         audio.pause();
@@ -318,7 +300,6 @@ function VoiceContent({
   return (
     <div style={styles.voiceContainer}>
       {hasVideo ? (
-        /* ---- Video mode: grid fills space, compact participant strip ---- */
         <>
           <div style={styles.videoGrid}>
             {videoTracks.map((trackRef) => (
@@ -344,7 +325,6 @@ function VoiceContent({
             ))}
           </div>
 
-          {/* Compact participant strip below video */}
           <div style={styles.participantStrip}>
             {participants.map((p) => {
               const isBot = p.identity === "concord-music-bot";
@@ -382,7 +362,6 @@ function VoiceContent({
           </div>
         </>
       ) : (
-        /* ---- Audio-only mode: large centered participant cards ---- */
         <div style={styles.audioCenter}>
           <div style={styles.audioCenterInner}>
             {participants.map((p) => {
@@ -433,7 +412,7 @@ function VoiceContent({
         </div>
       )}
 
-      {/* Controls - always pinned at bottom */}
+      {/* Controls */}
       <div style={styles.controlBar}>
         <div style={styles.controlBarInfo}>
           <span style={styles.callTimer}>{callTime}</span>
@@ -480,9 +459,7 @@ function VoiceContent({
           <button
             className="hover-brighten"
             onClick={onLeave}
-            style={{
-              ...styles.leaveButton,
-            }}
+            style={styles.leaveButton}
             title="Disconnect"
           >
             <PhoneOffIcon />
@@ -526,6 +503,14 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: 0,
     overflow: "hidden",
   },
+  roomHidden: {
+    position: "fixed" as const,
+    width: "1px",
+    height: "1px",
+    overflow: "hidden",
+    opacity: 0,
+    pointerEvents: "none" as const,
+  },
   voiceContainer: {
     flex: 1,
     display: "flex",
@@ -535,7 +520,7 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
   },
 
-  // ---- Audio-only mode: centered participant cards ----
+  // Audio-only mode
   audioCenter: {
     flex: 1,
     display: "flex",
@@ -590,7 +575,7 @@ const styles: Record<string, React.CSSProperties> = {
     opacity: 0.7,
   },
 
-  // ---- Video mode ----
+  // Video mode
   videoGrid: {
     flex: 1,
     minHeight: 0,
@@ -618,8 +603,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "4px",
     fontSize: "12px",
   },
-
-  // Compact participant strip (shown below video grid)
   participantStrip: {
     display: "flex",
     flexWrap: "wrap" as const,
@@ -663,12 +646,12 @@ const styles: Record<string, React.CSSProperties> = {
     marginLeft: "-2px",
   },
 
-  // ---- Controls bar (both modes) ----
+  // Controls
   controlBar: {
     borderTop: "1px solid var(--bg-primary)",
     background: "var(--bg-secondary)",
     padding: "12px 16px",
-    paddingBottom: "60px", // 12px + 48px for music player bar
+    paddingBottom: "60px",
     flexShrink: 0,
   },
   controlBarInfo: {

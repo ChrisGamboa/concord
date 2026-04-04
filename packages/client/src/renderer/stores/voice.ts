@@ -1,110 +1,52 @@
 import { create } from "zustand";
-import { Room, RoomEvent, VideoPresets } from "livekit-client";
+import { api } from "../lib/api";
+
+interface VoiceConnection {
+  url: string;
+  token: string;
+  channelId: string;
+  channelName: string;
+}
 
 interface VoiceState {
-  room: Room | null;
-  activeChannelId: string | null;
-  isConnected: boolean;
-  isMicEnabled: boolean;
-  isCameraEnabled: boolean;
-  isScreenShareEnabled: boolean;
+  connection: VoiceConnection | null;
+  joining: boolean;
+  error: string;
 
-  connect: (url: string, token: string, channelId: string) => Promise<void>;
+  join: (channelId: string, channelName: string) => Promise<void>;
   disconnect: () => void;
-  toggleMic: () => Promise<void>;
-  toggleCamera: () => Promise<void>;
-  toggleScreenShare: () => Promise<void>;
+  clearError: () => void;
 }
 
 export const useVoiceStore = create<VoiceState>()((set, get) => ({
-  room: null,
-  activeChannelId: null,
-  isConnected: false,
-  isMicEnabled: false,
-  isCameraEnabled: false,
-  isScreenShareEnabled: false,
+  connection: null,
+  joining: false,
+  error: "",
 
-  connect: async (url, token, channelId) => {
-    const { room: existing } = get();
-    if (existing) {
-      existing.disconnect();
-    }
-
-    const room = new Room({
-      videoCaptureDefaults: {
-        resolution: VideoPresets.h1080.resolution,
-      },
-      publishDefaults: {
-        videoCodec: "vp9",
-        screenShareEncoding: {
-          maxBitrate: 5_000_000,
-          maxFramerate: 60,
-        },
-        videoEncoding: {
-          maxBitrate: 5_000_000,
-          maxFramerate: 60,
-        },
-      },
-    });
-
-    room.on(RoomEvent.Disconnected, () => {
+  join: async (channelId, channelName) => {
+    set({ joining: true, error: "" });
+    try {
+      const res = await api.joinVoiceChannel(channelId);
       set({
-        room: null,
-        activeChannelId: null,
-        isConnected: false,
-        isMicEnabled: false,
-        isCameraEnabled: false,
-        isScreenShareEnabled: false,
+        connection: {
+          url: res.url,
+          token: res.token,
+          channelId,
+          channelName,
+        },
+        joining: false,
       });
-    });
-
-    await room.connect(url, token);
-    await room.localParticipant.setMicrophoneEnabled(true);
-
-    set({
-      room,
-      activeChannelId: channelId,
-      isConnected: true,
-      isMicEnabled: true,
-    });
+    } catch (err) {
+      set({
+        error: err instanceof Error ? err.message : "Failed to join",
+        joining: false,
+      });
+    }
   },
 
   disconnect: () => {
-    const { room } = get();
-    if (room) {
-      room.disconnect();
-    }
-    set({
-      room: null,
-      activeChannelId: null,
-      isConnected: false,
-      isMicEnabled: false,
-      isCameraEnabled: false,
-      isScreenShareEnabled: false,
-    });
+    set({ connection: null, error: "" });
   },
 
-  toggleMic: async () => {
-    const { room, isMicEnabled } = get();
-    if (!room) return;
-    await room.localParticipant.setMicrophoneEnabled(!isMicEnabled);
-    set({ isMicEnabled: !isMicEnabled });
-  },
-
-  toggleCamera: async () => {
-    const { room, isCameraEnabled } = get();
-    if (!room) return;
-    await room.localParticipant.setCameraEnabled(!isCameraEnabled);
-    set({ isCameraEnabled: !isCameraEnabled });
-  },
-
-  toggleScreenShare: async () => {
-    const { room, isScreenShareEnabled } = get();
-    if (!room) return;
-    await room.localParticipant.setScreenShareEnabled(!isScreenShareEnabled, {
-      resolution: { width: 1920, height: 1080, frameRate: 60 },
-      contentHint: "detail",
-    });
-    set({ isScreenShareEnabled: !isScreenShareEnabled });
-  },
+  clearError: () => set({ error: "" }),
 }));

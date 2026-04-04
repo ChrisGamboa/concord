@@ -5,18 +5,12 @@ import {
   useRef,
   type ChangeEvent,
 } from "react";
-import { useParams } from "react-router-dom";
-import { useChatStore } from "../stores/chat";
-import { ChannelType } from "@concord/shared";
 import { api } from "../lib/api";
+import { useVoiceStore } from "../stores/voice";
 import type { MusicSearchResult, MusicState } from "@concord/shared";
 
 export function MusicPlayer() {
-  const { channelId } = useParams();
-  const channels = useChatStore((s) => s.channels);
-  const currentChannel = channels.find((c) => c.id === channelId);
-  const isVoiceChannel = currentChannel?.type === ChannelType.Voice;
-  const voiceChannelId = isVoiceChannel ? channelId ?? null : null;
+  const voiceChannelId = useVoiceStore((s) => s.connection?.channelId ?? null);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<MusicSearchResult[]>([]);
@@ -137,7 +131,7 @@ export function MusicPlayer() {
     setMusicState(state);
   }, [voiceChannelId]);
 
-  if (!isVoiceChannel || !voiceChannelId) return null;
+  if (!voiceChannelId) return null;
 
   const isPlaying = musicState?.isPlaying && musicState.currentTrack;
   const hasQueue = musicState && musicState.queue.length > 0;

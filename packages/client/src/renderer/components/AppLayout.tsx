@@ -5,10 +5,11 @@ import { onWsMessage } from "../lib/ws";
 import { useChatStore } from "../stores/chat";
 import { useAuthStore } from "../stores/auth";
 import { usePresenceStore } from "../stores/presence";
+import { useVoiceStore } from "../stores/voice";
 import { ServerList } from "./ServerList";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { ChatArea } from "./ChatArea";
-import { VoiceChannel } from "./VoiceChannel";
+import { VoiceJoinPrompt, VoiceSession } from "./VoiceChannel";
 import { MusicPlayer } from "./MusicPlayer";
 import { MemberList } from "./MemberList";
 import { SettingsPage } from "./SettingsPage";
@@ -61,7 +62,12 @@ export function AppLayout() {
   const currentChannel = channels.find((c) => c.id === channelId);
   const isVoiceChannel = currentChannel?.type === "voice";
 
-  // ChatArea handles its own message fetching and WS subscription
+  // Voice connection state
+  const voiceConnection = useVoiceStore((s) => s.connection);
+  const isViewingActiveVoice =
+    isVoiceChannel && voiceConnection?.channelId === channelId;
+  const isViewingUnconnectedVoice =
+    isVoiceChannel && voiceConnection?.channelId !== channelId;
 
   const userId = useAuthStore((s) => s.user?.id);
   const { setUserOnline, setUserOffline, addTyping } = usePresenceStore();
@@ -112,13 +118,23 @@ export function AppLayout() {
     <div style={styles.layout}>
       <ServerList loading={serversLoading} />
       {serverId && <ChannelSidebar />}
-      {channelId && isVoiceChannel && (
-        <VoiceChannel
+
+      {/* Voice session - always mounted when connected, visible or hidden */}
+      {voiceConnection && (
+        <VoiceSession isViewing={!!isViewingActiveVoice} />
+      )}
+
+      {/* Join prompt for unconnected voice channels */}
+      {channelId && isViewingUnconnectedVoice && (
+        <VoiceJoinPrompt
           channelId={channelId}
           channelName={currentChannel?.name ?? "voice"}
         />
       )}
+
+      {/* Text channel */}
       {channelId && !isVoiceChannel && <ChatArea />}
+
       {serverId && !channelId && (
         <div style={styles.welcome}>
           <p style={{ color: "var(--text-muted)" }}>Loading channels...</p>
