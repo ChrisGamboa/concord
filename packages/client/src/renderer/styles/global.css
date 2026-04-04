@@ -457,7 +457,7 @@ a {
   bottom: 100%;
   left: 0;
   right: 0;
-  height: 340px;
+  max-height: 400px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 8px 8px 0 0;
@@ -465,7 +465,6 @@ a {
   flex-direction: column;
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
   z-index: 50;
-  overflow: hidden;
 }
 
 .gif-picker-header {
@@ -495,25 +494,21 @@ a {
 }
 
 .gif-picker-grid {
-  flex: 1;
-  min-height: 0;
   overflow-y: auto;
-  padding: 10px 12px;
-  column-count: 2;
-  column-gap: 8px;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+  align-content: start;
 }
 
 .gif-picker-item {
   background: var(--bg-tertiary);
   border: none;
-  border-radius: 8px;
+  border-radius: 6px;
   overflow: hidden;
   cursor: pointer;
   padding: 0;
-  margin-bottom: 8px;
-  break-inside: avoid;
-  width: 100%;
-  display: inline-block;
   transition: transform 0.1s, box-shadow 0.1s;
 }
 
