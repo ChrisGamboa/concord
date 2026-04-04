@@ -212,6 +212,8 @@ function ParticipantVolumeMenu({
 }) {
   const volume = useVoiceStore((s) => s.participantVolumes[identity] ?? 1);
   const setVolume = useVoiceStore((s) => s.setParticipantVolume);
+  const mute = useVoiceStore((s) => s.muteParticipant);
+  const unmute = useVoiceStore((s) => s.unmuteParticipant);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Adjust position so menu doesn't go off-screen
@@ -252,7 +254,7 @@ function ParticipantVolumeMenu({
       </div>
       <button
         className="voice-ctx-mute"
-        onClick={() => setVolume(identity, volume > 0 ? 0 : 1)}
+        onClick={() => volume === 0 ? unmute(identity) : mute(identity)}
       >
         {volume === 0 ? (
           <>

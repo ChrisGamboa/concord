@@ -17,6 +17,8 @@ interface VoiceState {
   isMuted: boolean;
   /** Per-participant volume (0-1), keyed by participant identity */
   participantVolumes: Record<string, number>;
+  /** Saved volume before muting, for restore on unmute */
+  _preMuteVolumes: Record<string, number>;
   /** Internal: set by VoiceSession when LiveKitRoom connects */
   _room: Room | null;
 
@@ -27,6 +29,8 @@ interface VoiceState {
   setMuted: (muted: boolean) => void;
   toggleMic: () => Promise<void>;
   setParticipantVolume: (identity: string, volume: number) => void;
+  muteParticipant: (identity: string) => void;
+  unmuteParticipant: (identity: string) => void;
 }
 
 export const useVoiceStore = create<VoiceState>()((set, get) => ({
@@ -35,6 +39,7 @@ export const useVoiceStore = create<VoiceState>()((set, get) => ({
   error: "",
   isMuted: false,
   participantVolumes: {},
+  _preMuteVolumes: {},
   _room: null,
 
   join: async (serverId, channelId, channelName) => {
@@ -60,7 +65,7 @@ export const useVoiceStore = create<VoiceState>()((set, get) => ({
   },
 
   disconnect: () => {
-    set({ connection: null, error: "", isMuted: false, participantVolumes: {}, _room: null });
+    set({ connection: null, error: "", isMuted: false, participantVolumes: {}, _preMuteVolumes: {}, _room: null });
   },
 
   clearError: () => set({ error: "" }),
@@ -88,5 +93,23 @@ export const useVoiceStore = create<VoiceState>()((set, get) => ({
       }
     }
     set({ participantVolumes: { ...participantVolumes, [identity]: volume } });
+  },
+
+  muteParticipant: (identity) => {
+    const { participantVolumes, _preMuteVolumes } = get();
+    const current = participantVolumes[identity] ?? 1;
+    if (current === 0) return; // already muted
+    // Save current volume, then set to 0
+    get().setParticipantVolume(identity, 0);
+    set({ _preMuteVolumes: { ..._preMuteVolumes, [identity]: current } });
+  },
+
+  unmuteParticipant: (identity) => {
+    const { _preMuteVolumes } = get();
+    const restored = _preMuteVolumes[identity] ?? 1;
+    get().setParticipantVolume(identity, restored);
+    const updated = { ..._preMuteVolumes };
+    delete updated[identity];
+    set({ _preMuteVolumes: updated });
   },
 }));
