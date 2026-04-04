@@ -59,16 +59,13 @@ export async function downloadAudio(url: string): Promise<{
   const { stdout } = await execFileAsync("yt-dlp", [
     url,
     "-f", "bestaudio",
-    "-x",                     // extract audio
-    "--audio-format", "opus", // convert to opus (fast, good quality)
     "-o", outputTemplate,
     "--print-json",
     "--no-warnings",
   ], { timeout: 120_000 }); // 2 min timeout for download
 
   const data = JSON.parse(stdout.trim());
-  // yt-dlp renames the file after post-processing
-  const filePath = data.filepath ?? data._filename ?? join(tempDir, "audio.opus");
+  const filePath = data._filename ?? data.filename ?? join(tempDir, "audio");
   console.log(`[yt-dlp] Downloaded "${data.title}" (${data.duration}s) -> ${filePath}`);
 
   return {
