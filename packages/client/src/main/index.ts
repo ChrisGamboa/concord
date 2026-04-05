@@ -1,6 +1,7 @@
 import { app, BrowserWindow, session, shell, Notification, ipcMain } from "electron";
 import { join } from "path";
 import { is } from "@electron-toolkit/utils";
+import { autoUpdater } from "electron-updater";
 
 function createWindow() {
   const isMac = process.platform === "darwin";
@@ -63,6 +64,19 @@ app.whenReady().then(() => {
   }, { useSystemPicker: true });
 
   createWindow();
+
+  // Auto-updater: check for updates silently in production
+  if (!is.dev) {
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.logger = null; // suppress verbose logging
+    autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+
+    // Check again every 4 hours
+    setInterval(() => {
+      autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+    }, 4 * 60 * 60 * 1000);
+  }
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
