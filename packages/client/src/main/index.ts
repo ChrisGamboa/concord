@@ -1,16 +1,18 @@
-import { app, BrowserWindow, session, shell, Notification, ipcMain } from "electron";
+import { app, BrowserWindow, nativeImage, session, shell, Notification, ipcMain } from "electron";
 import { join } from "path";
 import { is } from "@electron-toolkit/utils";
 import { autoUpdater } from "electron-updater";
 
 function createWindow() {
   const isMac = process.platform === "darwin";
+  const appIcon = nativeImage.createFromPath(join(__dirname, "../../build/icon.png"));
 
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 940,
     minHeight: 600,
+    icon: appIcon,
     show: false,
     titleBarStyle: isMac ? "hiddenInset" : "hidden",
     titleBarOverlay: !isMac ? {
@@ -62,6 +64,12 @@ app.whenReady().then(() => {
       callback({ video: sources[0] });
     });
   }, { useSystemPicker: true });
+
+  // Set dock icon (packaged builds use the .app bundle icon, dev needs this)
+  const iconPath = join(__dirname, "../../build/icon.png");
+  if (process.platform === "darwin" && app.dock) {
+    app.dock.setIcon(nativeImage.createFromPath(iconPath));
+  }
 
   createWindow();
 

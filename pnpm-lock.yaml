@@ -6,7 +6,11 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    dependencies:
+      concord:
+        specifier: 'link:'
+        version: 'link:'
 
   packages/client:
     dependencies:
