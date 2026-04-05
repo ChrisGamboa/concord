@@ -146,7 +146,7 @@ export function AppLayout() {
           break;
       }
     });
-  }, [addMessage, updateMessage, removeMessage, setUserOnline, setUserOffline, addTyping, setUnreadCount]);
+  }, [addMessage, updateMessage, removeMessage, setUserOnline, setUserOffline, addTyping, setUnreadCount, updateReactions]);
 
   return (
     <div style={styles.layout}>

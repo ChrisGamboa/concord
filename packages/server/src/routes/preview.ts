@@ -21,7 +21,11 @@ async function fetchOgData(url: string): Promise<OgData> {
   try {
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { "User-Agent": "ConcordBot/1.0 (link preview)" },
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; Concord/1.0; +https://github.com/ChrisGamboa/concord)",
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
       redirect: "follow",
     });
     clearTimeout(timeout);

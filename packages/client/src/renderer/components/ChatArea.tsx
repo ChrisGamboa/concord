@@ -40,6 +40,7 @@ export function ChatArea() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [showGifPicker, setShowGifPicker] = useState(false);
+  const [reactionPickerMsgId, setReactionPickerMsgId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -282,7 +283,7 @@ export function ChatArea() {
                       msgId={msg.id} content={msg.content} isOwn={isOwnG} canModerate={canModerate}
                       isHovered={isHoveredG} isEditing={true} editContent={editContent}
                       confirmDeleteId={confirmDeleteId}
-                      onStartEdit={handleStartEdit} onDelete={handleDelete}
+                      onReact={(id) => setReactionPickerMsgId(id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
                       onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                       onEditChange={setEditContent}
                     />
@@ -298,7 +299,7 @@ export function ChatArea() {
                     msgId={msg.id} content={msg.content} isOwn={isOwnG} canModerate={canModerate}
                     isHovered={isHoveredG} isEditing={false} editContent={editContent}
                     confirmDeleteId={confirmDeleteId}
-                    onStartEdit={handleStartEdit} onDelete={handleDelete}
+                    onReact={(id) => setReactionPickerMsgId(id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
                     onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                     onEditChange={setEditContent}
                   />
@@ -347,7 +348,7 @@ export function ChatArea() {
                     msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate}
                     isHovered={isHovered} isEditing={true} editContent={editContent}
                     confirmDeleteId={confirmDeleteId}
-                    onStartEdit={handleStartEdit} onDelete={handleDelete}
+                    onReact={(id) => setReactionPickerMsgId(id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
                     onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                     onEditChange={setEditContent}
                   />
@@ -357,14 +358,18 @@ export function ChatArea() {
                     {msg.editedAt && <span style={styles.editedTag}>(edited)</span>}
                   </>
                 )}
-                <ReactionBar reactions={msg.reactions} messageId={msg.id} userId={userId} />
+                <ReactionBar
+                  reactions={msg.reactions} messageId={msg.id} userId={userId}
+                  showPicker={reactionPickerMsgId === msg.id}
+                  onClosePicker={() => setReactionPickerMsgId(null)}
+                />
               </div>
               {!isEditing && (
                 <MessageActions
                   msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate}
                   isHovered={isHovered} isEditing={false} editContent={editContent}
                   confirmDeleteId={confirmDeleteId}
-                  onStartEdit={handleStartEdit} onDelete={handleDelete}
+                  onReact={(id) => setReactionPickerMsgId(id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
                   onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                   onEditChange={setEditContent}
                 />
@@ -440,6 +445,7 @@ function MessageActions({
   isEditing,
   editContent,
   confirmDeleteId,
+  onReact,
   onStartEdit,
   onDelete,
   onSaveEdit,
@@ -454,6 +460,7 @@ function MessageActions({
   isEditing: boolean;
   editContent: string;
   confirmDeleteId: string | null;
+  onReact: (msgId: string) => void;
   onStartEdit: (id: string, content: string) => void;
   onDelete: (id: string) => void;
   onSaveEdit: () => void;
@@ -480,11 +487,17 @@ function MessageActions({
     );
   }
 
-  const showActions = isHovered && (isOwn || canModerate);
-  if (!showActions) return null;
+  if (!isHovered) return null;
 
   return (
     <div style={styles.actionBar}>
+      <button
+        style={styles.actionButton}
+        onClick={() => onReact(msgId)}
+        title="Add reaction"
+      >
+        +
+      </button>
       {isOwn && (
         <button
           style={styles.actionButton}
@@ -493,15 +506,17 @@ function MessageActions({
           Edit
         </button>
       )}
-      <button
-        style={{
-          ...styles.actionButton,
-          ...(confirmDeleteId === msgId ? { background: "var(--danger)", color: "white" } : {}),
-        }}
-        onClick={() => onDelete(msgId)}
-      >
-        {confirmDeleteId === msgId ? "Sure?" : "Del"}
-      </button>
+      {(isOwn || canModerate) && (
+        <button
+          style={{
+            ...styles.actionButton,
+            ...(confirmDeleteId === msgId ? { background: "var(--danger)", color: "white" } : {}),
+          }}
+          onClick={() => onDelete(msgId)}
+        >
+          {confirmDeleteId === msgId ? "Sure?" : "Del"}
+        </button>
+      )}
     </div>
   );
 }
@@ -553,9 +568,21 @@ function MessageBody({ content }: { content: string }) {
     );
   }
 
+  // Render URLs as clickable links
+  const urlMatch = content.match(/https?:\/\/[^\s<]+/);
+  const textContent = urlMatch ? (
+    <div style={styles.messageText}>
+      {content.slice(0, urlMatch.index)}
+      <a href={urlMatch[0]} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}>{urlMatch[0]}</a>
+      {content.slice((urlMatch.index ?? 0) + urlMatch[0].length)}
+    </div>
+  ) : (
+    <div style={styles.messageText}>{content}</div>
+  );
+
   return (
     <div>
-      <div style={styles.messageText}>{content}</div>
+      {textContent}
       <LinkPreview content={content} />
     </div>
   );
@@ -563,16 +590,22 @@ function MessageBody({ content }: { content: string }) {
 
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "🎉", "😮", "😢", "🔥", "👀"];
 
-function ReactionBar({ reactions, messageId, userId }: { reactions?: ReactionGroup[]; messageId: string; userId?: string }) {
-  const [showPicker, setShowPicker] = useState(false);
-
+function ReactionBar({ reactions, messageId, userId, showPicker, onClosePicker }: {
+  reactions?: ReactionGroup[];
+  messageId: string;
+  userId?: string;
+  showPicker?: boolean;
+  onClosePicker?: () => void;
+}) {
   const toggle = (emoji: string) => {
     sendWs({ type: "toggle_reaction", messageId, emoji });
-    setShowPicker(false);
+    onClosePicker?.();
   };
 
+  const hasReactions = (reactions ?? []).length > 0;
+
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "4px", alignItems: "center" }}>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: hasReactions || showPicker ? "4px" : 0, alignItems: "center", position: "relative" }}>
       {(reactions ?? []).map((r) => (
         <button
           key={r.emoji}
@@ -593,50 +626,28 @@ function ReactionBar({ reactions, messageId, userId }: { reactions?: ReactionGro
           {r.emoji} <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{r.count}</span>
         </button>
       ))}
-      <div style={{ position: "relative" }}>
-        <button
-          onClick={() => setShowPicker(!showPicker)}
-          style={{
-            padding: "2px 6px",
-            fontSize: "13px",
-            background: "transparent",
-            border: "1px solid transparent",
-            borderRadius: "4px",
-            cursor: "pointer",
-            color: "var(--text-muted)",
-            opacity: 0.5,
-          }}
-          title="Add reaction"
-        >
-          +
-        </button>
-        {showPicker && (
-          <div style={{
-            position: "absolute",
-            bottom: "100%",
-            left: 0,
-            background: "var(--bg-primary)",
-            border: "1px solid var(--border)",
-            borderRadius: "8px",
-            padding: "6px",
-            display: "flex",
-            gap: "2px",
-            zIndex: 50,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-          }}>
-            {QUICK_EMOJIS.map((e) => (
-              <button
-                key={e}
-                onClick={() => toggle(e)}
-                style={{ fontSize: "18px", background: "none", border: "none", cursor: "pointer", padding: "4px", borderRadius: "4px" }}
-                className="hover-bg"
-              >
-                {e}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      {showPicker && (
+        <div style={{
+          background: "var(--bg-primary)",
+          border: "1px solid var(--border)",
+          borderRadius: "8px",
+          padding: "6px",
+          display: "flex",
+          gap: "2px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+        }}>
+          {QUICK_EMOJIS.map((e) => (
+            <button
+              key={e}
+              onClick={() => toggle(e)}
+              style={{ fontSize: "18px", background: "none", border: "none", cursor: "pointer", padding: "4px", borderRadius: "4px" }}
+              className="hover-bg"
+            >
+              {e}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
