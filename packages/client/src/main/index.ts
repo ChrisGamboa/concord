@@ -69,14 +69,33 @@ app.whenReady().then(() => {
   if (!is.dev) {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
-    autoUpdater.logger = null; // suppress verbose logging
-    autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+    autoUpdater.logger = null;
 
-    // Check again every 4 hours
+    autoUpdater.on("update-downloaded", (info) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      if (win) {
+        win.webContents.send("update-downloaded", {
+          version: info.version,
+          releaseNotes: typeof info.releaseNotes === "string"
+            ? info.releaseNotes
+            : Array.isArray(info.releaseNotes)
+              ? info.releaseNotes.map((n: any) => n.note).join("\n")
+              : "",
+        });
+      }
+    });
+
+    autoUpdater.checkForUpdates().catch(() => {});
+
     setInterval(() => {
-      autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+      autoUpdater.checkForUpdates().catch(() => {});
     }, 4 * 60 * 60 * 1000);
   }
+
+  // Renderer can request restart to apply update
+  ipcMain.on("restart-to-update", () => {
+    autoUpdater.quitAndInstall(false, true);
+  });
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -3,6 +3,7 @@ import { useAuthStore } from "./stores/auth";
 import { LoginPage } from "./components/LoginPage";
 import { RegisterPage } from "./components/RegisterPage";
 import { AppLayout } from "./components/AppLayout";
+import { UpdateBanner } from "./components/UpdateBanner";
 
 export function App() {
   const token = useAuthStore((s) => s.token);
@@ -10,6 +11,7 @@ export function App() {
   return (
     <HashRouter>
       <div className="titlebar">Concord</div>
+      <UpdateBanner />
       <Routes>
         {!token ? (
           <>
