@@ -9,3 +9,7 @@ out/
 *.db
 .prisma/
 uploads/
+.env.prod
+deploy/livekit.yaml
+deploy/nginx-*.conf
+release/
