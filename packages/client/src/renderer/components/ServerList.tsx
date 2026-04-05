@@ -69,6 +69,17 @@ export function ServerList({ loading }: { loading?: boolean }) {
   return (
     <div style={styles.container}>
       <div style={styles.scrollArea}>
+        <button
+          className="hover-brighten"
+          onClick={() => window.dispatchEvent(new CustomEvent("concord:open-dms"))}
+          style={{ ...styles.serverButton, background: "var(--bg-tertiary)", color: "var(--text-muted)" }}
+          title="Direct Messages"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
+        <div style={styles.divider} />
         {loading && [0, 1, 2].map((i) => (
           <div key={i} style={{ ...styles.serverButton, background: "var(--bg-tertiary)", opacity: 0.4 }} />
         ))}

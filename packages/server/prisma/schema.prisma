@@ -22,6 +22,9 @@ model User {
   invites        Invite[]
   lastReads      LastRead[]
   reactions       Reaction[]
+  conversations1  Conversation[]   @relation("ConvUser1")
+  conversations2  Conversation[]   @relation("ConvUser2")
+  directMessages  DirectMessage[]
 }
 
 model Server {
@@ -36,6 +39,32 @@ model Server {
   roles    Role[]
   members  ServerMember[]
   invites  Invite[]
+}
+
+model Conversation {
+  id           String   @id @default(cuid())
+  participant1 String
+  participant2 String
+  createdAt    DateTime @default(now())
+
+  user1    User              @relation("ConvUser1", fields: [participant1], references: [id])
+  user2    User              @relation("ConvUser2", fields: [participant2], references: [id])
+  messages DirectMessage[]
+
+  @@unique([participant1, participant2])
+}
+
+model DirectMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  authorId       String
+  content        String
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author       User         @relation(fields: [authorId], references: [id])
+
+  @@index([conversationId, createdAt])
 }
 
 model Reaction {

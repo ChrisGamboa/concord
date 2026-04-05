@@ -14,6 +14,7 @@ import { MusicPlayer } from "./MusicPlayer";
 import { MemberList } from "./MemberList";
 import { SettingsPage } from "./SettingsPage";
 import { ServerSettings } from "./ServerSettings";
+import { DirectMessages } from "./DirectMessages";
 
 export function AppLayout() {
   const { serverId, channelId } = useParams();
@@ -90,16 +91,20 @@ export function AppLayout() {
   const { setUserOnline, setUserOffline, addTyping } = usePresenceStore();
   const [showSettings, setShowSettings] = useState(false);
   const [showServerSettings, setShowServerSettings] = useState(false);
+  const [showDMs, setShowDMs] = useState(false);
 
   // Listen for settings open events
   useEffect(() => {
     const handler = () => setShowSettings(true);
     const serverHandler = () => setShowServerSettings(true);
+    const dmHandler = () => setShowDMs(true);
     window.addEventListener("concord:open-settings", handler);
     window.addEventListener("concord:open-server-settings", serverHandler);
+    window.addEventListener("concord:open-dms", dmHandler);
     return () => {
       window.removeEventListener("concord:open-settings", handler);
       window.removeEventListener("concord:open-server-settings", serverHandler);
+      window.removeEventListener("concord:open-dms", dmHandler);
     };
   }, []);
 
@@ -185,6 +190,7 @@ export function AppLayout() {
         <MusicPlayer />
       </div>
       {showSettings && <SettingsPage onClose={() => setShowSettings(false)} />}
+      {showDMs && <DirectMessages onClose={() => setShowDMs(false)} />}
       {showServerSettings && serverId && (
         <ServerSettings serverId={serverId} onClose={() => setShowServerSettings(false)} />
       )}

@@ -164,6 +164,28 @@ export const api = {
   getMyPermissions: (serverId: string, userId: string) =>
     request<{ permissions: number }>(`/servers/${serverId}/members/${userId}/permissions`),
 
+  // DMs
+  getConversations: () =>
+    request<{ conversations: Array<{ id: string; otherUser: any; lastMessage: { content: string; createdAt: string } | null }> }>("/dm/conversations"),
+
+  createConversation: (targetUserId: string) =>
+    request<{ id: string; otherUser: any }>("/dm/conversations", {
+      method: "POST",
+      body: JSON.stringify({ targetUserId }),
+    }),
+
+  getDmMessages: (conversationId: string, before?: string) => {
+    const params = new URLSearchParams();
+    if (before) params.set("before", before);
+    return request<{ messages: any[]; hasMore: boolean }>(`/dm/conversations/${conversationId}/messages?${params}`);
+  },
+
+  sendDm: (conversationId: string, content: string) =>
+    request<any>(`/dm/conversations/${conversationId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    }),
+
   // GIFs
   gifSearch: (q?: string, page?: number) => {
     const params = new URLSearchParams({ limit: "20" });

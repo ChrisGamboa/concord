@@ -32,6 +32,7 @@ export type ServerMessage =
       status: "online" | "offline";
     }
   | { type: "reaction_update"; channelId: ChannelId; messageId: MessageId; reactions: ReactionGroup[] }
+  | { type: "dm_created"; message: { id: string; conversationId: string; authorId: string; content: string; createdAt: string; author?: any } }
   | { type: "unread_count"; channelId: ChannelId; count: number }
   | { type: "error"; message: string }
   | { type: "ready"; userId: UserId; sessionId: string };
