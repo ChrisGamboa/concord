@@ -31,6 +31,7 @@ Self-hostable Discord alternative built with TypeScript.
   - [Step 6: Make the Client Connect to Your Server](#step-6-make-the-client-connect-to-your-server)
   - [Step 7: LiveKit Public Access](#step-7-livekit-public-access)
   - [Step 8: Distribute the Client](#step-8-distribute-the-client)
+- [Deployment Scripts](#deployment-scripts)
 - [Production Checklist](#production-checklist)
 - [Stopping](#stopping)
 
@@ -39,7 +40,9 @@ Self-hostable Discord alternative built with TypeScript.
 - Text channels with real-time messaging (WebSocket)
 - **GIF picker** -- search and send GIFs inline via Klipy API
 - Voice chat, video chat (1080p60), and screen sharing via LiveKit
-- **Persistent voice sessions** -- stay connected while browsing text channels
+  - **Video spotlight** -- click any video feed to focus it center-stage, others drop to a strip below
+  - **Persistent voice sessions** -- stay connected while browsing text channels
+  - Native OS screen picker for window-specific sharing
 - Music streaming from YouTube into voice channels (yt-dlp + LiveKit)
   - Debounced search-as-you-type
   - Queue management with drag-to-remove and clear
@@ -48,8 +51,10 @@ Self-hostable Discord alternative built with TypeScript.
   - Prefetches next track for near-gapless playback
   - Two-column panel layout (search + queue side by side)
 - **Per-participant volume control** -- right-click any participant to adjust their volume or mute them (client-side only)
+- **Server customization** -- server name, icon (auto-cropped to 128x128 WebP), invite links
+- **Invite system** -- generate shareable invite codes, join via code instead of raw server IDs
 - **Roles & permissions** -- bitmask-based permission system with 12 granular permissions
-  - Server Settings UI for creating, editing, and deleting roles with color and permission toggles
+  - Server Settings UI with Overview, Invites, and Roles tabs
   - Role assignment to members
   - Role badges with colors in the member list
   - Server owner is always admin
@@ -63,6 +68,8 @@ Self-hostable Discord alternative built with TypeScript.
 - Message editing and deletion
 - Desktop notifications
 - RNNoise ML noise suppression for voice (WebAssembly AudioWorklet)
+- **Custom title bar** -- frameless window with native traffic lights (macOS) or themed overlay (Windows)
+- **Auto-updater** -- silent background updates via GitHub Releases with in-app notification banner
 
 ## Tech Stack
 
@@ -70,8 +77,9 @@ Self-hostable Discord alternative built with TypeScript.
 - **Server:** Fastify + Prisma + PostgreSQL + Redis
 - **Real-time:** WebSockets (chat) + LiveKit WebRTC (voice/video)
 - **Music:** yt-dlp + ffmpeg + @livekit/rtc-node (server-side audio injection)
-- **Image processing:** sharp (avatar resize/crop)
+- **Image processing:** sharp (avatar/icon resize/crop)
 - **GIFs:** Klipy API (server-side proxy)
+- **Updates:** electron-updater + GitHub Releases (auto-update)
 
 ## Prerequisites
 
@@ -161,7 +169,7 @@ The Electron app opens with DevTools (in dev mode). Register an account and crea
 
 ### Text Chat
 - Create a server via the `+` button in the left sidebar
-- Share the server ID (click "Copy ID" in the channel sidebar header) with others so they can join
+- Share an invite code (Server Settings > Invites > Generate) or server ID with others to join
 - Type in the message input and press Enter to send
 - Click the **GIF** button to search and send GIFs inline
 - Drag and drop files to upload, or click the `+` button next to the input
@@ -175,6 +183,7 @@ The Electron app opens with DevTools (in dev mode). Register an account and crea
 - The sidebar shows your voice connection status with timer, mute toggle, return-to-call, and disconnect buttons
 - Right-click any participant to adjust their volume, mute, or (with permissions) kick/server-mute
 - Audio-only calls show large centered participant cards; video calls show a responsive grid
+- Click any video feed to **spotlight** it (center-stage view with others in a strip below)
 
 ### Music
 - While connected to a voice channel, the music bar appears at the bottom
@@ -259,70 +268,33 @@ The `dist/` folder, `node_modules/`, `prisma/`, and your `.env` are all you need
 
 ### Building the Electron Client
 
-The client uses `electron-vite` for bundling but doesn't have a packaging tool configured yet. You need to add `electron-builder` to produce installable `.dmg` / `.exe` / `.AppImage` files.
+The client uses `electron-vite` + `electron-builder`. Config is already in `packages/client/electron-builder.yml`.
 
-**1. Install electron-builder:**
-
-```bash
-pnpm --filter @concord/client add -D electron-builder
-```
-
-**2. Add an `electron-builder.yml` config** in `packages/client/`:
-
-```yaml
-appId: com.concord.app
-productName: Concord
-directories:
-  buildResources: build    # put icons here (icon.icns, icon.ico, icon.png)
-  output: release
-
-files:
-  - out/**/*
-  - node_modules/**/*
-  - package.json
-
-mac:
-  category: public.app-category.social-networking
-  target:
-    - dmg
-    - zip
-
-win:
-  target:
-    - nsis
-
-linux:
-  target:
-    - AppImage
-    - deb
-  category: Network
-```
-
-**3. Add build scripts** to `packages/client/package.json`:
-
-```json
-{
-  "scripts": {
-    "build:dist": "electron-vite build && electron-builder --config electron-builder.yml",
-    "build:mac": "electron-vite build && electron-builder --mac --config electron-builder.yml",
-    "build:win": "electron-vite build && electron-builder --win --config electron-builder.yml",
-    "build:linux": "electron-vite build && electron-builder --linux --config electron-builder.yml"
-  }
-}
-```
-
-**4. Add app icons** in `packages/client/build/`:
+**1. Add app icons** in `packages/client/build/` (create a 1024x1024 PNG and convert):
 - `icon.icns` (macOS)
 - `icon.ico` (Windows)
 - `icon.png` (Linux, 512x512)
 
-**5. Build:**
+**2. Build:**
 
 ```bash
+# Set your server URL (baked into the app at build time)
+export VITE_SERVER_URL=https://concord.example.com
+
 pnpm --filter @concord/client build:mac    # produces .dmg + .zip in release/
 pnpm --filter @concord/client build:win    # produces .exe installer in release/
 pnpm --filter @concord/client build:linux  # produces .AppImage + .deb in release/
 ```
+
+**3. Build + publish to GitHub Releases (enables auto-updater):**
+
+```bash
+export GH_TOKEN=your_github_personal_access_token
+export VITE_SERVER_URL=https://concord.example.com
+pnpm --filter @concord/client build:publish
+```
+
+This uploads the installer to a GitHub Release tagged with the version from `package.json`. Existing clients auto-check for updates on launch and every 4 hours.
 
 Output goes to `packages/client/release/`. Cross-compilation has limits -- build macOS on macOS, Windows on Windows (or use CI).
 
@@ -559,33 +531,15 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ### Step 6: Make the Client Connect to Your Server
 
-The client currently has hardcoded `localhost:3001` URLs in several files:
+All client URLs are centralized in `packages/client/src/renderer/lib/config.ts` and controlled by the `VITE_SERVER_URL` environment variable at build time. Default is `http://localhost:3001`.
 
-- `packages/client/src/renderer/lib/api.ts` -- `API_BASE`
-- `packages/client/src/renderer/lib/ws.ts` -- WebSocket URL
-- `packages/client/src/renderer/lib/avatar.ts` -- `SERVER_BASE`
-- `packages/client/src/renderer/components/ChatArea.tsx` -- `SERVER_BASE`
-
-You need to make these configurable. The cleanest approach:
-
-**1.** Create a single config file (e.g. `packages/client/src/renderer/lib/config.ts`):
-
-```typescript
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3001";
-const WS_URL = import.meta.env.VITE_WS_URL || SERVER_URL.replace(/^http/, "ws");
-
-export { SERVER_URL, WS_URL };
-```
-
-**2.** Replace all hardcoded URLs to import from this config.
-
-**3.** Set the env at build time:
+Set the env when building the client:
 
 ```bash
 VITE_SERVER_URL=https://concord.example.com pnpm --filter @concord/client build:mac
 ```
 
-This bakes the server URL into the Electron app at build time. Each distributable you produce points at a specific server.
+This bakes the server URL into the Electron app. Each distributable you produce points at a specific server.
 
 ### Step 7: LiveKit Public Access
 
@@ -615,6 +569,26 @@ Once the client is built with your server URL baked in:
 
 Host the files anywhere: GitHub Releases, S3, your own server, etc. GitHub Releases is the easiest since it integrates with `electron-builder`'s publish feature.
 
+## Deployment Scripts
+
+The `scripts/` directory has automation for production deployment:
+
+| Script | Purpose |
+|---|---|
+| `scripts/setup-server.sh` | Run once on a fresh VPS. Installs Node 22, pnpm, Docker, Nginx, Certbot, ffmpeg, yt-dlp, pm2. |
+| `scripts/generate-env.sh` | Interactive. Prompts for domain + Klipy key, generates random secrets, outputs `.env`, `livekit.yaml`, and nginx config. |
+| `scripts/deploy.sh` | Idempotent deploy/update. Pulls code, builds, pushes DB schema, restarts pm2. |
+
+Quick start on a fresh VPS:
+
+```bash
+git clone https://github.com/ChrisGamboa/concord.git && cd concord
+sudo bash scripts/setup-server.sh
+bash scripts/generate-env.sh
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+bash scripts/deploy.sh
+```
+
 ## Production Checklist
 
 - [ ] Change `JWT_SECRET` to a random string (64+ chars)
@@ -624,7 +598,7 @@ Host the files anywhere: GitHub Releases, S3, your own server, etc. GitHub Relea
 - [ ] Set up SSL with Certbot (auto-renew)
 - [ ] Use `pm2` or systemd to keep the server process alive
 - [ ] Set up database backups (`pg_dump` on a cron)
-- [ ] Make client URLs configurable via env vars (not hardcoded)
+- [ ] Build client with `VITE_SERVER_URL` set to your production domain
 - [ ] Code-sign the Electron app (macOS/Windows) if distributing publicly
 - [ ] Set up LiveKit with a real key pair (not `devkey`/`secret`)
 - [ ] Configure `uploads/` directory persistence (not lost on redeploy)
