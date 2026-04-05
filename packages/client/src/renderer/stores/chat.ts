@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Server, Channel, Message } from "@concord/shared";
+import type { Server, Channel, Message, ReactionGroup } from "@concord/shared";
 
 interface ChatState {
   servers: Server[];
@@ -23,6 +23,7 @@ interface ChatState {
   removeMessage: (channelId: string, messageId: string) => void;
   setActiveServer: (serverId: string | null) => void;
   setActiveChannel: (channelId: string | null) => void;
+  updateReactions: (messageId: string, reactions: ReactionGroup[]) => void;
 }
 
 export const useChatStore = create<ChatState>()((set) => ({
@@ -68,4 +69,10 @@ export const useChatStore = create<ChatState>()((set) => ({
     })),
   setActiveServer: (serverId) => set({ activeServerId: serverId }),
   setActiveChannel: (channelId) => set({ activeChannelId: channelId }),
+  updateReactions: (messageId, reactions) =>
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === messageId ? { ...m, reactions } : m
+      ),
+    })),
 }));

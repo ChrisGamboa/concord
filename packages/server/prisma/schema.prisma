@@ -21,6 +21,7 @@ model User {
   serverMembers  ServerMember[]
   invites        Invite[]
   lastReads      LastRead[]
+  reactions       Reaction[]
 }
 
 model Server {
@@ -35,6 +36,19 @@ model Server {
   roles    Role[]
   members  ServerMember[]
   invites  Invite[]
+}
+
+model Reaction {
+  id        String @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
 }
 
 model LastRead {
@@ -91,8 +105,9 @@ model Message {
   createdAt DateTime  @default(now())
   editedAt  DateTime?
 
-  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  author  User    @relation(fields: [authorId], references: [id])
+  channel   Channel    @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author    User       @relation(fields: [authorId], references: [id])
+  reactions Reaction[]
 
   @@index([channelId, createdAt])
 }

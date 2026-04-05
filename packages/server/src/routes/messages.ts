@@ -39,6 +39,7 @@ export const messageRoutes: FastifyPluginAsync = async (app) => {
         author: {
           select: { id: true, username: true, displayName: true, avatarUrl: true, status: true },
         },
+        reactions: { select: { emoji: true, userId: true } },
       },
       orderBy: { createdAt: "desc" },
       take: limit + 1,
@@ -56,6 +57,11 @@ export const messageRoutes: FastifyPluginAsync = async (app) => {
         createdAt: m.createdAt.toISOString(),
         editedAt: m.editedAt?.toISOString() ?? null,
         author: m.author,
+        reactions: (() => {
+          const groups: Record<string, string[]> = {};
+          for (const r of m.reactions) (groups[r.emoji] ??= []).push(r.userId);
+          return Object.entries(groups).map(([emoji, userIds]) => ({ emoji, count: userIds.length, userIds }));
+        })(),
       })),
       hasMore,
     };

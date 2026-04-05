@@ -26,6 +26,7 @@ export function AppLayout() {
     removeMessage,
     setActiveServer,
     setUnreadCount,
+    updateReactions,
   } = useChatStore();
 
   const [serversLoading, setServersLoading] = useState(true);
@@ -131,6 +132,9 @@ export function AppLayout() {
           break;
         case "typing":
           addTyping(msg.channelId, msg.userId, msg.username);
+          break;
+        case "reaction_update":
+          updateReactions(msg.messageId, msg.reactions);
           break;
         case "unread_count":
           setUnreadCount(msg.channelId, msg.count);

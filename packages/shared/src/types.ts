@@ -61,6 +61,15 @@ export interface Message {
   createdAt: string;
   editedAt: string | null;
   author?: PublicUser;
+  reactions?: ReactionGroup[];
+}
+
+// ---- Reactions ----
+
+export interface ReactionGroup {
+  emoji: string;
+  count: number;
+  userIds: UserId[];
 }
 
 // ---- Roles ----

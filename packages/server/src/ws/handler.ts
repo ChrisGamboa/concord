@@ -248,6 +248,43 @@ async function handleMessage(
       );
       break;
     }
+    case "toggle_reaction": {
+      const message = await prisma.message.findUnique({
+        where: { id: msg.messageId },
+        select: { channelId: true },
+      });
+      if (!message) return;
+
+      const existing = await prisma.reaction.findUnique({
+        where: { messageId_userId_emoji: { messageId: msg.messageId, userId, emoji: msg.emoji } },
+      });
+
+      if (existing) {
+        await prisma.reaction.delete({ where: { id: existing.id } });
+      } else {
+        await prisma.reaction.create({ data: { messageId: msg.messageId, userId, emoji: msg.emoji } });
+      }
+
+      // Get updated reaction groups for this message
+      const reactions = await prisma.reaction.findMany({ where: { messageId: msg.messageId } });
+      const groups: Record<string, string[]> = {};
+      for (const r of reactions) {
+        (groups[r.emoji] ??= []).push(r.userId);
+      }
+      const reactionGroups = Object.entries(groups).map(([emoji, userIds]) => ({
+        emoji,
+        count: userIds.length,
+        userIds,
+      }));
+
+      broadcastToChannel(message.channelId, {
+        type: "reaction_update",
+        channelId: message.channelId,
+        messageId: msg.messageId,
+        reactions: reactionGroups,
+      });
+      break;
+    }
     case "mark_read": {
       await prisma.lastRead.upsert({
         where: { userId_channelId: { userId, channelId: msg.channelId } },

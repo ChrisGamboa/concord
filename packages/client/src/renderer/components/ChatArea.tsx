@@ -6,7 +6,7 @@ import { usePresenceStore } from "../stores/presence";
 import { sendWs } from "../lib/ws";
 import { api } from "../lib/api";
 import { avatarColor, avatarUrl } from "../lib/avatar";
-import { Permissions, hasPermission } from "@concord/shared";
+import { Permissions, hasPermission, type ReactionGroup } from "@concord/shared";
 import { GifPicker } from "./GifPicker";
 
 const IMAGE_REGEX = /\.(png|jpe?g|gif|webp)$/i;
@@ -356,6 +356,7 @@ export function ChatArea() {
                     {msg.editedAt && <span style={styles.editedTag}>(edited)</span>}
                   </>
                 )}
+                <ReactionBar reactions={msg.reactions} messageId={msg.id} userId={userId} />
               </div>
               {!isEditing && (
                 <MessageActions
@@ -552,6 +553,86 @@ function MessageBody({ content }: { content: string }) {
   }
 
   return <div style={styles.messageText}>{content}</div>;
+}
+
+const QUICK_EMOJIS = ["👍", "❤️", "😂", "🎉", "😮", "😢", "🔥", "👀"];
+
+function ReactionBar({ reactions, messageId, userId }: { reactions?: ReactionGroup[]; messageId: string; userId?: string }) {
+  const [showPicker, setShowPicker] = useState(false);
+
+  const toggle = (emoji: string) => {
+    sendWs({ type: "toggle_reaction", messageId, emoji });
+    setShowPicker(false);
+  };
+
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "4px", alignItems: "center" }}>
+      {(reactions ?? []).map((r) => (
+        <button
+          key={r.emoji}
+          onClick={() => toggle(r.emoji)}
+          style={{
+            padding: "2px 6px",
+            fontSize: "13px",
+            background: r.userIds.includes(userId ?? "") ? "rgba(88, 101, 242, 0.3)" : "var(--bg-tertiary)",
+            border: r.userIds.includes(userId ?? "") ? "1px solid var(--accent)" : "1px solid transparent",
+            borderRadius: "4px",
+            cursor: "pointer",
+            color: "var(--text-primary)",
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+          }}
+        >
+          {r.emoji} <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{r.count}</span>
+        </button>
+      ))}
+      <div style={{ position: "relative" }}>
+        <button
+          onClick={() => setShowPicker(!showPicker)}
+          style={{
+            padding: "2px 6px",
+            fontSize: "13px",
+            background: "transparent",
+            border: "1px solid transparent",
+            borderRadius: "4px",
+            cursor: "pointer",
+            color: "var(--text-muted)",
+            opacity: 0.5,
+          }}
+          title="Add reaction"
+        >
+          +
+        </button>
+        {showPicker && (
+          <div style={{
+            position: "absolute",
+            bottom: "100%",
+            left: 0,
+            background: "var(--bg-primary)",
+            border: "1px solid var(--border)",
+            borderRadius: "8px",
+            padding: "6px",
+            display: "flex",
+            gap: "2px",
+            zIndex: 50,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+          }}>
+            {QUICK_EMOJIS.map((e) => (
+              <button
+                key={e}
+                onClick={() => toggle(e)}
+                style={{ fontSize: "18px", background: "none", border: "none", cursor: "pointer", padding: "4px", borderRadius: "4px" }}
+                className="hover-bg"
+              >
+                {e}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 const styles: Record<string, React.CSSProperties> = {
