@@ -469,16 +469,52 @@ function VoiceContent({
   };
 
   const hasVideo = videoTracks.length > 0;
+  const [focusedSid, setFocusedSid] = useState<string | null>(null);
+
+  // Clear focus if the focused track disappears
+  useEffect(() => {
+    if (focusedSid && !videoTracks.some((t) => t.publication.trackSid === focusedSid)) {
+      setFocusedSid(null);
+    }
+  }, [videoTracks, focusedSid]);
+
+  const focusedTrack = focusedSid ? videoTracks.find((t) => t.publication.trackSid === focusedSid) : null;
+  const otherTracks = focusedTrack ? videoTracks.filter((t) => t.publication.trackSid !== focusedSid) : videoTracks;
 
   return (
     <div style={styles.voiceContainer}>
       {hasVideo ? (
         <>
-          <div style={styles.videoGrid}>
-            {videoTracks.map((trackRef) => (
+          {/* Spotlight: focused track takes center stage */}
+          {focusedTrack && (
+            <div
+              style={styles.videoSpotlight}
+              onClick={() => setFocusedSid(null)}
+              title="Click to unfocus"
+            >
+              <VideoTrack
+                trackRef={focusedTrack}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain",
+                }}
+              />
+              <span style={styles.videoLabel}>
+                {focusedTrack.participant.name ?? focusedTrack.participant.identity}
+                {focusedTrack.source === Track.Source.ScreenShare ? " (Screen)" : ""}
+              </span>
+            </div>
+          )}
+
+          {/* Grid: all tracks when no focus, or remaining tracks as a strip */}
+          <div style={focusedTrack ? styles.videoStrip : styles.videoGrid}>
+            {otherTracks.map((trackRef) => (
               <div
                 key={trackRef.publication.trackSid}
-                style={styles.videoTile}
+                style={focusedTrack ? styles.videoStripTile : styles.videoTile}
+                onClick={() => setFocusedSid(trackRef.publication.trackSid ?? null)}
+                title="Click to focus"
               >
                 <VideoTrack
                   trackRef={trackRef}
@@ -786,6 +822,16 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   // Video mode
+  videoSpotlight: {
+    flex: 1,
+    minHeight: 0,
+    position: "relative" as const,
+    background: "#000",
+    borderRadius: "8px",
+    overflow: "hidden",
+    margin: "8px 8px 4px",
+    cursor: "pointer",
+  },
   videoGrid: {
     flex: 1,
     minHeight: 0,
@@ -796,12 +842,30 @@ const styles: Record<string, React.CSSProperties> = {
     overflowY: "auto" as const,
     alignContent: "center",
   },
+  videoStrip: {
+    display: "flex",
+    gap: "4px",
+    padding: "0 8px 8px",
+    overflowX: "auto" as const,
+    flexShrink: 0,
+  },
   videoTile: {
     position: "relative" as const,
     background: "#000",
     borderRadius: "8px",
     overflow: "hidden",
     aspectRatio: "16/9",
+    cursor: "pointer",
+  },
+  videoStripTile: {
+    position: "relative" as const,
+    background: "#000",
+    borderRadius: "6px",
+    overflow: "hidden",
+    width: "160px",
+    aspectRatio: "16/9",
+    flexShrink: 0,
+    cursor: "pointer",
   },
   videoLabel: {
     position: "absolute" as const,
