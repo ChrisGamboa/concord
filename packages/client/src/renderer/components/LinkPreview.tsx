@@ -33,10 +33,10 @@ export function LinkPreview({ content }: { content: string }) {
 
     api.getLinkPreview(url).then((data) => {
       const result = data.title ? data : null;
-      previewCache.set(url, result);
+      if (result) previewCache.set(url, result); // only cache successes
       setPreview(result);
     }).catch(() => {
-      previewCache.set(url, null);
+      // Don't cache failures -- allow retry on next render
     });
   }, [url]);
 
