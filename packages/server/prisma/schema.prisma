@@ -20,6 +20,7 @@ model User {
   ownedServers   Server[]       @relation("ServerOwner")
   serverMembers  ServerMember[]
   invites        Invite[]
+  lastReads      LastRead[]
 }
 
 model Server {
@@ -34,6 +35,17 @@ model Server {
   roles    Role[]
   members  ServerMember[]
   invites  Invite[]
+}
+
+model LastRead {
+  userId    String
+  channelId String
+  readAt    DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id])
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@id([userId, channelId])
 }
 
 model Invite {
@@ -59,8 +71,9 @@ model Channel {
   position  Int         @default(0)
   createdAt DateTime    @default(now())
 
-  server   Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
-  messages Message[]
+  server    Server     @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  messages  Message[]
+  lastReads LastRead[]
 
   @@index([serverId, position])
 }

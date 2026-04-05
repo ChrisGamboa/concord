@@ -9,6 +9,7 @@ import {
   unsubscribeFromChannel,
   broadcastToChannel,
   broadcastToAll,
+  sendToUser,
   isUserOnline,
   getOnlineUserIds,
 } from "./connections.js";
@@ -150,6 +151,28 @@ async function handleMessage(
       };
 
       broadcastToChannel(msg.channelId, serverMsg);
+
+      // Update unread counts for all server members not subscribed to this channel
+      const channel = await prisma.channel.findUnique({ where: { id: msg.channelId }, select: { serverId: true } });
+      if (channel) {
+        const members = await prisma.serverMember.findMany({ where: { serverId: channel.serverId }, select: { userId: true } });
+        for (const member of members) {
+          if (member.userId === userId) continue; // skip sender
+          const lastRead = await prisma.lastRead.findUnique({
+            where: { userId_channelId: { userId: member.userId, channelId: msg.channelId } },
+          });
+          const count = await prisma.message.count({
+            where: {
+              channelId: msg.channelId,
+              createdAt: { gt: lastRead?.readAt ?? new Date(0) },
+            },
+          });
+          if (count > 0) {
+            sendToUser(member.userId, { type: "unread_count", channelId: msg.channelId, count });
+          }
+        }
+      }
+
       break;
     }
     case "edit_message": {
@@ -223,6 +246,15 @@ async function handleMessage(
         },
         sessionId
       );
+      break;
+    }
+    case "mark_read": {
+      await prisma.lastRead.upsert({
+        where: { userId_channelId: { userId, channelId: msg.channelId } },
+        create: { userId, channelId: msg.channelId, readAt: new Date() },
+        update: { readAt: new Date() },
+      });
+      sendToUser(userId, { type: "unread_count", channelId: msg.channelId, count: 0 });
       break;
     }
   }

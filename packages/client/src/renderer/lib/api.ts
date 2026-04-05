@@ -189,6 +189,9 @@ export const api = {
   getChannels: (serverId: string) =>
     request<ChannelsResponse>(`/channels/server/${serverId}`),
 
+  getUnreadCounts: (serverId: string) =>
+    request<{ unread: Record<string, number> }>(`/channels/server/${serverId}/unread`),
+
   createChannel: (serverId: string, name: string, type: string) =>
     request<ChannelsResponse["channels"][0]>(`/channels/server/${serverId}`, {
       method: "POST",

@@ -9,9 +9,12 @@ interface ChatState {
   activeChannelId: string | null;
   hasMoreMessages: boolean;
   messagesLoading: boolean;
+  unreadCounts: Record<string, number>;
 
   setServers: (servers: Server[]) => void;
   setChannels: (channels: Channel[]) => void;
+  setUnreadCounts: (counts: Record<string, number>) => void;
+  setUnreadCount: (channelId: string, count: number) => void;
   setMessages: (messages: Message[], hasMore: boolean) => void;
   setMessagesLoading: (loading: boolean) => void;
   prependMessages: (messages: Message[], hasMore: boolean) => void;
@@ -30,8 +33,18 @@ export const useChatStore = create<ChatState>()((set) => ({
   activeChannelId: null,
   hasMoreMessages: false,
   messagesLoading: false,
+  unreadCounts: {},
 
   setServers: (servers) => set({ servers }),
+  setUnreadCounts: (counts) => set({ unreadCounts: counts }),
+  setUnreadCount: (channelId, count) =>
+    set((s) => {
+      if (count === 0) {
+        const { [channelId]: _, ...rest } = s.unreadCounts;
+        return { unreadCounts: rest };
+      }
+      return { unreadCounts: { ...s.unreadCounts, [channelId]: count } };
+    }),
   setChannels: (channels) => set({ channels }),
   setMessages: (messages, hasMore) => set({ messages, hasMoreMessages: hasMore, messagesLoading: false }),
   setMessagesLoading: (loading) => set({ messagesLoading: loading }),

@@ -36,6 +36,7 @@ export function ChannelSidebar() {
     return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   }, [timerElapsed]);
 
+  const unreadCounts = useChatStore((s) => s.unreadCounts);
   const textChannels = channels.filter((c) => c.type === ChannelType.Text);
   const voiceChannels = channels.filter((c) => c.type === ChannelType.Voice);
 
@@ -115,27 +116,29 @@ export function ChannelSidebar() {
         {textChannels.length > 0 && (
           <div style={styles.category}>
             <span style={styles.categoryLabel}>Text Channels</span>
-            {textChannels.map((channel) => (
-              <button
-                key={channel.id}
-                className="hover-bg"
-                onClick={() => navigate(`/channels/${serverId}/${channel.id}`)}
-                style={{
-                  ...styles.channelButton,
-                  background:
-                    channel.id === channelId
-                      ? "rgba(255,255,255,0.06)"
-                      : "transparent",
-                  color:
-                    channel.id === channelId
-                      ? "var(--text-primary)"
-                      : "var(--text-muted)",
-                }}
-              >
-                <span style={styles.hash}>#</span>
-                {channel.name}
-              </button>
-            ))}
+            {textChannels.map((channel) => {
+              const unread = unreadCounts[channel.id] ?? 0;
+              const isActive = channel.id === channelId;
+              return (
+                <button
+                  key={channel.id}
+                  className="hover-bg"
+                  onClick={() => navigate(`/channels/${serverId}/${channel.id}`)}
+                  style={{
+                    ...styles.channelButton,
+                    background: isActive ? "rgba(255,255,255,0.06)" : "transparent",
+                    color: isActive ? "var(--text-primary)" : unread > 0 ? "var(--text-primary)" : "var(--text-muted)",
+                    fontWeight: unread > 0 && !isActive ? 700 : 500,
+                  }}
+                >
+                  <span style={styles.hash}>#</span>
+                  {channel.name}
+                  {unread > 0 && !isActive && (
+                    <span style={styles.unreadBadge}>{unread > 99 ? "99+" : unread}</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         )}
 
@@ -355,6 +358,15 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "18px",
     fontWeight: 500,
     opacity: 0.5,
+  },
+  unreadBadge: {
+    marginLeft: "auto",
+    fontSize: "11px",
+    color: "white",
+    background: "var(--accent)",
+    padding: "1px 6px",
+    borderRadius: "8px",
+    fontWeight: 700,
   },
   voiceIcon: {
     fontSize: "14px",

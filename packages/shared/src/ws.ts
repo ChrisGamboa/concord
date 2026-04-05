@@ -15,7 +15,8 @@ export type ClientMessage =
   | { type: "delete_message"; messageId: MessageId }
   | { type: "typing_start"; channelId: ChannelId }
   | { type: "subscribe_channel"; channelId: ChannelId }
-  | { type: "unsubscribe_channel"; channelId: ChannelId };
+  | { type: "unsubscribe_channel"; channelId: ChannelId }
+  | { type: "mark_read"; channelId: ChannelId };
 
 // Server -> Client
 export type ServerMessage =
@@ -28,5 +29,6 @@ export type ServerMessage =
       userId: UserId;
       status: "online" | "offline";
     }
+  | { type: "unread_count"; channelId: ChannelId; count: number }
   | { type: "error"; message: string }
   | { type: "ready"; userId: UserId; sessionId: string };

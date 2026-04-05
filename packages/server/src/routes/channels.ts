@@ -37,6 +37,41 @@ export const channelRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
+  // Get unread counts for all channels in a server
+  app.get<{ Params: { serverId: string } }>(
+    "/server/:serverId/unread",
+    async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      const { serverId } = request.params;
+
+      const member = await prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId, serverId } },
+      });
+      if (!member) return reply.code(403).send({ error: "Not a member" });
+
+      const channels = await prisma.channel.findMany({
+        where: { serverId, type: "TEXT" },
+        select: { id: true },
+      });
+
+      const lastReads = await prisma.lastRead.findMany({
+        where: { userId, channelId: { in: channels.map((c) => c.id) } },
+      });
+      const readMap = new Map(lastReads.map((lr) => [lr.channelId, lr.readAt]));
+
+      const counts: Record<string, number> = {};
+      for (const ch of channels) {
+        const readAt = readMap.get(ch.id) ?? new Date(0);
+        const count = await prisma.message.count({
+          where: { channelId: ch.id, createdAt: { gt: readAt } },
+        });
+        if (count > 0) counts[ch.id] = count;
+      }
+
+      return { unread: counts };
+    }
+  );
+
   // Create a channel
   app.post<{ Params: { serverId: string }; Body: { name: string; type: string } }>(
     "/server/:serverId",

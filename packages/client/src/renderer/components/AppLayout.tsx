@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
-import { onWsMessage } from "../lib/ws";
+import { onWsMessage, sendWs } from "../lib/ws";
 import { useChatStore } from "../stores/chat";
 import { useAuthStore } from "../stores/auth";
 import { usePresenceStore } from "../stores/presence";
@@ -25,6 +25,7 @@ export function AppLayout() {
     updateMessage,
     removeMessage,
     setActiveServer,
+    setUnreadCount,
   } = useChatStore();
 
   const [serversLoading, setServersLoading] = useState(true);
@@ -62,6 +63,20 @@ export function AppLayout() {
   const channels = useChatStore((s) => s.channels);
   const currentChannel = channels.find((c) => c.id === channelId);
   const isVoiceChannel = currentChannel?.type === "voice";
+
+  // Fetch unread counts when server changes
+  const setUnreadCounts = useChatStore((s) => s.setUnreadCounts);
+  useEffect(() => {
+    if (!serverId) return;
+    api.getUnreadCounts(serverId).then((res) => setUnreadCounts(res.unread)).catch(() => {});
+  }, [serverId, setUnreadCounts]);
+
+  // Mark channel as read when viewing it
+  useEffect(() => {
+    if (!channelId || isVoiceChannel) return;
+    sendWs({ type: "mark_read", channelId });
+    setUnreadCount(channelId, 0);
+  }, [channelId, isVoiceChannel, setUnreadCount]);
 
   // Voice connection state
   const voiceConnection = useVoiceStore((s) => s.connection);
@@ -117,9 +132,12 @@ export function AppLayout() {
         case "typing":
           addTyping(msg.channelId, msg.userId, msg.username);
           break;
+        case "unread_count":
+          setUnreadCount(msg.channelId, msg.count);
+          break;
       }
     });
-  }, [addMessage, updateMessage, removeMessage, setUserOnline, setUserOffline, addTyping]);
+  }, [addMessage, updateMessage, removeMessage, setUserOnline, setUserOffline, addTyping, setUnreadCount]);
 
   return (
     <div style={styles.layout}>
