@@ -103,6 +103,9 @@ function MemberItem({
         <span style={{ ...styles.memberName, color: topRole?.color ?? undefined }}>
           {member.nickname ?? member.user?.displayName ?? member.user?.username ?? "Unknown"}
         </span>
+        {(member.user as any)?.status && (
+          <span style={styles.memberStatus}>{(member.user as any).status}</span>
+        )}
         {memberRoles.length > 0 && (
           <div style={styles.roleBadges}>
             {memberRoles.map((r) => (
@@ -182,6 +185,14 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: "wrap" as const,
     gap: "3px",
     marginTop: "2px",
+  },
+  memberStatus: {
+    fontSize: "11px",
+    color: "var(--text-muted)",
+    display: "block",
+    whiteSpace: "nowrap" as const,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
   },
   roleBadge: {
     fontSize: "10px",

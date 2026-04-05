@@ -136,7 +136,7 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
     const members = await prisma.serverMember.findMany({
       where: { serverId },
       include: {
-        user: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+        user: { select: { id: true, username: true, displayName: true, avatarUrl: true, status: true } },
         memberRoles: { select: { roleId: true } },
       },
     });

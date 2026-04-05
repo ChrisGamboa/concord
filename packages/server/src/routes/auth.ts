@@ -10,11 +10,12 @@ import type { AuthResponse, LoginRequest, RegisterRequest } from "@concord/share
 const UPLOADS_DIR = join(process.cwd(), "uploads");
 const AVATAR_SIZE = 256;
 
-function toUserResponse(user: { id: string; username: string; displayName: string; avatarUrl: string | null; createdAt: Date }) {
+function toUserResponse(user: { id: string; username: string; displayName: string; avatarUrl: string | null; status: string | null; createdAt: Date }) {
   return {
     id: user.id,
     username: user.username,
     displayName: user.displayName,
+    status: user.status,
     avatarUrl: user.avatarUrl,
     createdAt: user.createdAt.toISOString(),
   };
@@ -82,7 +83,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   // Update profile (display name and/or avatar)
   app.patch("/profile", { preHandler: [app.authenticate] }, async (request, reply) => {
     const { userId } = request.user as { userId: string };
-    const updates: { displayName?: string; avatarUrl?: string | null } = {};
+    const updates: { displayName?: string; avatarUrl?: string | null; status?: string | null } = {};
 
     // Handle multipart form data (avatar file + fields)
     const contentType = request.headers["content-type"] ?? "";
@@ -94,6 +95,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
           if (val && val.length >= 1 && val.length <= 64) {
             updates.displayName = val;
           }
+        }
+        if (part.type === "field" && part.fieldname === "status") {
+          const val = (part.value as string)?.trim();
+          updates.status = val || null; // empty string clears status
         }
         if (part.type === "field" && part.fieldname === "removeAvatar") {
           if (part.value === "true") {
@@ -125,12 +130,15 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       }
     } else {
       // JSON body for display name only
-      const body = request.body as { displayName?: string; removeAvatar?: boolean };
+      const body = request.body as { displayName?: string; status?: string; removeAvatar?: boolean };
       if (body.displayName?.trim()) {
         const val = body.displayName.trim();
         if (val.length >= 1 && val.length <= 64) {
           updates.displayName = val;
         }
+      }
+      if (body.status !== undefined) {
+        updates.status = body.status?.trim() || null;
       }
       if (body.removeAvatar) {
         updates.avatarUrl = null;

@@ -131,7 +131,7 @@ async function handleMessage(
         },
         include: {
           author: {
-            select: { id: true, username: true, displayName: true, avatarUrl: true },
+            select: { id: true, username: true, displayName: true, avatarUrl: true, status: true },
           },
         },
       });
@@ -163,7 +163,7 @@ async function handleMessage(
         data: { content: msg.content, editedAt: new Date() },
         include: {
           author: {
-            select: { id: true, username: true, displayName: true, avatarUrl: true },
+            select: { id: true, username: true, displayName: true, avatarUrl: true, status: true },
           },
         },
       });

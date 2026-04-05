@@ -13,6 +13,7 @@ model User {
   displayName  String
   passwordHash String
   avatarUrl    String?
+  status       String?
   createdAt    DateTime @default(now())
 
   messages       Message[]

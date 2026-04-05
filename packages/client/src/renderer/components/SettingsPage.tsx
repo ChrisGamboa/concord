@@ -20,6 +20,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   // Profile editing
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(user?.displayName ?? "");
+  const [statusInput, setStatusInput] = useState(user?.status ?? "");
   const [saving, setSaving] = useState(false);
   const [profileMsg, setProfileMsg] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -321,6 +322,30 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                       </svg>
                     </button>
                   )}
+                </div>
+                <div className="settings-field-col">
+                  <span className="settings-label">Status</span>
+                  <span className="settings-hint">What are you up to? Visible to other members.</span>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <input
+                      className="settings-select"
+                      value={statusInput}
+                      onChange={(e) => setStatusInput(e.target.value)}
+                      placeholder="Set a status..."
+                      maxLength={128}
+                    />
+                    <button className="settings-save-btn" disabled={saving} onClick={async () => {
+                      setSaving(true); setProfileMsg("");
+                      try {
+                        const res = await api.updateProfile({ status: statusInput });
+                        updateUser(res.user);
+                        setProfileMsg("Status updated");
+                      } catch (err) { setProfileMsg(err instanceof Error ? err.message : "Failed"); }
+                      finally { setSaving(false); }
+                    }}>
+                      Save
+                    </button>
+                  </div>
                 </div>
                 {user?.avatarUrl && (
                   <div className="settings-field">

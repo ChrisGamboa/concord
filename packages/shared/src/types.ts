@@ -13,6 +13,7 @@ export interface User {
   username: string;
   displayName: string;
   avatarUrl: string | null;
+  status: string | null;
   createdAt: string;
 }
 
@@ -21,6 +22,7 @@ export interface PublicUser {
   username: string;
   displayName: string;
   avatarUrl: string | null;
+  status: string | null;
 }
 
 // ---- Servers ----

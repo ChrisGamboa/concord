@@ -63,9 +63,10 @@ export const api = {
 
   getMe: () => request<{ user: AuthResponse["user"] }>("/auth/me"),
 
-  updateProfile: async (data: { displayName?: string; avatar?: File; removeAvatar?: boolean }) => {
+  updateProfile: async (data: { displayName?: string; status?: string; avatar?: File; removeAvatar?: boolean }) => {
     const formData = new FormData();
     if (data.displayName) formData.append("displayName", data.displayName);
+    if (data.status !== undefined) formData.append("status", data.status);
     if (data.avatar) formData.append("avatar", data.avatar);
     if (data.removeAvatar) formData.append("removeAvatar", "true");
 

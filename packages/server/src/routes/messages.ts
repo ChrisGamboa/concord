@@ -37,7 +37,7 @@ export const messageRoutes: FastifyPluginAsync = async (app) => {
       },
       include: {
         author: {
-          select: { id: true, username: true, displayName: true, avatarUrl: true },
+          select: { id: true, username: true, displayName: true, avatarUrl: true, status: true },
         },
       },
       orderBy: { createdAt: "desc" },
