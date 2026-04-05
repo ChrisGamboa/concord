@@ -186,6 +186,12 @@ export const api = {
       body: JSON.stringify({ content }),
     }),
 
+  // Link previews
+  getLinkPreview: (url: string) =>
+    request<{ title: string | null; description: string | null; image: string | null; siteName: string | null; url: string }>(
+      `/preview/link?url=${encodeURIComponent(url)}`
+    ),
+
   // GIFs
   gifSearch: (q?: string, page?: number) => {
     const params = new URLSearchParams({ limit: "20" });

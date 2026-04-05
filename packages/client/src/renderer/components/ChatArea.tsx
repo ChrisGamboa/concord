@@ -8,6 +8,7 @@ import { api } from "../lib/api";
 import { avatarColor, avatarUrl } from "../lib/avatar";
 import { Permissions, hasPermission, type ReactionGroup } from "@concord/shared";
 import { GifPicker } from "./GifPicker";
+import { LinkPreview } from "./LinkPreview";
 
 const IMAGE_REGEX = /\.(png|jpe?g|gif|webp)$/i;
 const UPLOAD_URL_REGEX = /^\/uploads\/.+/;
@@ -552,7 +553,12 @@ function MessageBody({ content }: { content: string }) {
     );
   }
 
-  return <div style={styles.messageText}>{content}</div>;
+  return (
+    <div>
+      <div style={styles.messageText}>{content}</div>
+      <LinkPreview content={content} />
+    </div>
+  );
 }
 
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "🎉", "😮", "😢", "🔥", "👀"];
