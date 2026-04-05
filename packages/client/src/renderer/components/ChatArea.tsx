@@ -11,7 +11,7 @@ import { GifPicker } from "./GifPicker";
 
 const IMAGE_REGEX = /\.(png|jpe?g|gif|webp)$/i;
 const UPLOAD_URL_REGEX = /^\/uploads\/.+/;
-const SERVER_BASE = "http://localhost:3001";
+import { SERVER_URL as SERVER_BASE } from "../lib/config";
 const GROUP_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
 function isImageUrl(text: string): boolean {

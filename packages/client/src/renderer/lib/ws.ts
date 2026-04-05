@@ -1,4 +1,5 @@
 import type { ClientMessage, ServerMessage } from "@concord/shared";
+import { WS_URL } from "./config";
 
 type MessageHandler = (msg: ServerMessage) => void;
 
@@ -9,7 +10,7 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 export function connectWs(token: string) {
   if (socket?.readyState === WebSocket.OPEN) return;
 
-  socket = new WebSocket(`ws://localhost:3001/ws?token=${encodeURIComponent(token)}`);
+  socket = new WebSocket(`${WS_URL}/ws?token=${encodeURIComponent(token)}`);
 
   socket.onopen = () => {
     console.log("[ws] connected");

@@ -13,7 +13,9 @@ import type {
   Role,
 } from "@concord/shared";
 
-const API_BASE = "http://localhost:3001/api";
+import { API_URL } from "./config";
+
+const API_BASE = API_URL;
 
 let authToken: string | null = null;
 
