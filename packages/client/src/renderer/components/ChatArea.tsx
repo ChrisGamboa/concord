@@ -41,6 +41,24 @@ export function ChatArea() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [showGifPicker, setShowGifPicker] = useState(false);
   const [reactionPickerMsgId, setReactionPickerMsgId] = useState<string | null>(null);
+
+  // Close reaction picker on click-outside or Escape
+  useEffect(() => {
+    if (!reactionPickerMsgId) return;
+    const close = () => setReactionPickerMsgId(null);
+    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    // Delay so the opening click doesn't immediately close it
+    const timer = setTimeout(() => {
+      window.addEventListener("click", close);
+      window.addEventListener("keydown", handleKey);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", handleKey);
+    };
+  }, [reactionPickerMsgId]);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -283,7 +301,7 @@ export function ChatArea() {
                       msgId={msg.id} content={msg.content} isOwn={isOwnG} canModerate={canModerate}
                       isHovered={isHoveredG} isEditing={true} editContent={editContent}
                       confirmDeleteId={confirmDeleteId}
-                      onReact={(id) => setReactionPickerMsgId(id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
+                      onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
                       onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                       onEditChange={setEditContent}
                     />
@@ -299,7 +317,7 @@ export function ChatArea() {
                     msgId={msg.id} content={msg.content} isOwn={isOwnG} canModerate={canModerate}
                     isHovered={isHoveredG} isEditing={false} editContent={editContent}
                     confirmDeleteId={confirmDeleteId}
-                    onReact={(id) => setReactionPickerMsgId(id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
+                    onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
                     onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                     onEditChange={setEditContent}
                   />
@@ -348,7 +366,7 @@ export function ChatArea() {
                     msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate}
                     isHovered={isHovered} isEditing={true} editContent={editContent}
                     confirmDeleteId={confirmDeleteId}
-                    onReact={(id) => setReactionPickerMsgId(id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
+                    onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
                     onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                     onEditChange={setEditContent}
                   />
@@ -369,7 +387,7 @@ export function ChatArea() {
                   msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate}
                   isHovered={isHovered} isEditing={false} editContent={editContent}
                   confirmDeleteId={confirmDeleteId}
-                  onReact={(id) => setReactionPickerMsgId(id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
+                  onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
                   onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                   onEditChange={setEditContent}
                 />
@@ -496,7 +514,12 @@ function MessageActions({
         onClick={() => onReact(msgId)}
         title="Add reaction"
       >
-        +
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+          <line x1="9" y1="9" x2="9.01" y2="9" />
+          <line x1="15" y1="9" x2="15.01" y2="9" />
+        </svg>
       </button>
       {isOwn && (
         <button
@@ -627,7 +650,7 @@ function ReactionBar({ reactions, messageId, userId, showPicker, onClosePicker }
         </button>
       ))}
       {showPicker && (
-        <div style={{
+        <div onClick={(e) => e.stopPropagation()} style={{
           background: "var(--bg-primary)",
           border: "1px solid var(--border)",
           borderRadius: "8px",
