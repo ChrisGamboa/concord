@@ -505,36 +505,26 @@ function MessageActions({
 
   if (!isHovered && !showReactionPicker) return null;
 
-  if (showReactionPicker) {
-    return (
-      <div style={styles.actionBar} onClick={(e) => e.stopPropagation()}>
-        {QUICK_EMOJIS.map((e) => (
-          <button
-            key={e}
-            style={{ ...styles.actionButton, fontSize: "16px", padding: "2px 4px" }}
-            onClick={() => {
-              sendWs({ type: "toggle_reaction", messageId: msgId, emoji: e });
-              onReact(msgId); // close
-            }}
-          >
-            {e}
-          </button>
-        ))}
-        <button
-          style={styles.actionButton}
-          onClick={() => onReact(msgId)}
-          title="Cancel"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <div style={styles.actionBar}>
+    <div style={{ ...styles.actionBar, position: "relative" }}>
+      {/* Floating emoji picker above the button */}
+      {showReactionPicker && (
+        <div className="emoji-picker-float" onClick={(e) => e.stopPropagation()}>
+          {QUICK_EMOJIS.map((e) => (
+            <button
+              key={e}
+              className="emoji-picker-btn hover-bg"
+              onClick={() => {
+                sendWs({ type: "toggle_reaction", messageId: msgId, emoji: e });
+                onReact(msgId);
+              }}
+            >
+              {e}
+            </button>
+          ))}
+        </div>
+      )}
+
       <button
         style={styles.actionButton}
         onClick={() => onReact(msgId)}
