@@ -9,6 +9,7 @@ import { avatarColor, avatarUrl } from "../lib/avatar";
 import { Permissions, hasPermission, type ReactionGroup } from "@concord/shared";
 import { GifPicker } from "./GifPicker";
 import { LinkPreview } from "./LinkPreview";
+import { Lightbox } from "./Lightbox";
 
 const IMAGE_REGEX = /\.(png|jpe?g|gif|webp)$/i;
 const UPLOAD_URL_REGEX = /^\/uploads\/.+/;
@@ -41,6 +42,7 @@ export function ChatArea() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [showGifPicker, setShowGifPicker] = useState(false);
   const [reactionPickerMsgId, setReactionPickerMsgId] = useState<string | null>(null);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   // Close reaction picker on click-outside or Escape
   useEffect(() => {
@@ -307,7 +309,7 @@ export function ChatArea() {
                     />
                   ) : (
                     <>
-                      <MessageBody content={msg.content} />
+                      <MessageBody content={msg.content} onImageClick={setLightboxSrc} />
                       {msg.editedAt && <span style={styles.editedTag}>(edited)</span>}
                     </>
                   )}
@@ -372,7 +374,7 @@ export function ChatArea() {
                   />
                 ) : (
                   <>
-                    <MessageBody content={msg.content} />
+                    <MessageBody content={msg.content} onImageClick={setLightboxSrc} />
                     {msg.editedAt && <span style={styles.editedTag}>(edited)</span>}
                   </>
                 )}
@@ -446,6 +448,7 @@ export function ChatArea() {
           </button>
         </form>
       </div>
+      {lightboxSrc && <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
     </div>
   );
 }
@@ -553,17 +556,19 @@ const EXTERNAL_IMAGE_REGEX = /^https?:\/\/.+\.(gif|png|jpe?g|webp)(\?.*)?$/i;
 const EXTERNAL_GIF_DOMAIN_REGEX = /^https?:\/\/(static\.klipy\.com|media[0-9]*\.giphy\.com|media\.tenor\.com)\//i;
 
 /** Renders message content with inline image previews for uploaded files and GIFs. */
-function MessageBody({ content }: { content: string }) {
+function MessageBody({ content, onImageClick }: { content: string; onImageClick?: (src: string) => void }) {
   // External GIF/image URL (from Klipy, Giphy, Tenor, or any direct image link)
   const trimmed = content.trim();
   if (EXTERNAL_GIF_DOMAIN_REGEX.test(trimmed) || (EXTERNAL_IMAGE_REGEX.test(trimmed) && trimmed.startsWith("http"))) {
     return (
       <div>
         <img
+          className="chat-image-clickable"
           src={trimmed}
           alt="GIF"
           style={styles.gifEmbed}
           loading="lazy"
+          onClick={() => onImageClick?.(trimmed)}
         />
       </div>
     );
@@ -573,10 +578,12 @@ function MessageBody({ content }: { content: string }) {
     return (
       <div>
         <img
+          className="chat-image-clickable"
           src={`${SERVER_BASE}${content}`}
           alt="uploaded image"
           style={styles.imageEmbed}
           loading="lazy"
+          onClick={() => onImageClick?.(`${SERVER_BASE}${content}`)}
         />
       </div>
     );
