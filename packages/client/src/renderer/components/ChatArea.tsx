@@ -506,8 +506,7 @@ function MessageActions({
   if (!isHovered && !showReactionPicker) return null;
 
   return (
-    <div style={styles.actionBar}>
-      {/* Floating emoji picker above the button */}
+    <div className="msg-action-bar">
       {showReactionPicker && (
         <div className="emoji-picker-float" onClick={(e) => e.stopPropagation()}>
           {QUICK_EMOJIS.map((e) => (
@@ -525,11 +524,7 @@ function MessageActions({
         </div>
       )}
 
-      <button
-        style={styles.actionButton}
-        onClick={() => onReact(msgId)}
-        title="Add reaction"
-      >
+      <button className="msg-action-btn" onClick={() => onReact(msgId)} title="Add reaction">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="10" />
           <path d="M8 14s1.5 2 4 2 4-2 4-2" />
@@ -538,19 +533,13 @@ function MessageActions({
         </svg>
       </button>
       {isOwn && (
-        <button
-          style={styles.actionButton}
-          onClick={() => onStartEdit(msgId, content)}
-        >
+        <button className="msg-action-btn" onClick={() => onStartEdit(msgId, content)}>
           Edit
         </button>
       )}
       {(isOwn || canModerate) && (
         <button
-          style={{
-            ...styles.actionButton,
-            ...(confirmDeleteId === msgId ? { background: "var(--danger)", color: "white" } : {}),
-          }}
+          className={`msg-action-btn ${confirmDeleteId === msgId ? "msg-action-btn--confirm" : "msg-action-btn--danger"}`}
           onClick={() => onDelete(msgId)}
         >
           {confirmDeleteId === msgId ? "Sure?" : "Del"}

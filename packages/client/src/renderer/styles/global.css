@@ -201,6 +201,62 @@ a {
   -webkit-box-orient: vertical;
 }
 
+/* Message action bar */
+.msg-action-bar {
+  position: absolute;
+  top: -12px;
+  right: 16px;
+  display: flex;
+  gap: 2px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 1;
+}
+
+.msg-action-btn {
+  padding: 4px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s, color 0.1s, transform 0.1s;
+}
+
+.msg-action-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.msg-action-btn:active {
+  transform: scale(0.92);
+}
+
+.msg-action-btn--danger {
+  color: var(--text-muted);
+}
+
+.msg-action-btn--danger:hover {
+  background: rgba(237, 66, 69, 0.15);
+  color: var(--danger);
+}
+
+.msg-action-btn--confirm {
+  background: var(--danger);
+  color: white;
+}
+
+.msg-action-btn--confirm:hover {
+  background: #a12d2f;
+}
+
 /* Emoji picker popover */
 .emoji-picker-float {
   position: absolute;
