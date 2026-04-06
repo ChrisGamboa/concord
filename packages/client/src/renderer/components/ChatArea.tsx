@@ -506,7 +506,7 @@ function MessageActions({
   if (!isHovered && !showReactionPicker) return null;
 
   return (
-    <div style={{ ...styles.actionBar, position: "relative" }}>
+    <div style={styles.actionBar}>
       {/* Floating emoji picker above the button */}
       {showReactionPicker && (
         <div className="emoji-picker-float" onClick={(e) => e.stopPropagation()}>
