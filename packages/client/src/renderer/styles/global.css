@@ -201,6 +201,71 @@ a {
   -webkit-box-orient: vertical;
 }
 
+/* Reaction pills */
+.reaction-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+  align-items: center;
+}
+
+.reaction-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  font-size: 13px;
+  background: var(--bg-tertiary);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: transform 0.15s ease, background 0.2s, border-color 0.2s, box-shadow 0.2s;
+  animation: reaction-appear 0.2s ease-out;
+}
+
+.reaction-pill:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: scale(1.08);
+}
+
+.reaction-pill:active {
+  transform: scale(0.9);
+}
+
+.reaction-pill--mine {
+  background: rgba(88, 101, 242, 0.25);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 0 rgba(88, 101, 242, 0);
+}
+
+.reaction-pill--mine:hover {
+  background: rgba(88, 101, 242, 0.15);
+  box-shadow: 0 0 6px rgba(88, 101, 242, 0.3);
+}
+
+.reaction-pill-emoji {
+  line-height: 1;
+}
+
+.reaction-pill-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+@keyframes reaction-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 /* Message action bar */
 .msg-action-bar {
   position: absolute;

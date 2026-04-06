@@ -627,27 +627,20 @@ function ReactionBar({ reactions, messageId, userId }: {
   if (!hasReactions) return null;
 
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "4px", alignItems: "center" }}>
-      {reactions!.map((r) => (
-        <button
-          key={r.emoji}
-          onClick={() => sendWs({ type: "toggle_reaction", messageId, emoji: r.emoji })}
-          style={{
-            padding: "2px 6px",
-            fontSize: "13px",
-            background: r.userIds.includes(userId ?? "") ? "rgba(88, 101, 242, 0.3)" : "var(--bg-tertiary)",
-            border: r.userIds.includes(userId ?? "") ? "1px solid var(--accent)" : "1px solid transparent",
-            borderRadius: "4px",
-            cursor: "pointer",
-            color: "var(--text-primary)",
-            display: "flex",
-            alignItems: "center",
-            gap: "4px",
-          }}
-        >
-          {r.emoji} <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{r.count}</span>
-        </button>
-      ))}
+    <div className="reaction-bar">
+      {reactions!.map((r) => {
+        const isMine = r.userIds.includes(userId ?? "");
+        return (
+          <button
+            key={r.emoji}
+            className={`reaction-pill ${isMine ? "reaction-pill--mine" : ""}`}
+            onClick={() => sendWs({ type: "toggle_reaction", messageId, emoji: r.emoji })}
+          >
+            <span className="reaction-pill-emoji">{r.emoji}</span>
+            <span className="reaction-pill-count">{r.count}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
