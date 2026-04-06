@@ -301,7 +301,7 @@ export function ChatArea() {
                       msgId={msg.id} content={msg.content} isOwn={isOwnG} canModerate={canModerate}
                       isHovered={isHoveredG} isEditing={true} editContent={editContent}
                       confirmDeleteId={confirmDeleteId}
-                      onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
+                      showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
                       onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                       onEditChange={setEditContent}
                     />
@@ -317,7 +317,7 @@ export function ChatArea() {
                     msgId={msg.id} content={msg.content} isOwn={isOwnG} canModerate={canModerate}
                     isHovered={isHoveredG} isEditing={false} editContent={editContent}
                     confirmDeleteId={confirmDeleteId}
-                    onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
+                    showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
                     onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                     onEditChange={setEditContent}
                   />
@@ -366,7 +366,7 @@ export function ChatArea() {
                     msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate}
                     isHovered={isHovered} isEditing={true} editContent={editContent}
                     confirmDeleteId={confirmDeleteId}
-                    onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
+                    showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
                     onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                     onEditChange={setEditContent}
                   />
@@ -376,18 +376,14 @@ export function ChatArea() {
                     {msg.editedAt && <span style={styles.editedTag}>(edited)</span>}
                   </>
                 )}
-                <ReactionBar
-                  reactions={msg.reactions} messageId={msg.id} userId={userId}
-                  showPicker={reactionPickerMsgId === msg.id}
-                  onClosePicker={() => setReactionPickerMsgId(null)}
-                />
+                <ReactionBar reactions={msg.reactions} messageId={msg.id} userId={userId} />
               </div>
               {!isEditing && (
                 <MessageActions
                   msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate}
                   isHovered={isHovered} isEditing={false} editContent={editContent}
                   confirmDeleteId={confirmDeleteId}
-                  onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
+                  showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
                   onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                   onEditChange={setEditContent}
                 />
@@ -463,6 +459,7 @@ function MessageActions({
   isEditing,
   editContent,
   confirmDeleteId,
+  showReactionPicker,
   onReact,
   onStartEdit,
   onDelete,
@@ -478,6 +475,7 @@ function MessageActions({
   isEditing: boolean;
   editContent: string;
   confirmDeleteId: string | null;
+  showReactionPicker: boolean;
   onReact: (msgId: string) => void;
   onStartEdit: (id: string, content: string) => void;
   onDelete: (id: string) => void;
@@ -505,7 +503,35 @@ function MessageActions({
     );
   }
 
-  if (!isHovered) return null;
+  if (!isHovered && !showReactionPicker) return null;
+
+  if (showReactionPicker) {
+    return (
+      <div style={styles.actionBar} onClick={(e) => e.stopPropagation()}>
+        {QUICK_EMOJIS.map((e) => (
+          <button
+            key={e}
+            style={{ ...styles.actionButton, fontSize: "16px", padding: "2px 4px" }}
+            onClick={() => {
+              sendWs({ type: "toggle_reaction", messageId: msgId, emoji: e });
+              onReact(msgId); // close
+            }}
+          >
+            {e}
+          </button>
+        ))}
+        <button
+          style={styles.actionButton}
+          onClick={() => onReact(msgId)}
+          title="Cancel"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.actionBar}>
@@ -613,26 +639,20 @@ function MessageBody({ content }: { content: string }) {
 
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "🎉", "😮", "😢", "🔥", "👀"];
 
-function ReactionBar({ reactions, messageId, userId, showPicker, onClosePicker }: {
+function ReactionBar({ reactions, messageId, userId }: {
   reactions?: ReactionGroup[];
   messageId: string;
   userId?: string;
-  showPicker?: boolean;
-  onClosePicker?: () => void;
 }) {
-  const toggle = (emoji: string) => {
-    sendWs({ type: "toggle_reaction", messageId, emoji });
-    onClosePicker?.();
-  };
-
   const hasReactions = (reactions ?? []).length > 0;
+  if (!hasReactions) return null;
 
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: hasReactions || showPicker ? "4px" : 0, alignItems: "center", position: "relative" }}>
-      {(reactions ?? []).map((r) => (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "4px", alignItems: "center" }}>
+      {reactions!.map((r) => (
         <button
           key={r.emoji}
-          onClick={() => toggle(r.emoji)}
+          onClick={() => sendWs({ type: "toggle_reaction", messageId, emoji: r.emoji })}
           style={{
             padding: "2px 6px",
             fontSize: "13px",
@@ -649,28 +669,6 @@ function ReactionBar({ reactions, messageId, userId, showPicker, onClosePicker }
           {r.emoji} <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{r.count}</span>
         </button>
       ))}
-      {showPicker && (
-        <div onClick={(e) => e.stopPropagation()} style={{
-          background: "var(--bg-primary)",
-          border: "1px solid var(--border)",
-          borderRadius: "8px",
-          padding: "6px",
-          display: "flex",
-          gap: "2px",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-        }}>
-          {QUICK_EMOJIS.map((e) => (
-            <button
-              key={e}
-              onClick={() => toggle(e)}
-              style={{ fontSize: "18px", background: "none", border: "none", cursor: "pointer", padding: "4px", borderRadius: "4px" }}
-              className="hover-bg"
-            >
-              {e}
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
