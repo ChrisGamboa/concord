@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { usePresenceStore } from "../stores/presence";
@@ -34,6 +34,16 @@ export function MemberList() {
   const online = members.filter((m) => onlineUsers.has(m.userId));
   const offline = members.filter((m) => !onlineUsers.has(m.userId));
 
+  const [profilePopup, setProfilePopup] = useState<{ member: MemberWithOnline; y: number } | null>(null);
+
+  // Close on click outside
+  useEffect(() => {
+    if (!profilePopup) return;
+    const close = () => setProfilePopup(null);
+    const timer = setTimeout(() => window.addEventListener("click", close, { once: true }), 0);
+    return () => { clearTimeout(timer); window.removeEventListener("click", close); };
+  }, [profilePopup]);
+
   return (
     <div style={styles.container}>
       {members.length === 0 && (
@@ -52,7 +62,7 @@ export function MemberList() {
             Online — {online.length}
           </span>
           {online.map((m) => (
-            <MemberItem key={m.userId} member={m} isOnline roles={roles} />
+            <MemberItem key={m.userId} member={m} isOnline roles={roles} onClickProfile={(member, y) => setProfilePopup({ member, y })} />
           ))}
         </div>
       )}
@@ -62,9 +72,20 @@ export function MemberList() {
             Offline — {offline.length}
           </span>
           {offline.map((m) => (
-            <MemberItem key={m.userId} member={m} isOnline={false} roles={roles} />
+            <MemberItem key={m.userId} member={m} isOnline={false} roles={roles} onClickProfile={(member, y) => setProfilePopup({ member, y })} />
           ))}
         </div>
+      )}
+
+      {/* Profile popover */}
+      {profilePopup && (
+        <ProfileCard
+          member={profilePopup.member}
+          roles={roles}
+          isOnline={onlineUsers.has(profilePopup.member.userId)}
+          y={profilePopup.y}
+          onClose={() => setProfilePopup(null)}
+        />
       )}
     </div>
   );
@@ -74,16 +95,22 @@ function MemberItem({
   member,
   isOnline,
   roles,
+  onClickProfile,
 }: {
   member: MemberWithOnline;
   isOnline: boolean;
   roles: Role[];
+  onClickProfile: (member: MemberWithOnline, y: number) => void;
 }) {
   const memberRoles = roles.filter((r) => member.roleIds.includes(r.id));
-  const topRole = memberRoles[0]; // highest position (roles sorted by position desc)
+  const topRole = memberRoles[0];
 
   return (
-    <div className="hover-bg" style={{ ...styles.member, opacity: isOnline ? 1 : 0.4 }}>
+    <div
+      className="hover-bg"
+      style={{ ...styles.member, opacity: isOnline ? 1 : 0.4, cursor: "pointer" }}
+      onClick={(e) => onClickProfile(member, e.currentTarget.getBoundingClientRect().top)}
+    >
       <div style={styles.avatarWrapper}>
         {avatarUrl(member.user?.avatarUrl) ? (
           <img style={{ ...styles.avatar, objectFit: "cover" }} src={avatarUrl(member.user?.avatarUrl)!} alt="" />
@@ -115,6 +142,94 @@ function MemberItem({
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function ProfileCard({
+  member,
+  roles,
+  isOnline,
+  y,
+  onClose,
+}: {
+  member: MemberWithOnline;
+  roles: Role[];
+  isOnline: boolean;
+  y: number;
+  onClose: () => void;
+}) {
+  const memberRoles = roles.filter((r) => member.roleIds.includes(r.id));
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [top, setTop] = useState(y);
+
+  useEffect(() => {
+    if (cardRef.current) {
+      const rect = cardRef.current.getBoundingClientRect();
+      const maxTop = window.innerHeight - rect.height - 8;
+      setTop(Math.min(y, maxTop));
+    }
+  }, [y]);
+
+  return (
+    <div
+      ref={cardRef}
+      className="profile-card"
+      style={{ top }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* Banner */}
+      <div className="profile-card-banner" style={{ background: avatarColor(member.userId) }} />
+
+      {/* Avatar */}
+      <div className="profile-card-avatar-wrap">
+        {avatarUrl(member.user?.avatarUrl) ? (
+          <img className="profile-card-avatar" src={avatarUrl(member.user?.avatarUrl)!} alt="" />
+        ) : (
+          <div className="profile-card-avatar" style={{ background: avatarColor(member.userId), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 700, color: "white" }}>
+            {(member.user?.displayName ?? "?").charAt(0).toUpperCase()}
+          </div>
+        )}
+        <div className="profile-card-status-dot" style={{ background: isOnline ? "var(--success)" : "var(--text-muted)" }} />
+      </div>
+
+      {/* Info */}
+      <div className="profile-card-body">
+        <div className="profile-card-name">
+          {member.nickname ?? member.user?.displayName ?? "Unknown"}
+        </div>
+        <div className="profile-card-username">
+          {member.user?.username}
+        </div>
+        {(member.user as any)?.status && (
+          <div className="profile-card-user-status">{(member.user as any).status}</div>
+        )}
+
+        {/* Divider */}
+        <div style={{ height: 1, background: "var(--border)", margin: "10px 0" }} />
+
+        {/* Roles */}
+        {memberRoles.length > 0 && (
+          <div>
+            <div className="profile-card-section-label">Roles</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+              {memberRoles.map((r) => (
+                <span key={r.id} style={{ fontSize: 11, fontWeight: 600, padding: "1px 6px", borderRadius: 3, border: `1px solid ${r.color ?? "var(--border)"}`, color: r.color ?? "var(--text-muted)" }}>
+                  {r.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Member since */}
+        <div style={{ marginTop: 8 }}>
+          <div className="profile-card-section-label">Member Since</div>
+          <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+            {new Date(member.joinedAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
+          </div>
+        </div>
       </div>
     </div>
   );
