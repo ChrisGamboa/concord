@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useChatStore } from "../stores/chat";
+import { useAuthStore } from "../stores/auth";
 import { useVoiceStore } from "../stores/voice";
-import { ChannelType, type VoiceParticipant } from "@concord/shared";
+import { ChannelType, Permissions, hasPermission, type VoiceParticipant } from "@concord/shared";
 import { api } from "../lib/api";
 import { playDisconnect } from "../lib/sounds";
 
@@ -17,6 +18,45 @@ export function ChannelSidebar() {
   const [copied, setCopied] = useState(false);
   const [creatingChannel, setCreatingChannel] = useState<"text" | "voice" | null>(null);
   const [newChannelName, setNewChannelName] = useState("");
+  const [ctxMenu, setCtxMenu] = useState<{ channelId: string; x: number; y: number } | null>(null);
+  const [renaming, setRenaming] = useState<{ channelId: string; name: string } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  // Permissions
+  const authUserId = useAuthStore((s) => s.user?.id);
+  const [myPerms, setMyPerms] = useState(0);
+  useEffect(() => {
+    if (!serverId || !authUserId) return;
+    api.getMyPermissions(serverId, authUserId).then((r) => setMyPerms(r.permissions)).catch(() => {});
+  }, [serverId, authUserId]);
+  const canManageChannels = hasPermission(myPerms, Permissions.MANAGE_CHANNELS);
+
+  // Close context menu on click outside
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    const timer = setTimeout(() => {
+      window.addEventListener("click", close, { once: true });
+    }, 0);
+    return () => { clearTimeout(timer); window.removeEventListener("click", close); };
+  }, [ctxMenu]);
+
+  const handleRename = useCallback(async () => {
+    if (!renaming || !renaming.name.trim() || !serverId) return;
+    await api.renameChannel(renaming.channelId, renaming.name.trim());
+    const res = await api.getChannels(serverId);
+    setChannels(res.channels);
+    setRenaming(null);
+  }, [renaming, serverId, setChannels]);
+
+  const handleDelete = useCallback(async (channelId: string) => {
+    if (!serverId) return;
+    await api.deleteChannel(channelId);
+    const res = await api.getChannels(serverId);
+    setChannels(res.channels);
+    setConfirmDelete(null);
+    if (channelId === channelId) navigate(`/channels/${serverId}`);
+  }, [serverId, setChannels, navigate]);
   const voiceConnection = useVoiceStore((s) => s.connection);
   const voiceDisconnect = useVoiceStore((s) => s.disconnect);
   const voiceMuted = useVoiceStore((s) => s.isMuted);
@@ -154,11 +194,26 @@ export function ChannelSidebar() {
             {textChannels.map((channel) => {
               const unread = unreadCounts[channel.id] ?? 0;
               const isActive = channel.id === channelId;
+              if (renaming?.channelId === channel.id) {
+                return (
+                  <div key={channel.id} style={styles.createChannelForm}>
+                    <input
+                      style={styles.createChannelInput}
+                      value={renaming.name}
+                      onChange={(e) => setRenaming({ ...renaming, name: e.target.value })}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleRename(); if (e.key === "Escape") setRenaming(null); }}
+                      autoFocus
+                      maxLength={100}
+                    />
+                  </div>
+                );
+              }
               return (
                 <button
                   key={channel.id}
                   className="hover-bg"
                   onClick={() => navigate(`/channels/${serverId}/${channel.id}`)}
+                  onContextMenu={canManageChannels ? (e) => { e.preventDefault(); setCtxMenu({ channelId: channel.id, x: e.clientX, y: e.clientY }); } : undefined}
                   style={{
                     ...styles.channelButton,
                     background: isActive ? "rgba(255,255,255,0.06)" : "transparent",
@@ -200,6 +255,20 @@ export function ChannelSidebar() {
           )}
             {voiceChannels.map((channel) => {
               const participants = voiceParticipants[channel.id] ?? [];
+              if (renaming?.channelId === channel.id) {
+                return (
+                  <div key={channel.id} style={styles.createChannelForm}>
+                    <input
+                      style={styles.createChannelInput}
+                      value={renaming.name}
+                      onChange={(e) => setRenaming({ ...renaming, name: e.target.value })}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleRename(); if (e.key === "Escape") setRenaming(null); }}
+                      autoFocus
+                      maxLength={100}
+                    />
+                  </div>
+                );
+              }
               return (
                 <div key={channel.id}>
                   <button
@@ -207,6 +276,7 @@ export function ChannelSidebar() {
                     onClick={() =>
                       navigate(`/channels/${serverId}/${channel.id}`)
                     }
+                    onContextMenu={canManageChannels ? (e) => { e.preventDefault(); setCtxMenu({ channelId: channel.id, x: e.clientX, y: e.clientY }); } : undefined}
                     style={{
                       ...styles.channelButton,
                       background:
@@ -259,6 +329,48 @@ export function ChannelSidebar() {
             })}
         </div>
       </div>
+
+      {/* Channel context menu */}
+      {ctxMenu && (
+        <div className="voice-ctx-menu" style={{ left: ctxMenu.x, top: ctxMenu.y }} onClick={(e) => e.stopPropagation()}>
+          <div className="voice-ctx-header">
+            {channels.find((c) => c.id === ctxMenu.channelId)?.name ?? "Channel"}
+          </div>
+          <button
+            className="voice-ctx-mute"
+            onClick={() => {
+              const ch = channels.find((c) => c.id === ctxMenu.channelId);
+              setRenaming({ channelId: ctxMenu.channelId, name: ch?.name ?? "" });
+              setCtxMenu(null);
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+            Rename
+          </button>
+          <button
+            className="voice-ctx-mute"
+            style={{ color: confirmDelete === ctxMenu.channelId ? "white" : "var(--danger)", background: confirmDelete === ctxMenu.channelId ? "var(--danger)" : undefined, borderRadius: confirmDelete === ctxMenu.channelId ? "4px" : undefined }}
+            onClick={() => {
+              if (confirmDelete === ctxMenu.channelId) {
+                handleDelete(ctxMenu.channelId);
+                setCtxMenu(null);
+              } else {
+                setConfirmDelete(ctxMenu.channelId);
+                setTimeout(() => setConfirmDelete(null), 3000);
+              }
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            </svg>
+            {confirmDelete === ctxMenu.channelId ? "Click again to confirm" : "Delete Channel"}
+          </button>
+        </div>
+      )}
 
       {/* Voice connection status panel */}
       {voiceConnection && (

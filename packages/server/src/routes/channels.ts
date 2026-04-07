@@ -1,6 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "../db.js";
+import { Permissions } from "@concord/shared";
 import type { ChannelType } from "@concord/shared";
+import { checkPermission } from "../permissions.js";
 
 export const channelRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", app.authenticate);
@@ -80,9 +82,8 @@ export const channelRoutes: FastifyPluginAsync = async (app) => {
       const { serverId } = request.params;
       const { name, type } = request.body;
 
-      const server = await prisma.server.findUnique({ where: { id: serverId } });
-      if (!server || server.ownerId !== userId) {
-        return reply.code(403).send({ error: "Only the server owner can create channels" });
+      if (!await checkPermission(userId, serverId, Permissions.MANAGE_CHANNELS)) {
+        return reply.code(403).send({ error: "Missing MANAGE_CHANNELS permission" });
       }
 
       if (!name || name.length < 1 || name.length > 100) {
@@ -113,6 +114,49 @@ export const channelRoutes: FastifyPluginAsync = async (app) => {
         position: channel.position,
         createdAt: channel.createdAt.toISOString(),
       });
+    }
+  );
+
+  // Rename a channel
+  app.patch<{ Params: { channelId: string }; Body: { name: string } }>(
+    "/:channelId",
+    async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      const { channelId } = request.params;
+      const { name } = request.body;
+
+      const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { serverId: true } });
+      if (!channel) return reply.code(404).send({ error: "Channel not found" });
+
+      if (!await checkPermission(userId, channel.serverId, Permissions.MANAGE_CHANNELS)) {
+        return reply.code(403).send({ error: "Missing MANAGE_CHANNELS permission" });
+      }
+
+      if (!name || name.length < 1 || name.length > 100) {
+        return reply.code(400).send({ error: "Channel name must be 1-100 characters" });
+      }
+
+      const updated = await prisma.channel.update({ where: { id: channelId }, data: { name } });
+      return { id: updated.id, name: updated.name };
+    }
+  );
+
+  // Delete a channel
+  app.delete<{ Params: { channelId: string } }>(
+    "/:channelId",
+    async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      const { channelId } = request.params;
+
+      const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { serverId: true } });
+      if (!channel) return reply.code(404).send({ error: "Channel not found" });
+
+      if (!await checkPermission(userId, channel.serverId, Permissions.MANAGE_CHANNELS)) {
+        return reply.code(403).send({ error: "Missing MANAGE_CHANNELS permission" });
+      }
+
+      await prisma.channel.delete({ where: { id: channelId } });
+      return { deleted: true };
     }
   );
 };

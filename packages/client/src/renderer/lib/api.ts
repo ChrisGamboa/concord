@@ -220,6 +220,15 @@ export const api = {
   getUnreadCounts: (serverId: string) =>
     request<{ unread: Record<string, number> }>(`/channels/server/${serverId}/unread`),
 
+  renameChannel: (channelId: string, name: string) =>
+    request<{ id: string; name: string }>(`/channels/${channelId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    }),
+
+  deleteChannel: (channelId: string) =>
+    request<{ deleted: boolean }>(`/channels/${channelId}`, { method: "DELETE" }),
+
   createChannel: (serverId: string, name: string, type: string) =>
     request<ChannelsResponse["channels"][0]>(`/channels/server/${serverId}`, {
       method: "POST",
