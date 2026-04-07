@@ -13,7 +13,10 @@ export function ChannelSidebar() {
   const servers = useChatStore((s) => s.servers);
   const server = servers.find((s) => s.id === serverId);
 
+  const setChannels = useChatStore((s) => s.setChannels);
   const [copied, setCopied] = useState(false);
+  const [creatingChannel, setCreatingChannel] = useState<"text" | "voice" | null>(null);
+  const [newChannelName, setNewChannelName] = useState("");
   const voiceConnection = useVoiceStore((s) => s.connection);
   const voiceDisconnect = useVoiceStore((s) => s.disconnect);
   const voiceMuted = useVoiceStore((s) => s.isMuted);
@@ -35,6 +38,19 @@ export function ChannelSidebar() {
     const s = timerElapsed % 60;
     return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   }, [timerElapsed]);
+
+  const handleCreateChannel = async () => {
+    if (!newChannelName.trim() || !serverId || !creatingChannel) return;
+    try {
+      await api.createChannel(serverId, newChannelName.trim(), creatingChannel);
+      const res = await api.getChannels(serverId);
+      setChannels(res.channels);
+      setCreatingChannel(null);
+      setNewChannelName("");
+    } catch {
+      // ignore
+    }
+  };
 
   const unreadCounts = useChatStore((s) => s.unreadCounts);
   const textChannels = channels.filter((c) => c.type === ChannelType.Text);
@@ -113,9 +129,28 @@ export function ChannelSidebar() {
             ))}
           </div>
         )}
-        {textChannels.length > 0 && (
-          <div style={styles.category}>
+        <div style={styles.category}>
+          <div style={styles.categoryHeader}>
             <span style={styles.categoryLabel}>Text Channels</span>
+            <button
+              style={styles.categoryAdd}
+              onClick={() => { setCreatingChannel(creatingChannel === "text" ? null : "text"); setNewChannelName(""); }}
+              title="Create text channel"
+            >+</button>
+          </div>
+          {creatingChannel === "text" && (
+            <div style={styles.createChannelForm}>
+              <input
+                style={styles.createChannelInput}
+                placeholder="channel-name"
+                value={newChannelName}
+                onChange={(e) => setNewChannelName(e.target.value.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""))}
+                onKeyDown={(e) => { if (e.key === "Enter") handleCreateChannel(); if (e.key === "Escape") setCreatingChannel(null); }}
+                autoFocus
+                maxLength={50}
+              />
+            </div>
+          )}
             {textChannels.map((channel) => {
               const unread = unreadCounts[channel.id] ?? 0;
               const isActive = channel.id === channelId;
@@ -139,12 +174,30 @@ export function ChannelSidebar() {
                 </button>
               );
             })}
-          </div>
-        )}
+        </div>
 
-        {voiceChannels.length > 0 && (
-          <div style={styles.category}>
+        <div style={styles.category}>
+          <div style={styles.categoryHeader}>
             <span style={styles.categoryLabel}>Voice Channels</span>
+            <button
+              style={styles.categoryAdd}
+              onClick={() => { setCreatingChannel(creatingChannel === "voice" ? null : "voice"); setNewChannelName(""); }}
+              title="Create voice channel"
+            >+</button>
+          </div>
+          {creatingChannel === "voice" && (
+            <div style={styles.createChannelForm}>
+              <input
+                style={styles.createChannelInput}
+                placeholder="Channel Name"
+                value={newChannelName}
+                onChange={(e) => setNewChannelName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleCreateChannel(); if (e.key === "Escape") setCreatingChannel(null); }}
+                autoFocus
+                maxLength={50}
+              />
+            </div>
+          )}
             {voiceChannels.map((channel) => {
               const participants = voiceParticipants[channel.id] ?? [];
               return (
@@ -204,8 +257,7 @@ export function ChannelSidebar() {
                 </div>
               );
             })}
-          </div>
-        )}
+        </div>
       </div>
 
       {/* Voice connection status panel */}
@@ -331,15 +383,46 @@ const styles: Record<string, React.CSSProperties> = {
   category: {
     marginBottom: "16px",
   },
+  categoryHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "0 8px",
+    marginBottom: "4px",
+  },
   categoryLabel: {
-    display: "block",
     fontSize: "11px",
     fontWeight: 700,
     textTransform: "uppercase",
     color: "var(--text-muted)",
-    padding: "0 8px",
-    marginBottom: "4px",
     letterSpacing: "0.02em",
+  },
+  categoryAdd: {
+    width: "16px",
+    height: "16px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "none",
+    border: "none",
+    color: "var(--text-muted)",
+    fontSize: "14px",
+    cursor: "pointer",
+    borderRadius: "3px",
+    transition: "color 0.12s",
+  },
+  createChannelForm: {
+    padding: "2px 8px 6px",
+  },
+  createChannelInput: {
+    width: "100%",
+    padding: "6px 8px",
+    background: "var(--input-bg)",
+    border: "1px solid var(--border)",
+    borderRadius: "4px",
+    color: "var(--text-primary)",
+    fontSize: "13px",
+    outline: "none",
   },
   channelButton: {
     display: "flex",
