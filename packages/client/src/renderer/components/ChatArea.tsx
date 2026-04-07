@@ -354,7 +354,7 @@ export function ChatArea() {
               onMouseLeave={() => setHoveredMsgId(null)}
             >
               <div
-                style={{ cursor: "pointer", flexShrink: 0 }}
+                style={{ cursor: "pointer", flexShrink: 0, alignSelf: "flex-start" }}
                 onClick={(e) => { e.stopPropagation(); setProfilePopup({ author: { ...msg.author, id: msg.authorId }, x: e.clientX, y: e.clientY }); }}
               >
                 {avatarUrl(msg.author?.avatarUrl) ? (
