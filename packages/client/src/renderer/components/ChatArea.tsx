@@ -43,6 +43,15 @@ export function ChatArea() {
   const [showGifPicker, setShowGifPicker] = useState(false);
   const [reactionPickerMsgId, setReactionPickerMsgId] = useState<string | null>(null);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [profilePopup, setProfilePopup] = useState<{ author: any; x: number; y: number } | null>(null);
+
+  // Close profile popup on click outside
+  useEffect(() => {
+    if (!profilePopup) return;
+    const close = () => setProfilePopup(null);
+    const timer = setTimeout(() => window.addEventListener("click", close, { once: true }), 0);
+    return () => { clearTimeout(timer); window.removeEventListener("click", close); };
+  }, [profilePopup]);
 
   // Close reaction picker on click-outside or Escape
   useEffect(() => {
@@ -344,20 +353,28 @@ export function ChatArea() {
               onMouseEnter={() => setHoveredMsgId(msg.id)}
               onMouseLeave={() => setHoveredMsgId(null)}
             >
-              {avatarUrl(msg.author?.avatarUrl) ? (
-                <img
-                  style={{ ...styles.avatar, objectFit: "cover" }}
-                  src={avatarUrl(msg.author?.avatarUrl)!}
-                  alt=""
-                />
-              ) : (
-                <div style={{ ...styles.avatar, background: avatarColor(msg.authorId) }}>
-                  {(msg.author?.displayName ?? "?").charAt(0).toUpperCase()}
-                </div>
-              )}
+              <div
+                style={{ cursor: "pointer", flexShrink: 0 }}
+                onClick={(e) => { e.stopPropagation(); setProfilePopup({ author: { ...msg.author, id: msg.authorId }, x: e.clientX, y: e.clientY }); }}
+              >
+                {avatarUrl(msg.author?.avatarUrl) ? (
+                  <img
+                    style={{ ...styles.avatar, objectFit: "cover" }}
+                    src={avatarUrl(msg.author?.avatarUrl)!}
+                    alt=""
+                  />
+                ) : (
+                  <div style={{ ...styles.avatar, background: avatarColor(msg.authorId) }}>
+                    {(msg.author?.displayName ?? "?").charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </div>
               <div style={styles.messageContent}>
                 <div style={styles.messageHeader}>
-                  <span style={styles.authorName}>
+                  <span
+                    style={{ ...styles.authorName, cursor: "pointer" }}
+                    onClick={(e) => { e.stopPropagation(); setProfilePopup({ author: { ...msg.author, id: msg.authorId }, x: e.clientX, y: e.clientY }); }}
+                  >
                     {msg.author?.displayName ?? "Unknown"}
                   </span>
                   <span style={styles.timestamp}>
@@ -453,6 +470,13 @@ export function ChatArea() {
         </form>
       </div>
       {lightboxSrc && <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
+      {profilePopup && (
+        <ChatProfileCard
+          author={profilePopup.author}
+          x={profilePopup.x}
+          y={profilePopup.y}
+        />
+      )}
     </div>
   );
 }
@@ -623,6 +647,48 @@ function MessageBody({ content, onImageClick }: { content: string; onImageClick?
     <div>
       {textContent}
       <LinkPreview content={content} />
+    </div>
+  );
+}
+
+function ChatProfileCard({ author, x, y }: { author: any; x: number; y: number }) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: x, top: y });
+
+  useEffect(() => {
+    if (cardRef.current) {
+      const rect = cardRef.current.getBoundingClientRect();
+      setPos({
+        left: Math.min(x, window.innerWidth - rect.width - 8),
+        top: Math.min(y, window.innerHeight - rect.height - 8),
+      });
+    }
+  }, [x, y]);
+
+  return (
+    <div
+      ref={cardRef}
+      className="profile-card"
+      style={{ left: pos.left, top: pos.top, right: "auto" }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="profile-card-banner" style={{ background: avatarColor(author.id) }} />
+      <div className="profile-card-avatar-wrap">
+        {avatarUrl(author.avatarUrl) ? (
+          <img className="profile-card-avatar" src={avatarUrl(author.avatarUrl)!} alt="" />
+        ) : (
+          <div className="profile-card-avatar" style={{ background: avatarColor(author.id), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 700, color: "white" }}>
+            {(author.displayName ?? "?").charAt(0).toUpperCase()}
+          </div>
+        )}
+      </div>
+      <div className="profile-card-body">
+        <div className="profile-card-name">{author.displayName ?? "Unknown"}</div>
+        <div className="profile-card-username">{author.username}</div>
+        {author.status && (
+          <div className="profile-card-user-status">{author.status}</div>
+        )}
+      </div>
     </div>
   );
 }
