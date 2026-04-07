@@ -26,11 +26,9 @@ services:
       - "7880:7880"   # HTTP/WS
       - "7881:7881"   # RTC/TCP
       - "7882:7882/udp" # RTC/UDP
-    command: >
-      --dev
-      --bind 0.0.0.0
-    environment:
-      LIVEKIT_KEYS: "devkey: secret"
+    volumes:
+      - ./deploy/livekit.yaml:/etc/livekit.yaml
+    command: --config /etc/livekit.yaml
 
 volumes:
   postgres_data:

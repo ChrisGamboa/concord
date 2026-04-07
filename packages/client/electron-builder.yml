@@ -27,6 +27,7 @@ linux:
     - AppImage
     - deb
   category: Network
+  artifactName: "Concord-${version}-${arch}.${ext}"
 
 # Auto-updater: publish to GitHub Releases
 publish:

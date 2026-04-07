@@ -86,8 +86,12 @@ export function ChatArea() {
     setMessagesLoading(true);
 
     api.getMessages(channelId).then((res) => {
-      if (stale) return; // channel changed before response arrived
+      if (stale) return;
       setMessages(res.messages, res.hasMore);
+      // Scroll to bottom after messages render
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView();
+      });
     });
 
     sendWs({ type: "subscribe_channel", channelId });
