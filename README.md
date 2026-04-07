@@ -38,7 +38,12 @@ Self-hostable Discord alternative built with TypeScript.
 ## Features
 
 - Text channels with real-time messaging (WebSocket)
+- **Reactions** -- emoji reactions on messages with animated pills, quick picker from hover menu
+- **Unread indicators** -- bold channel names with count badges, auto-mark-read on view
+- **Link previews** -- Open Graph embeds for shared URLs (YouTube oEmbed, generic HTML scraping)
+- **Image lightbox** -- click any image or GIF in chat for a full-screen preview
 - **GIF picker** -- search and send GIFs inline via Klipy API
+- **Direct messages** -- 1:1 private conversations, accessible from the DM icon in the server list
 - Voice chat, video chat (1080p60), and screen sharing via LiveKit
   - **Video spotlight** -- click any video feed to focus it center-stage, others drop to a strip below
   - **Persistent voice sessions** -- stay connected while browsing text channels
@@ -62,7 +67,7 @@ Self-hostable Discord alternative built with TypeScript.
   - Voice: kick participants, server-mute (admins)
   - Text: delete any user's messages (MANAGE_MESSAGES permission)
   - Actions available via right-click context menus
-- **User profiles** -- customizable display name and avatar (auto-cropped to 256x256 WebP)
+- **User profiles** -- customizable display name, avatar (auto-cropped to 256x256 WebP), and custom status text
 - File uploads with drag-and-drop and inline image embeds
 - Typing indicators and user presence (online/offline)
 - Message editing and deletion
@@ -173,7 +178,11 @@ The Electron app opens with DevTools (in dev mode). Register an account and crea
 - Type in the message input and press Enter to send
 - Click the **GIF** button to search and send GIFs inline
 - Drag and drop files to upload, or click the `+` button next to the input
-- Hover over your own messages to edit or delete them
+- Hover over messages to react (smiley icon), edit, or delete
+- Click any image or GIF to open it in a **lightbox** (full-screen preview)
+- URLs are auto-linked and show **Open Graph preview cards** (title, description, thumbnail)
+- **Unread channels** appear bold with a count badge in the sidebar
+- Click the chat bubble icon at the top of the server list for **Direct Messages**
 
 ### Voice / Video / Screen Share
 - Click a voice channel in the sidebar
@@ -205,7 +214,7 @@ The Electron app opens with DevTools (in dev mode). Register an account and crea
 
 ### Profile & Settings
 - Click the gear icon at the bottom of the server list to open Settings
-- **My Account**: profile preview card, upload/remove avatar, edit display name inline
+- **My Account**: profile preview card, upload/remove avatar, edit display name, set custom status
 - **Notifications**: toggle desktop notifications with a switch
 - **Voice & Audio**: select input/output devices
 - **Video**: select camera
