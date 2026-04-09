@@ -35,7 +35,7 @@ export function MemberList() {
   const online = members.filter((m) => onlineUsers.has(m.userId));
   const offline = members.filter((m) => !onlineUsers.has(m.userId));
 
-  const [profilePopup, setProfilePopup] = useState<{ userId: string; y: number } | null>(null);
+  const [profilePopup, setProfilePopup] = useState<{ userId: string; x: number; y: number } | null>(null);
 
   return (
     <div style={styles.container}>
@@ -55,7 +55,7 @@ export function MemberList() {
             Online — {online.length}
           </span>
           {online.map((m) => (
-            <MemberItem key={m.userId} member={m} isOnline roles={roles} onClickProfile={(member, y) => setProfilePopup({ userId: member.userId, y })} />
+            <MemberItem key={m.userId} member={m} isOnline roles={roles} onClickProfile={(member, x, y) => setProfilePopup({ userId: member.userId, x, y })} />
           ))}
         </div>
       )}
@@ -65,7 +65,7 @@ export function MemberList() {
             Offline — {offline.length}
           </span>
           {offline.map((m) => (
-            <MemberItem key={m.userId} member={m} isOnline={false} roles={roles} onClickProfile={(member, y) => setProfilePopup({ userId: member.userId, y })} />
+            <MemberItem key={m.userId} member={m} isOnline={false} roles={roles} onClickProfile={(member, x, y) => setProfilePopup({ userId: member.userId, x, y })} />
           ))}
         </div>
       )}
@@ -73,7 +73,7 @@ export function MemberList() {
       {profilePopup && (
         <ProfileCard
           userId={profilePopup.userId}
-          x={0}
+          x={profilePopup.x}
           y={profilePopup.y}
           anchor="left"
           onClose={() => setProfilePopup(null)}
@@ -92,7 +92,7 @@ function MemberItem({
   member: MemberWithOnline;
   isOnline: boolean;
   roles: Role[];
-  onClickProfile: (member: MemberWithOnline, y: number) => void;
+  onClickProfile: (member: MemberWithOnline, x: number, y: number) => void;
 }) {
   const memberRoles = roles.filter((r) => member.roleIds.includes(r.id));
   const topRole = memberRoles[0];
@@ -101,7 +101,7 @@ function MemberItem({
     <div
       className="hover-bg"
       style={{ ...styles.member, opacity: isOnline ? 1 : 0.4, cursor: "pointer" }}
-      onClick={(e) => onClickProfile(member, e.currentTarget.getBoundingClientRect().top)}
+      onClick={(e) => onClickProfile(member, e.currentTarget.getBoundingClientRect().left, e.currentTarget.getBoundingClientRect().top)}
     >
       <div style={styles.avatarWrapper}>
         {avatarUrl(member.user?.avatarUrl) ? (
