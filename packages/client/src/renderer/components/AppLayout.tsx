@@ -33,11 +33,18 @@ export function AppLayout() {
   const [serversLoading, setServersLoading] = useState(true);
 
   // Load servers on mount
+  const logout = useAuthStore((s) => s.logout);
   useEffect(() => {
     api.getServers()
       .then((res) => setServers(res.servers))
+      .catch((err) => {
+        // If unauthorized, token is expired -- force re-login
+        if (err?.message?.includes("Unauthorized") || err?.message?.includes("401")) {
+          logout();
+        }
+      })
       .finally(() => setServersLoading(false));
-  }, [setServers]);
+  }, [setServers, logout]);
 
   // Load channels when server changes
   const prevServerRef = useRef<string | null>(null);
