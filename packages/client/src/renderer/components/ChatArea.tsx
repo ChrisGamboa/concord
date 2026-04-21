@@ -11,6 +11,7 @@ import { GifPicker } from "./GifPicker";
 import { LinkPreview } from "./LinkPreview";
 import { Lightbox } from "./Lightbox";
 import { ProfileCard } from "./ProfileCard";
+import { MarkdownContent } from "./MarkdownContent";
 
 const IMAGE_REGEX = /\.(png|jpe?g|gif|webp)$/i;
 const UPLOAD_URL_REGEX = /^\/uploads\/.+/;
@@ -80,6 +81,29 @@ export function ChatArea() {
     }).catch(() => {});
   }, [serverId, userId]);
   const canModerate = hasPermission(myPermissions, Permissions.MANAGE_MESSAGES);
+
+  // Fetch members for @mention autocomplete and rendering
+  const [members, setMembers] = useState<Array<{ userId: string; username: string; displayName: string; avatarUrl: string | null }>>([]);
+  useEffect(() => {
+    if (!serverId) return;
+    api.getMembers(serverId).then((res) => {
+      setMembers((res.members as any[]).map((m: any) => ({
+        userId: m.user?.id ?? m.userId,
+        username: m.user?.username ?? "",
+        displayName: m.user?.displayName ?? m.nickname ?? "",
+        avatarUrl: m.user?.avatarUrl ?? null,
+      })));
+    }).catch(() => {});
+  }, [serverId]);
+
+  // Build username -> userId map for mention rendering
+  const mentionUsers = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of members) {
+      map.set(m.username, m.userId);
+    }
+    return map;
+  }, [members]);
 
   // Load messages and subscribe to WS channel
   useEffect(() => {
@@ -316,7 +340,7 @@ export function ChatArea() {
                     />
                   ) : (
                     <>
-                      <MessageBody content={msg.content} onImageClick={setLightboxSrc} />
+                      <MessageBody content={msg.content} onImageClick={setLightboxSrc} mentionUsers={mentionUsers} />
                       {msg.editedAt && <span style={styles.editedTag}>(edited)</span>}
                     </>
                   )}
@@ -389,7 +413,7 @@ export function ChatArea() {
                   />
                 ) : (
                   <>
-                    <MessageBody content={msg.content} onImageClick={setLightboxSrc} />
+                    <MessageBody content={msg.content} onImageClick={setLightboxSrc} mentionUsers={mentionUsers} />
                     {msg.editedAt && <span style={styles.editedTag}>(edited)</span>}
                   </>
                 )}
@@ -580,7 +604,7 @@ const EXTERNAL_IMAGE_REGEX = /^https?:\/\/.+\.(gif|png|jpe?g|webp)(\?.*)?$/i;
 const EXTERNAL_GIF_DOMAIN_REGEX = /^https?:\/\/(static\.klipy\.com|media[0-9]*\.giphy\.com|media\.tenor\.com)\//i;
 
 /** Renders message content with inline image previews for uploaded files and GIFs. */
-function MessageBody({ content, onImageClick }: { content: string; onImageClick?: (src: string) => void }) {
+function MessageBody({ content, onImageClick, mentionUsers }: { content: string; onImageClick?: (src: string) => void; mentionUsers?: Map<string, string> }) {
   // External GIF/image URL (from Klipy, Giphy, Tenor, or any direct image link)
   const trimmed = content.trim();
   if (EXTERNAL_GIF_DOMAIN_REGEX.test(trimmed) || (EXTERNAL_IMAGE_REGEX.test(trimmed) && trimmed.startsWith("http"))) {
@@ -627,21 +651,11 @@ function MessageBody({ content, onImageClick }: { content: string; onImageClick?
     );
   }
 
-  // Render URLs as clickable links
-  const urlMatch = content.match(/https?:\/\/[^\s<]+/);
-  const textContent = urlMatch ? (
-    <div style={styles.messageText}>
-      {content.slice(0, urlMatch.index)}
-      <a href={urlMatch[0]} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}>{urlMatch[0]}</a>
-      {content.slice((urlMatch.index ?? 0) + urlMatch[0].length)}
-    </div>
-  ) : (
-    <div style={styles.messageText}>{content}</div>
-  );
-
   return (
     <div>
-      {textContent}
+      <div style={styles.messageText}>
+        <MarkdownContent content={content} mentionUsers={mentionUsers} />
+      </div>
       <LinkPreview content={content} />
     </div>
   );

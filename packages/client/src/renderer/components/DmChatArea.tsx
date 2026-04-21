@@ -4,6 +4,7 @@ import { useAuthStore } from "../stores/auth";
 import { api } from "../lib/api";
 import { avatarColor, avatarUrl } from "../lib/avatar";
 import { onWsMessage } from "../lib/ws";
+import { MarkdownContent } from "./MarkdownContent";
 
 interface DmMessage {
   id: string;
@@ -167,7 +168,7 @@ export function DmChatArea() {
                   })}
                 </span>
                 <div style={styles.groupedContent}>
-                  <div style={styles.messageText}>{msg.content}</div>
+                  <div style={styles.messageText}><MarkdownContent content={msg.content} /></div>
                 </div>
               </div>
             );
@@ -198,7 +199,7 @@ export function DmChatArea() {
                     })}
                   </span>
                 </div>
-                <div style={styles.messageText}>{msg.content}</div>
+                <div style={styles.messageText}><MarkdownContent content={msg.content} /></div>
               </div>
             </div>
           );

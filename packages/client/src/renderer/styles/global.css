@@ -1538,3 +1538,122 @@ a {
   margin-bottom: 8px;
   opacity: 0.5;
 }
+
+/* ---- Markdown rendering ---- */
+
+.md-inline-code {
+  padding: 1px 5px;
+  background: var(--bg-primary);
+  border-radius: 3px;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 0.875em;
+  color: var(--text-primary);
+}
+
+.md-codeblock {
+  margin: 4px 0;
+  padding: 10px 12px;
+  background: var(--bg-primary);
+  border-radius: 6px;
+  overflow-x: auto;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 0.85em;
+  color: var(--text-primary);
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.md-codeblock code {
+  background: none;
+  padding: 0;
+}
+
+.md-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.md-link:hover {
+  text-decoration: underline;
+}
+
+.md-mention {
+  padding: 0 2px;
+  background: rgba(88, 101, 242, 0.2);
+  color: var(--accent);
+  border-radius: 3px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.md-mention:hover {
+  background: rgba(88, 101, 242, 0.4);
+  text-decoration: underline;
+}
+
+/* ---- @mention autocomplete ---- */
+
+.mention-autocomplete {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px 8px 0 0;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
+  z-index: 50;
+  padding: 4px;
+}
+
+.mention-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.mention-item:hover,
+.mention-item--active {
+  background: rgba(88, 101, 242, 0.2);
+}
+
+.mention-item-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: white;
+  flex-shrink: 0;
+}
+
+.mention-item-avatar img {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.mention-item-name {
+  font-weight: 500;
+}
+
+.mention-item-username {
+  color: var(--text-muted);
+  font-size: 12px;
+}
