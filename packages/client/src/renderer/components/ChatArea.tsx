@@ -12,6 +12,7 @@ import { LinkPreview } from "./LinkPreview";
 import { Lightbox } from "./Lightbox";
 import { ProfileCard } from "./ProfileCard";
 import { MarkdownContent } from "./MarkdownContent";
+import { MentionDropdown, useMentionAutocomplete } from "./MentionAutocomplete";
 
 const IMAGE_REGEX = /\.(png|jpe?g|gif|webp)$/i;
 const UPLOAD_URL_REGEX = /^\/uploads\/.+/;
@@ -46,7 +47,8 @@ export function ChatArea() {
   const [reactionPickerMsgId, setReactionPickerMsgId] = useState<string | null>(null);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [profilePopup, setProfilePopup] = useState<{ userId: string; x: number; y: number } | null>(null);
-
+  const [cursorPos, setCursorPos] = useState(0);
+  const chatInputRef = useRef<HTMLInputElement>(null);
 
   // Close reaction picker on click-outside or Escape
   useEffect(() => {
@@ -104,6 +106,9 @@ export function ChatArea() {
     }
     return map;
   }, [members]);
+
+  // @mention autocomplete
+  const mention = useMentionAutocomplete(members, input, cursorPos, setInput, chatInputRef);
 
   // Load messages and subscribe to WS channel
   useEffect(() => {
@@ -172,16 +177,19 @@ export function ChatArea() {
     }, 2000);
   }, [channelId]);
 
-  const handleInputChange = (value: string) => {
-    setInput(value);
-    if (value.trim()) sendTyping();
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInput(e.target.value);
+    setCursorPos(e.target.selectionStart ?? e.target.value.length);
+    if (e.target.value.trim()) sendTyping();
   };
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
+    if (mention.isOpen) return; // Don't submit while mention dropdown is open
     if (!input.trim() || !channelId) return;
     sendWs({ type: "send_message", channelId, content: input.trim() });
     setInput("");
+    setCursorPos(0);
   };
 
   const handleFileUpload = useCallback(
@@ -449,6 +457,14 @@ export function ChatArea() {
         )}
         {uploadError && <div style={styles.uploadError}>{uploadError}</div>}
         {typingText && <div style={styles.typingIndicator}>{typingText}</div>}
+        {mention.isOpen && (
+          <MentionDropdown
+            filtered={mention.filtered}
+            activeIndex={mention.activeIndex}
+            onSelect={mention.selectMember}
+            listRef={mention.listRef}
+          />
+        )}
         <form onSubmit={handleSubmit} style={styles.inputContainer}>
           <input
             type="file"
@@ -466,6 +482,7 @@ export function ChatArea() {
             +
           </button>
           <input
+            ref={chatInputRef}
             style={styles.input}
             placeholder={
               uploading
@@ -473,7 +490,9 @@ export function ChatArea() {
                 : `Message #${channel?.name ?? "channel"}`
             }
             value={input}
-            onChange={(e) => handleInputChange(e.target.value)}
+            onChange={handleInputChange}
+            onKeyDown={mention.handleKeyDown}
+            onSelect={(e) => setCursorPos((e.target as HTMLInputElement).selectionStart ?? 0)}
             disabled={uploading}
             autoFocus
           />
