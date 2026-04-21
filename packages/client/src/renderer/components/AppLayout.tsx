@@ -9,12 +9,13 @@ import { useVoiceStore } from "../stores/voice";
 import { ServerList } from "./ServerList";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { ChatArea } from "./ChatArea";
+import { DmSidebar } from "./DmSidebar";
+import { DmChatArea } from "./DmChatArea";
 import { VoiceJoinPrompt, VoiceSession } from "./VoiceChannel";
 import { MusicPlayer } from "./MusicPlayer";
 import { MemberList } from "./MemberList";
 import { SettingsPage } from "./SettingsPage";
 import { ServerSettings } from "./ServerSettings";
-import { DirectMessages } from "./DirectMessages";
 
 export function AppLayout() {
   const { serverId, channelId } = useParams();
@@ -46,10 +47,10 @@ export function AppLayout() {
       .finally(() => setServersLoading(false));
   }, [setServers, logout]);
 
-  // Load channels when server changes
+  // Load channels when server changes (skip for DM view)
   const prevServerRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!serverId) return;
+    if (!serverId || serverId === "@me") return;
     setActiveServer(serverId);
 
     // Only fetch channels if server actually changed
@@ -73,19 +74,19 @@ export function AppLayout() {
   const currentChannel = channels.find((c) => c.id === channelId);
   const isVoiceChannel = currentChannel?.type === "voice";
 
-  // Fetch unread counts when server changes
+  // Fetch unread counts when server changes (skip for DM view)
   const setUnreadCounts = useChatStore((s) => s.setUnreadCounts);
   useEffect(() => {
-    if (!serverId) return;
+    if (!serverId || serverId === "@me") return;
     api.getUnreadCounts(serverId).then((res) => setUnreadCounts(res.unread)).catch(() => {});
   }, [serverId, setUnreadCounts]);
 
-  // Mark channel as read when viewing it
+  // Mark channel as read when viewing it (skip for DM view)
   useEffect(() => {
-    if (!channelId || isVoiceChannel) return;
+    if (!channelId || isVoiceChannel || serverId === "@me") return;
     sendWs({ type: "mark_read", channelId });
     setUnreadCount(channelId, 0);
-  }, [channelId, isVoiceChannel, setUnreadCount]);
+  }, [channelId, isVoiceChannel, setUnreadCount, serverId]);
 
   // Voice connection state
   const voiceConnection = useVoiceStore((s) => s.connection);
@@ -98,20 +99,18 @@ export function AppLayout() {
   const { setUserOnline, setUserOffline, addTyping } = usePresenceStore();
   const [showSettings, setShowSettings] = useState(false);
   const [showServerSettings, setShowServerSettings] = useState(false);
-  const [showDMs, setShowDMs] = useState(false);
+
+  const isDmView = serverId === "@me";
 
   // Listen for settings open events
   useEffect(() => {
     const handler = () => setShowSettings(true);
     const serverHandler = () => setShowServerSettings(true);
-    const dmHandler = () => setShowDMs(true);
     window.addEventListener("concord:open-settings", handler);
     window.addEventListener("concord:open-server-settings", serverHandler);
-    window.addEventListener("concord:open-dms", dmHandler);
     return () => {
       window.removeEventListener("concord:open-settings", handler);
       window.removeEventListener("concord:open-server-settings", serverHandler);
-      window.removeEventListener("concord:open-dms", dmHandler);
     };
   }, []);
 
@@ -160,7 +159,16 @@ export function AppLayout() {
       <ServerList loading={serversLoading} />
       <div style={styles.contentColumn}>
         <div style={styles.contentRow}>
-          {serverId && <ChannelSidebar />}
+          {/* DM view */}
+          {isDmView && (
+            <>
+              <DmSidebar />
+              <DmChatArea />
+            </>
+          )}
+
+          {/* Server view */}
+          {serverId && !isDmView && <ChannelSidebar />}
 
           {/* Voice session - always mounted when connected, visible or hidden */}
           {voiceConnection && (
@@ -168,7 +176,7 @@ export function AppLayout() {
           )}
 
           {/* Join prompt for unconnected voice channels */}
-          {channelId && serverId && isViewingUnconnectedVoice && (
+          {channelId && serverId && !isDmView && isViewingUnconnectedVoice && (
             <VoiceJoinPrompt
               serverId={serverId}
               channelId={channelId}
@@ -177,14 +185,14 @@ export function AppLayout() {
           )}
 
           {/* Text channel */}
-          {channelId && !isVoiceChannel && <ChatArea />}
+          {channelId && !isDmView && !isVoiceChannel && <ChatArea />}
 
-          {serverId && !channelId && (
+          {serverId && !isDmView && !channelId && (
             <div style={styles.welcome}>
               <p style={{ color: "var(--text-muted)" }}>Loading channels...</p>
             </div>
           )}
-          {serverId && !isVoiceChannel && channelId && <MemberList />}
+          {serverId && !isDmView && !isVoiceChannel && channelId && <MemberList />}
           {!serverId && (
             <div style={styles.welcome}>
               <h2>Welcome to Concord</h2>
@@ -197,8 +205,7 @@ export function AppLayout() {
         <MusicPlayer />
       </div>
       {showSettings && <SettingsPage onClose={() => setShowSettings(false)} />}
-      {showDMs && <DirectMessages onClose={() => setShowDMs(false)} />}
-      {showServerSettings && serverId && (
+      {showServerSettings && serverId && !isDmView && (
         <ServerSettings serverId={serverId} onClose={() => setShowServerSettings(false)} />
       )}
     </div>

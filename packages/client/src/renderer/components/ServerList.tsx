@@ -71,8 +71,13 @@ export function ServerList({ loading }: { loading?: boolean }) {
       <div style={styles.scrollArea}>
         <button
           className="hover-brighten"
-          onClick={() => window.dispatchEvent(new CustomEvent("concord:open-dms"))}
-          style={{ ...styles.serverButton, background: "var(--bg-tertiary)", color: "var(--text-muted)" }}
+          onClick={() => navigate("/channels/@me")}
+          style={{
+            ...styles.serverButton,
+            borderRadius: activeServerId === "@me" ? "16px" : "24px",
+            background: activeServerId === "@me" ? "var(--accent)" : "var(--bg-tertiary)",
+            color: activeServerId === "@me" ? "white" : "var(--text-muted)",
+          }}
           title="Direct Messages"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
