@@ -43,7 +43,7 @@ Self-hostable Discord alternative built with TypeScript.
 - **Link previews** -- Open Graph embeds for shared URLs (YouTube oEmbed, generic HTML scraping)
 - **Image lightbox** -- click any image or GIF in chat for a full-screen preview
 - **GIF picker** -- search and send GIFs inline via Klipy API
-- **Direct messages** -- 1:1 private conversations, accessible from the DM icon in the server list
+- **Direct messages** -- 1:1 private conversations as a first-class route (`/channels/@me`), start a DM from any profile card or the conversation sidebar
 - Voice chat, video chat (1080p60), and screen sharing via LiveKit
   - **Video spotlight** -- click any video feed to focus it center-stage, others drop to a strip below
   - **Persistent voice sessions** -- stay connected while browsing text channels
@@ -68,6 +68,8 @@ Self-hostable Discord alternative built with TypeScript.
   - Text: delete any user's messages (MANAGE_MESSAGES permission)
   - Actions available via right-click context menus
 - **User profiles** -- customizable display name, avatar (auto-cropped to 256x256 WebP), and custom status text
+- **Markdown in messages** -- bold, italic, strikethrough, inline code, code blocks, and auto-linked URLs
+- **@mentions** -- type `@` to autocomplete server members; mentions render as highlighted spans in messages
 - File uploads with drag-and-drop and inline image embeds
 - Typing indicators and user presence (online/offline)
 - Message editing and deletion
@@ -180,9 +182,11 @@ The Electron app opens with DevTools (in dev mode). Register an account and crea
 - Drag and drop files to upload, or click the `+` button next to the input
 - Hover over messages to react (smiley icon), edit, or delete
 - Click any image or GIF to open it in a **lightbox** (full-screen preview)
+- Format messages with **markdown**: `**bold**`, `*italic*`, `~~strikethrough~~`, `` `inline code` ``, and ```` ```code blocks``` ````
+- Type `@` to **mention** a user -- an autocomplete dropdown filters members as you type; mentions appear highlighted in the message
 - URLs are auto-linked and show **Open Graph preview cards** (title, description, thumbnail)
 - **Unread channels** appear bold with a count badge in the sidebar
-- Click the chat bubble icon at the top of the server list for **Direct Messages**
+- Click the chat bubble icon at the top of the server list for **Direct Messages** -- conversations live at their own route alongside servers
 
 ### Voice / Video / Screen Share
 - Click a voice channel in the sidebar
