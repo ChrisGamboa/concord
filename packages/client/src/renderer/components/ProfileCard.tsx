@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
+import { useAuthStore } from "../stores/auth";
 import { avatarColor, avatarUrl } from "../lib/avatar";
 import { usePresenceStore } from "../stores/presence";
 import type { Role } from "@concord/shared";
@@ -25,8 +26,11 @@ interface MemberData {
 
 export function ProfileCard({ userId, x, y, anchor = "left", onClose }: ProfileCardProps) {
   const { serverId } = useParams();
+  const navigate = useNavigate();
+  const currentUserId = useAuthStore((s) => s.user?.id);
   const onlineUsers = usePresenceStore((s) => s.onlineUsers);
   const isOnline = onlineUsers.has(userId);
+  const isOwnProfile = userId === currentUserId;
   const [member, setMember] = useState<MemberData | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -119,6 +123,34 @@ export function ProfileCard({ userId, x, y, anchor = "left", onClose }: ProfileC
               {new Date(member.joinedAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
             </div>
           </div>
+        )}
+
+        {!isOwnProfile && (
+          <button
+            style={{
+              marginTop: 10,
+              width: "100%",
+              padding: "6px 0",
+              background: "var(--accent)",
+              color: "white",
+              border: "none",
+              borderRadius: 4,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+            onClick={async () => {
+              try {
+                const conv = await api.createConversation(userId);
+                onClose();
+                navigate(`/channels/@me/${conv.id}`);
+              } catch {
+                // ignore
+              }
+            }}
+          >
+            Message
+          </button>
         )}
       </div>
     </div>
