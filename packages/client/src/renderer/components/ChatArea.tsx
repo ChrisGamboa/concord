@@ -524,7 +524,18 @@ export function ChatArea() {
             }
             value={input}
             onChange={handleInputChange}
-            onKeyDown={mention.handleKeyDown}
+            onKeyDown={(e) => {
+              mention.handleKeyDown(e);
+              if (e.defaultPrevented) return;
+              // Up arrow in empty input -> edit last own message
+              if (e.key === "ArrowUp" && !input.trim()) {
+                const lastOwn = [...messages].reverse().find((m) => m.authorId === userId);
+                if (lastOwn) {
+                  e.preventDefault();
+                  handleStartEdit(lastOwn.id, lastOwn.content);
+                }
+              }
+            }}
             onSelect={(e) => setCursorPos((e.target as HTMLInputElement).selectionStart ?? 0)}
             disabled={uploading}
             autoFocus
