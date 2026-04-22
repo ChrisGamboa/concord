@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useChatStore } from "../stores/chat";
+import { useAuthStore } from "../stores/auth";
 import { avatarColor, avatarUrl } from "../lib/avatar";
 import { Permissions, type Role } from "@concord/shared";
 
@@ -28,9 +30,12 @@ export function ServerSettings({
   serverId: string;
   onClose: () => void;
 }) {
+  const navigate = useNavigate();
   const servers = useChatStore((s) => s.servers);
   const setServers = useChatStore((s) => s.setServers);
   const server = servers.find((s) => s.id === serverId);
+  const currentUserId = useAuthStore((s) => s.user?.id);
+  const isOwner = server?.ownerId === currentUserId;
 
   const [tab, setTab] = useState<Tab>("overview");
   const [saving, setSaving] = useState(false);
@@ -151,6 +156,30 @@ export function ServerSettings({
     finally { setSaving(false); }
   };
 
+  // Leave / Delete server
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const handleLeaveServer = async () => {
+    if (!confirmLeave) { setConfirmLeave(true); setTimeout(() => setConfirmLeave(false), 3000); return; }
+    try {
+      await api.leaveServer(serverId);
+      setServers(servers.filter((s) => s.id !== serverId));
+      onClose();
+      navigate("/channels");
+    } catch (err) { setMsg(err instanceof Error ? err.message : "Failed to leave"); }
+  };
+
+  const handleDeleteServer = async () => {
+    if (!confirmDelete) { setConfirmDelete(true); setTimeout(() => setConfirmDelete(false), 3000); return; }
+    try {
+      await api.deleteServer(serverId);
+      setServers(servers.filter((s) => s.id !== serverId));
+      onClose();
+      navigate("/channels");
+    } catch (err) { setMsg(err instanceof Error ? err.message : "Failed to delete"); }
+  };
+
   return (
     <div className="settings-overlay">
       <div className="settings-sidebar">
@@ -178,6 +207,23 @@ export function ServerSettings({
           <button className="settings-nav-item" onClick={handleCreateRole} disabled={saving} style={{ color: "var(--accent)" }}>
             + Create Role
           </button>
+
+          <div className="settings-nav-divider" />
+          {isOwner ? (
+            <button
+              className="settings-nav-item settings-nav-item--danger"
+              onClick={handleDeleteServer}
+            >
+              {confirmDelete ? "Click again to confirm" : "Delete Server"}
+            </button>
+          ) : (
+            <button
+              className="settings-nav-item settings-nav-item--danger"
+              onClick={handleLeaveServer}
+            >
+              {confirmLeave ? "Click again to confirm" : "Leave Server"}
+            </button>
+          )}
         </div>
       </div>
 

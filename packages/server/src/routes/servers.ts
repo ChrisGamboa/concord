@@ -338,4 +338,50 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
       });
     }
   );
+
+  // Leave a server (non-owners only)
+  app.post<{ Params: { serverId: string } }>(
+    "/:serverId/leave",
+    async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      const { serverId } = request.params;
+
+      const server = await prisma.server.findUnique({ where: { id: serverId } });
+      if (!server) return reply.code(404).send({ error: "Server not found" });
+      if (server.ownerId === userId) {
+        return reply.code(400).send({ error: "Owner cannot leave. Delete the server instead." });
+      }
+
+      const member = await prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId, serverId } },
+      });
+      if (!member) return reply.code(404).send({ error: "Not a member" });
+
+      await prisma.serverMember.delete({
+        where: { userId_serverId: { userId, serverId } },
+      });
+
+      return { left: true };
+    }
+  );
+
+  // Delete a server (owner only)
+  app.delete<{ Params: { serverId: string } }>(
+    "/:serverId",
+    async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      const { serverId } = request.params;
+
+      const server = await prisma.server.findUnique({ where: { id: serverId } });
+      if (!server) return reply.code(404).send({ error: "Server not found" });
+      if (server.ownerId !== userId) {
+        return reply.code(403).send({ error: "Only the server owner can delete it" });
+      }
+
+      // Cascade deletes handled by Prisma schema relations
+      await prisma.server.delete({ where: { id: serverId } });
+
+      return { deleted: true };
+    }
+  );
 };

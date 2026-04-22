@@ -101,6 +101,16 @@ export const api = {
       method: "POST",
     }),
 
+  leaveServer: (serverId: string) =>
+    request<{ left: boolean }>(`/servers/${serverId}/leave`, {
+      method: "POST",
+    }),
+
+  deleteServer: (serverId: string) =>
+    request<{ deleted: boolean }>(`/servers/${serverId}`, {
+      method: "DELETE",
+    }),
+
   updateServer: async (serverId: string, data: { name?: string; icon?: File; removeIcon?: boolean }) => {
     const formData = new FormData();
     if (data.name) formData.append("name", data.name);
