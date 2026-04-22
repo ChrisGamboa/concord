@@ -1539,6 +1539,50 @@ a {
   opacity: 0.5;
 }
 
+/* ---- Skeleton loading ---- */
+
+.skeleton-message {
+  display: flex;
+  gap: 16px;
+  padding: 2px 0;
+}
+
+.skeleton-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  flex-shrink: 0;
+}
+
+.skeleton-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.skeleton-header {
+  height: 14px;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+}
+
+.skeleton-line {
+  height: 12px;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+}
+
+.skeleton-pulse {
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+}
+
 /* ---- Date separators ---- */
 
 .date-separator {

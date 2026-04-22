@@ -304,7 +304,18 @@ export function ChatArea() {
           </div>
         )}
         {messagesLoading && (
-          <div style={styles.loadingState}>Loading messages...</div>
+          <div style={styles.skeletonContainer}>
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="skeleton-message">
+                <div className="skeleton-avatar skeleton-pulse" />
+                <div className="skeleton-content">
+                  <div className="skeleton-header skeleton-pulse" style={{ width: `${60 + (i % 3) * 30}px` }} />
+                  <div className="skeleton-line skeleton-pulse" style={{ width: `${120 + (i % 4) * 50}px` }} />
+                  {i % 2 === 0 && <div className="skeleton-line skeleton-pulse" style={{ width: `${80 + (i % 3) * 40}px` }} />}
+                </div>
+              </div>
+            ))}
+          </div>
         )}
 
         {!messagesLoading && messages.length === 0 && (
@@ -778,13 +789,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "13px",
     cursor: "pointer",
   },
-  loadingState: {
+  skeletonContainer: {
+    padding: "16px",
     display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "48px 16px",
-    color: "var(--text-muted)",
-    fontSize: "14px",
+    flexDirection: "column",
+    gap: "20px",
   },
   emptyState: {
     display: "flex",
