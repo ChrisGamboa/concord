@@ -13,6 +13,7 @@ import { Lightbox } from "./Lightbox";
 import { ProfileCard } from "./ProfileCard";
 import { MarkdownContent } from "./MarkdownContent";
 import { MentionDropdown, useMentionAutocomplete } from "./MentionAutocomplete";
+import { EmojiPicker } from "./EmojiPicker";
 
 const IMAGE_REGEX = /\.(png|jpe?g|gif|webp)$/i;
 const UPLOAD_URL_REGEX = /^\/uploads\/.+/;
@@ -54,6 +55,7 @@ export function ChatArea() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [showGifPicker, setShowGifPicker] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [reactionPickerMsgId, setReactionPickerMsgId] = useState<string | null>(null);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [profilePopup, setProfilePopup] = useState<{ userId: string; x: number; y: number } | null>(null);
@@ -542,13 +544,43 @@ export function ChatArea() {
           />
           <button
             type="button"
-            onClick={() => setShowGifPicker(!showGifPicker)}
+            onClick={() => { setShowEmojiPicker(!showEmojiPicker); setShowGifPicker(false); }}
+            style={styles.gifButton}
+            title="Emoji"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+              <line x1="9" y1="9" x2="9.01" y2="9" />
+              <line x1="15" y1="9" x2="15.01" y2="9" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={() => { setShowGifPicker(!showGifPicker); setShowEmojiPicker(false); }}
             style={styles.gifButton}
             title="Send a GIF"
           >
             GIF
           </button>
         </form>
+        {showEmojiPicker && (
+          <EmojiPicker
+            onSelect={(emoji) => {
+              const pos = chatInputRef.current?.selectionStart ?? input.length;
+              const before = input.slice(0, pos);
+              const after = input.slice(pos);
+              setInput(before + emoji + after);
+              setShowEmojiPicker(false);
+              requestAnimationFrame(() => {
+                const newPos = pos + emoji.length;
+                chatInputRef.current?.setSelectionRange(newPos, newPos);
+                chatInputRef.current?.focus();
+              });
+            }}
+            onClose={() => setShowEmojiPicker(false)}
+          />
+        )}
       </div>
       {lightboxSrc && <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
       {profilePopup && (
