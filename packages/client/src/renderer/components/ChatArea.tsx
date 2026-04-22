@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type DragEvent } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useChatStore } from "../stores/chat";
 import { useAuthStore } from "../stores/auth";
 import { usePresenceStore } from "../stores/presence";
@@ -36,6 +36,7 @@ function formatDateSeparator(date: Date): string {
 
 export function ChatArea() {
   const { channelId } = useParams();
+  const navigate = useNavigate();
   const messages = useChatStore((s) => s.messages);
   const channels = useChatStore((s) => s.channels);
   const hasMore = useChatStore((s) => s.hasMoreMessages);
@@ -294,6 +295,26 @@ export function ChatArea() {
     api.getPinnedMessages(channelId).then((res) => setPinnedMessages(res.pins)).catch(() => {});
   }, [showPins, channelId]);
 
+  // Message search
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Array<{ id: string; channelId: string; channelName: string; content: string; createdAt: string; author: any }>>([]);
+  const [searching, setSearching] = useState(false);
+  useEffect(() => {
+    if (!showSearch || searchQuery.trim().length < 2 || !serverId) {
+      setSearchResults([]);
+      return;
+    }
+    setSearching(true);
+    const timer = setTimeout(() => {
+      api.searchMessages({ q: searchQuery.trim(), serverId })
+        .then((res) => setSearchResults(res.results))
+        .catch(() => setSearchResults([]))
+        .finally(() => setSearching(false));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, showSearch, serverId]);
+
   const typingText =
     typingUsers.length === 0
       ? null
@@ -318,7 +339,17 @@ export function ChatArea() {
         <span style={styles.channelName}>{channel?.name ?? "channel"}</span>
         <button
           style={styles.pinButton}
-          onClick={() => setShowPins(!showPins)}
+          onClick={() => { setShowSearch(!showSearch); if (showPins) setShowPins(false); }}
+          title="Search Messages"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </button>
+        <button
+          style={styles.pinButton}
+          onClick={() => { setShowPins(!showPins); if (showSearch) setShowSearch(false); }}
           title="Pinned Messages"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill={showPins ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -342,6 +373,48 @@ export function ChatArea() {
               </div>
             ))
           )}
+        </div>
+      )}
+
+      {showSearch && (
+        <div style={styles.pinsPanel}>
+          <div style={{ padding: "8px 16px", borderBottom: "1px solid var(--border)" }}>
+            <input
+              style={styles.searchInput}
+              placeholder="Search messages in this server..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              autoFocus
+            />
+          </div>
+          {searching && (
+            <div style={styles.pinsPanelEmpty}>Searching...</div>
+          )}
+          {!searching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
+            <div style={styles.pinsPanelEmpty}>No results found</div>
+          )}
+          {!searching && searchQuery.trim().length < 2 && searchQuery.trim().length > 0 && (
+            <div style={styles.pinsPanelEmpty}>Type at least 2 characters</div>
+          )}
+          {searchResults.map((result) => (
+            <div
+              key={result.id}
+              style={{ ...styles.pinItem, cursor: "pointer" }}
+              className="hover-bg"
+              onClick={() => {
+                navigate(`/channels/${serverId}/${result.channelId}`);
+                setShowSearch(false);
+                setSearchQuery("");
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+                <span style={styles.pinItemAuthor}>{result.author?.displayName ?? "Unknown"}</span>
+                <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>#{result.channelName}</span>
+                <span style={styles.pinItemDate}>{new Date(result.createdAt).toLocaleDateString()}</span>
+              </div>
+              <div style={styles.pinItemContent}>{result.content}</div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -926,6 +999,16 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "11px",
     color: "var(--text-muted)",
     marginTop: "4px",
+  },
+  searchInput: {
+    width: "100%",
+    padding: "8px 12px",
+    background: "var(--input-bg)",
+    border: "1px solid var(--border)",
+    borderRadius: "4px",
+    color: "var(--text-primary)",
+    fontSize: "13px",
+    outline: "none",
   },
   messages: {
     flex: 1,

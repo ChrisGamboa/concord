@@ -70,6 +70,65 @@ export const messageRoutes: FastifyPluginAsync = async (app) => {
     };
   });
 
+  // Search messages in a server or channel
+  app.get<{
+    Querystring: { q: string; serverId?: string; channelId?: string; limit?: string };
+  }>("/search", async (request, reply) => {
+    const { userId } = request.user as { userId: string };
+    const { q, serverId, channelId, limit: limitStr } = request.query;
+    const limit = Math.min(parseInt(limitStr ?? "25", 10), 50);
+
+    if (!q || q.trim().length < 2) {
+      return reply.code(400).send({ error: "Query must be at least 2 characters" });
+    }
+
+    // Build filter: either a specific channel or all channels in a server
+    const channelIds: string[] = [];
+    if (channelId) {
+      const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { serverId: true } });
+      if (!channel) return reply.code(404).send({ error: "Channel not found" });
+      const member = await prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId, serverId: channel.serverId } },
+      });
+      if (!member) return reply.code(403).send({ error: "Not a member" });
+      channelIds.push(channelId);
+    } else if (serverId) {
+      const member = await prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId, serverId } },
+      });
+      if (!member) return reply.code(403).send({ error: "Not a member" });
+      const channels = await prisma.channel.findMany({ where: { serverId }, select: { id: true } });
+      channelIds.push(...channels.map((c) => c.id));
+    } else {
+      return reply.code(400).send({ error: "serverId or channelId required" });
+    }
+
+    const messages = await prisma.message.findMany({
+      where: {
+        channelId: { in: channelIds },
+        content: { contains: q.trim(), mode: "insensitive" },
+      },
+      include: {
+        author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+        channel: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
+
+    return {
+      results: messages.map((m) => ({
+        id: m.id,
+        channelId: m.channelId,
+        channelName: m.channel.name,
+        authorId: m.authorId,
+        content: m.content,
+        createdAt: m.createdAt.toISOString(),
+        author: m.author,
+      })),
+    };
+  });
+
   // Get pinned messages for a channel
   app.get<{ Params: { channelId: string } }>(
     "/channel/:channelId/pins",

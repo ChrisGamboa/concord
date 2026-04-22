@@ -262,6 +262,15 @@ export const api = {
   unpinMessage: (messageId: string) =>
     request<{ unpinned: boolean }>(`/messages/${messageId}/pin`, { method: "DELETE" }),
 
+  searchMessages: (opts: { q: string; serverId?: string; channelId?: string }) => {
+    const params = new URLSearchParams({ q: opts.q });
+    if (opts.serverId) params.set("serverId", opts.serverId);
+    if (opts.channelId) params.set("channelId", opts.channelId);
+    return request<{ results: Array<{ id: string; channelId: string; channelName: string; authorId: string; content: string; createdAt: string; author: any }> }>(
+      `/messages/search?${params}`
+    );
+  },
+
   // Voice
   joinVoiceChannel: (channelId: string) =>
     request<VoiceJoinResponse>(`/voice/${channelId}/join`, {
