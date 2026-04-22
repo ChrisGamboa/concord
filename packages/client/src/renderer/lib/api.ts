@@ -251,6 +251,17 @@ export const api = {
       `/messages/channel/${channelId}${before ? `?before=${before}` : ""}`
     ),
 
+  getPinnedMessages: (channelId: string) =>
+    request<{ pins: Array<{ id: string; channelId: string; authorId: string; content: string; createdAt: string; pinnedAt: string | null; author: any }> }>(
+      `/messages/channel/${channelId}/pins`
+    ),
+
+  pinMessage: (messageId: string) =>
+    request<{ pinned: boolean }>(`/messages/${messageId}/pin`, { method: "POST" }),
+
+  unpinMessage: (messageId: string) =>
+    request<{ unpinned: boolean }>(`/messages/${messageId}/pin`, { method: "DELETE" }),
+
   // Voice
   joinVoiceChannel: (channelId: string) =>
     request<VoiceJoinResponse>(`/voice/${channelId}/join`, {

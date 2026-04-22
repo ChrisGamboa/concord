@@ -269,6 +269,31 @@ export function ChatArea() {
     }
   };
 
+  const handlePin = async (msgId: string) => {
+    const msg = messages.find((m) => m.id === msgId);
+    if (!msg) return;
+    try {
+      if (msg.pinnedAt) {
+        await api.unpinMessage(msgId);
+      } else {
+        await api.pinMessage(msgId);
+      }
+      // Refresh messages to reflect pin state
+      if (channelId) {
+        const res = await api.getMessages(channelId);
+        setMessages(res.messages, res.hasMore);
+      }
+    } catch { /* ignore */ }
+  };
+
+  // Pinned messages panel
+  const [showPins, setShowPins] = useState(false);
+  const [pinnedMessages, setPinnedMessages] = useState<Array<{ id: string; content: string; createdAt: string; author: any }>>([]);
+  useEffect(() => {
+    if (!showPins || !channelId) return;
+    api.getPinnedMessages(channelId).then((res) => setPinnedMessages(res.pins)).catch(() => {});
+  }, [showPins, channelId]);
+
   const typingText =
     typingUsers.length === 0
       ? null
@@ -291,7 +316,34 @@ export function ChatArea() {
       <div style={styles.header}>
         <span style={styles.hash}>#</span>
         <span style={styles.channelName}>{channel?.name ?? "channel"}</span>
+        <button
+          style={styles.pinButton}
+          onClick={() => setShowPins(!showPins)}
+          title="Pinned Messages"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill={showPins ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 17v5" />
+            <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 1 1 0 0 0 1-1V4a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v1a1 1 0 0 0 1 1 1 1 0 0 1 1 1z" />
+          </svg>
+        </button>
       </div>
+
+      {showPins && (
+        <div style={styles.pinsPanel}>
+          <div style={styles.pinsPanelHeader}>Pinned Messages</div>
+          {pinnedMessages.length === 0 ? (
+            <div style={styles.pinsPanelEmpty}>No pinned messages in this channel</div>
+          ) : (
+            pinnedMessages.map((pin) => (
+              <div key={pin.id} style={styles.pinItem}>
+                <div style={styles.pinItemAuthor}>{pin.author?.displayName ?? "Unknown"}</div>
+                <div style={styles.pinItemContent}>{pin.content}</div>
+                <div style={styles.pinItemDate}>{new Date(pin.createdAt).toLocaleDateString()}</div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
 
       <div ref={messagesContainerRef} style={styles.messages}>
         {hasMore && !messagesLoading && (
@@ -372,10 +424,10 @@ export function ChatArea() {
                 <div style={styles.groupedContent}>
                   {isEditingG ? (
                     <MessageActions
-                      msgId={msg.id} content={msg.content} isOwn={isOwnG} canModerate={canModerate}
+                      msgId={msg.id} content={msg.content} isOwn={isOwnG} canModerate={canModerate} isPinned={!!msg.pinnedAt}
                       isHovered={isHoveredG} isEditing={true} editContent={editContent}
                       confirmDeleteId={confirmDeleteId}
-                      showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
+                      showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete} onPin={handlePin}
                       onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                       onEditChange={setEditContent}
                     />
@@ -388,10 +440,10 @@ export function ChatArea() {
                 </div>
                 {!isEditingG && (
                   <MessageActions
-                    msgId={msg.id} content={msg.content} isOwn={isOwnG} canModerate={canModerate}
+                    msgId={msg.id} content={msg.content} isOwn={isOwnG} canModerate={canModerate} isPinned={!!msg.pinnedAt}
                     isHovered={isHoveredG} isEditing={false} editContent={editContent}
                     confirmDeleteId={confirmDeleteId}
-                    showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
+                    showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete} onPin={handlePin}
                     onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                     onEditChange={setEditContent}
                   />
@@ -446,10 +498,10 @@ export function ChatArea() {
                   </div>
                   {isEditing ? (
                     <MessageActions
-                      msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate}
+                      msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate} isPinned={!!msg.pinnedAt}
                       isHovered={isHovered} isEditing={true} editContent={editContent}
                       confirmDeleteId={confirmDeleteId}
-                      showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
+                      showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete} onPin={handlePin}
                       onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                       onEditChange={setEditContent}
                     />
@@ -463,10 +515,10 @@ export function ChatArea() {
                 </div>
                 {!isEditing && (
                   <MessageActions
-                    msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate}
+                    msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate} isPinned={!!msg.pinnedAt}
                     isHovered={isHovered} isEditing={false} editContent={editContent}
                     confirmDeleteId={confirmDeleteId}
-                    showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
+                    showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete} onPin={handlePin}
                     onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                     onEditChange={setEditContent}
                   />
@@ -601,6 +653,7 @@ function MessageActions({
   content,
   isOwn,
   canModerate,
+  isPinned,
   isHovered,
   isEditing,
   editContent,
@@ -609,6 +662,7 @@ function MessageActions({
   onReact,
   onStartEdit,
   onDelete,
+  onPin,
   onSaveEdit,
   onCancelEdit,
   onEditChange,
@@ -617,6 +671,7 @@ function MessageActions({
   content: string;
   isOwn: boolean;
   canModerate: boolean;
+  isPinned: boolean;
   isHovered: boolean;
   isEditing: boolean;
   editContent: string;
@@ -625,6 +680,7 @@ function MessageActions({
   onReact: (msgId: string) => void;
   onStartEdit: (id: string, content: string) => void;
   onDelete: (id: string) => void;
+  onPin: (id: string) => void;
   onSaveEdit: () => void;
   onCancelEdit: () => void;
   onEditChange: (val: string) => void;
@@ -678,6 +734,11 @@ function MessageActions({
           <line x1="15" y1="9" x2="15.01" y2="9" />
         </svg>
       </button>
+      {canModerate && (
+        <button className="msg-action-btn" onClick={() => onPin(msgId)} title={isPinned ? "Unpin" : "Pin"}>
+          {isPinned ? "Unpin" : "Pin"}
+        </button>
+      )}
       {isOwn && (
         <button className="msg-action-btn" onClick={() => onStartEdit(msgId, content)}>
           Edit
@@ -812,6 +873,59 @@ const styles: Record<string, React.CSSProperties> = {
   channelName: {
     fontSize: "15px",
     fontWeight: 600,
+    flex: 1,
+  },
+  pinButton: {
+    background: "none",
+    border: "none",
+    color: "var(--text-muted)",
+    cursor: "pointer",
+    padding: "4px",
+    borderRadius: "4px",
+    display: "flex",
+    alignItems: "center",
+    flexShrink: 0,
+  },
+  pinsPanel: {
+    borderBottom: "1px solid var(--border)",
+    background: "var(--bg-secondary)",
+    maxHeight: "250px",
+    overflowY: "auto" as const,
+    flexShrink: 0,
+  },
+  pinsPanelHeader: {
+    padding: "8px 16px",
+    fontSize: "12px",
+    fontWeight: 700,
+    color: "var(--text-muted)",
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.02em",
+    borderBottom: "1px solid var(--border)",
+  },
+  pinsPanelEmpty: {
+    padding: "24px 16px",
+    textAlign: "center" as const,
+    color: "var(--text-muted)",
+    fontSize: "13px",
+  },
+  pinItem: {
+    padding: "10px 16px",
+    borderBottom: "1px solid var(--border)",
+  },
+  pinItemAuthor: {
+    fontSize: "13px",
+    fontWeight: 600,
+    marginBottom: "2px",
+  },
+  pinItemContent: {
+    fontSize: "13px",
+    color: "var(--text-secondary)",
+    wordBreak: "break-word" as const,
+  },
+  pinItemDate: {
+    fontSize: "11px",
+    color: "var(--text-muted)",
+    marginTop: "4px",
   },
   messages: {
     flex: 1,

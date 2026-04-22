@@ -133,6 +133,8 @@ model Message {
   content   String
   createdAt DateTime  @default(now())
   editedAt  DateTime?
+  pinnedAt  DateTime?
+  pinnedBy  String?
 
   channel   Channel    @relation(fields: [channelId], references: [id], onDelete: Cascade)
   author    User       @relation(fields: [authorId], references: [id])

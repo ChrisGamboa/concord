@@ -60,6 +60,7 @@ export interface Message {
   content: string;
   createdAt: string;
   editedAt: string | null;
+  pinnedAt?: string | null;
   author?: PublicUser;
   reactions?: ReactionGroup[];
 }
