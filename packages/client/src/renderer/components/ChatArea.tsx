@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type DragEvent } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type DragEvent } from "react";
 import { useParams } from "react-router-dom";
 import { useChatStore } from "../stores/chat";
 import { useAuthStore } from "../stores/auth";
@@ -21,6 +21,16 @@ const GROUP_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
 function isImageUrl(text: string): boolean {
   return IMAGE_REGEX.test(text) || (UPLOAD_URL_REGEX.test(text) && IMAGE_REGEX.test(text));
+}
+
+function formatDateSeparator(date: Date): string {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.round((today.getTime() - target.getTime()) / 86400000);
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  return date.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
 }
 
 export function ChatArea() {
@@ -310,12 +320,22 @@ export function ChatArea() {
 
         {messages.map((msg, i) => {
           const prev = i > 0 ? messages[i - 1] : null;
+          const msgDate = new Date(msg.createdAt);
+          const prevDate = prev ? new Date(prev.createdAt) : null;
+          const showDateSep = !prevDate ||
+            msgDate.toDateString() !== prevDate.toDateString();
+
           const isGrouped =
+            !showDateSep &&
             prev !== null &&
             prev.authorId === msg.authorId &&
-            new Date(msg.createdAt).getTime() -
-              new Date(prev.createdAt).getTime() <
-              GROUP_THRESHOLD_MS;
+            msgDate.getTime() - prevDate!.getTime() < GROUP_THRESHOLD_MS;
+
+          const dateSeparator = showDateSep ? (
+            <div key={`sep-${msg.id}`} className="date-separator">
+              <span className="date-separator-text">{formatDateSeparator(msgDate)}</span>
+            </div>
+          ) : null;
 
           if (isGrouped) {
             const isOwnG = msg.authorId === userId;
@@ -372,72 +392,74 @@ export function ChatArea() {
           const isEditing = editingMsgId === msg.id;
 
           return (
-            <div
-              key={msg.id}
-              className="hover-bg"
-              style={styles.message}
-              onMouseEnter={() => setHoveredMsgId(msg.id)}
-              onMouseLeave={() => setHoveredMsgId(null)}
-            >
+            <React.Fragment key={msg.id}>
+              {dateSeparator}
               <div
-                style={{ cursor: "pointer", flexShrink: 0, alignSelf: "flex-start" }}
-                onClick={(e) => { e.stopPropagation(); setProfilePopup({ userId: msg.authorId, x: e.clientX, y: e.clientY }); }}
+                className="hover-bg"
+                style={styles.message}
+                onMouseEnter={() => setHoveredMsgId(msg.id)}
+                onMouseLeave={() => setHoveredMsgId(null)}
               >
-                {avatarUrl(msg.author?.avatarUrl) ? (
-                  <img
-                    style={{ ...styles.avatar, objectFit: "cover" }}
-                    src={avatarUrl(msg.author?.avatarUrl)!}
-                    alt=""
-                  />
-                ) : (
-                  <div style={{ ...styles.avatar, background: avatarColor(msg.authorId) }}>
-                    {(msg.author?.displayName ?? "?").charAt(0).toUpperCase()}
-                  </div>
-                )}
-              </div>
-              <div style={styles.messageContent}>
-                <div style={styles.messageHeader}>
-                  <span
-                    style={{ ...styles.authorName, cursor: "pointer" }}
-                    onClick={(e) => { e.stopPropagation(); setProfilePopup({ userId: msg.authorId, x: e.clientX, y: e.clientY }); }}
-                  >
-                    {msg.author?.displayName ?? "Unknown"}
-                  </span>
-                  <span style={styles.timestamp}>
-                    {new Date(msg.createdAt).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
+                <div
+                  style={{ cursor: "pointer", flexShrink: 0, alignSelf: "flex-start" }}
+                  onClick={(e) => { e.stopPropagation(); setProfilePopup({ userId: msg.authorId, x: e.clientX, y: e.clientY }); }}
+                >
+                  {avatarUrl(msg.author?.avatarUrl) ? (
+                    <img
+                      style={{ ...styles.avatar, objectFit: "cover" }}
+                      src={avatarUrl(msg.author?.avatarUrl)!}
+                      alt=""
+                    />
+                  ) : (
+                    <div style={{ ...styles.avatar, background: avatarColor(msg.authorId) }}>
+                      {(msg.author?.displayName ?? "?").charAt(0).toUpperCase()}
+                    </div>
+                  )}
                 </div>
-                {isEditing ? (
+                <div style={styles.messageContent}>
+                  <div style={styles.messageHeader}>
+                    <span
+                      style={{ ...styles.authorName, cursor: "pointer" }}
+                      onClick={(e) => { e.stopPropagation(); setProfilePopup({ userId: msg.authorId, x: e.clientX, y: e.clientY }); }}
+                    >
+                      {msg.author?.displayName ?? "Unknown"}
+                    </span>
+                    <span style={styles.timestamp}>
+                      {new Date(msg.createdAt).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </div>
+                  {isEditing ? (
+                    <MessageActions
+                      msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate}
+                      isHovered={isHovered} isEditing={true} editContent={editContent}
+                      confirmDeleteId={confirmDeleteId}
+                      showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
+                      onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
+                      onEditChange={setEditContent}
+                    />
+                  ) : (
+                    <>
+                      <MessageBody content={msg.content} onImageClick={setLightboxSrc} mentionUsers={mentionUsers} />
+                      {msg.editedAt && <span style={styles.editedTag}>(edited)</span>}
+                    </>
+                  )}
+                  <ReactionBar reactions={msg.reactions} messageId={msg.id} userId={userId} />
+                </div>
+                {!isEditing && (
                   <MessageActions
                     msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate}
-                    isHovered={isHovered} isEditing={true} editContent={editContent}
+                    isHovered={isHovered} isEditing={false} editContent={editContent}
                     confirmDeleteId={confirmDeleteId}
                     showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
                     onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                     onEditChange={setEditContent}
                   />
-                ) : (
-                  <>
-                    <MessageBody content={msg.content} onImageClick={setLightboxSrc} mentionUsers={mentionUsers} />
-                    {msg.editedAt && <span style={styles.editedTag}>(edited)</span>}
-                  </>
                 )}
-                <ReactionBar reactions={msg.reactions} messageId={msg.id} userId={userId} />
               </div>
-              {!isEditing && (
-                <MessageActions
-                  msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate}
-                  isHovered={isHovered} isEditing={false} editContent={editContent}
-                  confirmDeleteId={confirmDeleteId}
-                  showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete}
-                  onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
-                  onEditChange={setEditContent}
-                />
-              )}
-            </div>
+            </React.Fragment>
           );
         })}
         <div ref={messagesEndRef} />

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useAuthStore } from "../stores/auth";
 import { api } from "../lib/api";
@@ -28,6 +28,16 @@ interface OtherUser {
 }
 
 const GROUP_THRESHOLD_MS = 5 * 60 * 1000;
+
+function formatDateSeparator(date: Date): string {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.round((today.getTime() - target.getTime()) / 86400000);
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  return date.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+}
 
 export function DmChatArea() {
   const { channelId: conversationId } = useParams();
@@ -153,16 +163,27 @@ export function DmChatArea() {
 
         {messages.map((msg, i) => {
           const prev = i > 0 ? messages[i - 1] : null;
+          const msgDate = new Date(msg.createdAt);
+          const prevDate = prev ? new Date(prev.createdAt) : null;
+          const showDateSep = !prevDate || msgDate.toDateString() !== prevDate.toDateString();
+
           const isGrouped =
+            !showDateSep &&
             prev !== null &&
             prev.authorId === msg.authorId &&
-            new Date(msg.createdAt).getTime() - new Date(prev.createdAt).getTime() < GROUP_THRESHOLD_MS;
+            msgDate.getTime() - prevDate!.getTime() < GROUP_THRESHOLD_MS;
+
+          const dateSeparator = showDateSep ? (
+            <div key={`sep-${msg.id}`} className="date-separator">
+              <span className="date-separator-text">{formatDateSeparator(msgDate)}</span>
+            </div>
+          ) : null;
 
           if (isGrouped) {
             return (
               <div key={msg.id} className="message-grouped hover-bg" style={styles.messageGrouped}>
                 <span className="grouped-timestamp" style={styles.groupedTimestamp}>
-                  {new Date(msg.createdAt).toLocaleTimeString([], {
+                  {msgDate.toLocaleTimeString([], {
                     hour: "2-digit",
                     minute: "2-digit",
                   })}
@@ -175,33 +196,36 @@ export function DmChatArea() {
           }
 
           return (
-            <div key={msg.id} className="hover-bg" style={styles.message}>
-              {avatarUrl(msg.author?.avatarUrl) ? (
-                <img
-                  style={{ ...styles.avatar, objectFit: "cover" as const }}
-                  src={avatarUrl(msg.author?.avatarUrl)!}
-                  alt=""
-                />
-              ) : (
-                <div style={{ ...styles.avatar, background: avatarColor(msg.authorId) }}>
-                  {(msg.author?.displayName ?? "?").charAt(0).toUpperCase()}
+            <React.Fragment key={msg.id}>
+              {dateSeparator}
+              <div className="hover-bg" style={styles.message}>
+                {avatarUrl(msg.author?.avatarUrl) ? (
+                  <img
+                    style={{ ...styles.avatar, objectFit: "cover" as const }}
+                    src={avatarUrl(msg.author?.avatarUrl)!}
+                    alt=""
+                  />
+                ) : (
+                  <div style={{ ...styles.avatar, background: avatarColor(msg.authorId) }}>
+                    {(msg.author?.displayName ?? "?").charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div style={styles.messageContent}>
+                  <div style={styles.messageHeader}>
+                    <span style={styles.authorName}>
+                      {msg.author?.displayName ?? "Unknown"}
+                    </span>
+                    <span style={styles.timestamp}>
+                      {msgDate.toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </div>
+                  <div style={styles.messageText}><MarkdownContent content={msg.content} /></div>
                 </div>
-              )}
-              <div style={styles.messageContent}>
-                <div style={styles.messageHeader}>
-                  <span style={styles.authorName}>
-                    {msg.author?.displayName ?? "Unknown"}
-                  </span>
-                  <span style={styles.timestamp}>
-                    {new Date(msg.createdAt).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                </div>
-                <div style={styles.messageText}><MarkdownContent content={msg.content} /></div>
               </div>
-            </div>
+            </React.Fragment>
           );
         })}
         <div ref={messagesEndRef} />
