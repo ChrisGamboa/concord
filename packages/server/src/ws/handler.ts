@@ -124,15 +124,35 @@ async function handleMessage(
       if (!msg.content || msg.content.trim().length === 0 || msg.content.length > 4000) return;
       if (!(await verifyChannelAccess(userId, msg.channelId))) return;
 
+      // A reply must reference a message in the same channel
+      let replyToId: string | null = null;
+      if (msg.replyToId) {
+        const target = await prisma.message.findUnique({
+          where: { id: msg.replyToId },
+          select: { channelId: true },
+        });
+        if (target?.channelId === msg.channelId) replyToId = msg.replyToId;
+      }
+
       const message = await prisma.message.create({
         data: {
           channelId: msg.channelId,
           authorId: userId,
           content: msg.content,
+          replyToId,
         },
         include: {
           author: {
             select: { id: true, username: true, displayName: true, avatarUrl: true, status: true },
+          },
+          replyTo: {
+            select: {
+              id: true,
+              content: true,
+              authorId: true,
+              createdAt: true,
+              author: { select: { id: true, username: true, displayName: true, avatarUrl: true, status: true } },
+            },
           },
         },
       });
@@ -147,6 +167,15 @@ async function handleMessage(
           createdAt: message.createdAt.toISOString(),
           editedAt: null,
           author: message.author,
+          replyTo: message.replyTo
+            ? {
+                id: message.replyTo.id,
+                content: message.replyTo.content,
+                authorId: message.replyTo.authorId,
+                createdAt: message.replyTo.createdAt.toISOString(),
+                author: message.replyTo.author,
+              }
+            : null,
         },
         ...(msg.nonce ? { nonce: msg.nonce } : {}),
       };
@@ -189,6 +218,15 @@ async function handleMessage(
           author: {
             select: { id: true, username: true, displayName: true, avatarUrl: true, status: true },
           },
+          replyTo: {
+            select: {
+              id: true,
+              content: true,
+              authorId: true,
+              createdAt: true,
+              author: { select: { id: true, username: true, displayName: true, avatarUrl: true, status: true } },
+            },
+          },
         },
       });
 
@@ -202,6 +240,15 @@ async function handleMessage(
           createdAt: updated.createdAt.toISOString(),
           editedAt: updated.editedAt?.toISOString() ?? null,
           author: updated.author,
+          replyTo: updated.replyTo
+            ? {
+                id: updated.replyTo.id,
+                content: updated.replyTo.content,
+                authorId: updated.replyTo.authorId,
+                createdAt: updated.replyTo.createdAt.toISOString(),
+                author: updated.replyTo.author,
+              }
+            : null,
         },
       });
       break;

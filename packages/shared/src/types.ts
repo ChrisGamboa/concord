@@ -63,6 +63,16 @@ export interface Message {
   pinnedAt?: string | null;
   author?: PublicUser;
   reactions?: ReactionGroup[];
+  replyTo?: MessageReference | null;
+}
+
+/** Shallow reference to a replied-to message (no nesting). */
+export interface MessageReference {
+  id: MessageId;
+  content: string;
+  authorId: UserId;
+  createdAt: string;
+  author?: PublicUser;
 }
 
 // ---- Reactions ----

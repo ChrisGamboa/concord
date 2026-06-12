@@ -42,6 +42,15 @@ export const messageRoutes: FastifyPluginAsync = async (app) => {
           select: { id: true, username: true, displayName: true, avatarUrl: true, status: true },
         },
         reactions: { select: { emoji: true, userId: true } },
+        replyTo: {
+          select: {
+            id: true,
+            content: true,
+            authorId: true,
+            createdAt: true,
+            author: { select: { id: true, username: true, displayName: true, avatarUrl: true, status: true } },
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
       take: limit + 1,
@@ -60,6 +69,15 @@ export const messageRoutes: FastifyPluginAsync = async (app) => {
         editedAt: m.editedAt?.toISOString() ?? null,
         pinnedAt: m.pinnedAt?.toISOString() ?? null,
         author: m.author,
+        replyTo: m.replyTo
+          ? {
+              id: m.replyTo.id,
+              content: m.replyTo.content,
+              authorId: m.replyTo.authorId,
+              createdAt: m.replyTo.createdAt.toISOString(),
+              author: m.replyTo.author,
+            }
+          : null,
         reactions: (() => {
           const groups: Record<string, string[]> = {};
           for (const r of m.reactions) (groups[r.emoji] ??= []).push(r.userId);

@@ -2061,3 +2061,64 @@ a {
   color: var(--danger);
   background: var(--bg-primary);
 }
+
+/* Reply preview above a reply message */
+.reply-preview {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 2px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+  font-size: 12px;
+  cursor: pointer;
+  max-width: 100%;
+}
+
+.reply-preview:hover .reply-preview-content {
+  color: var(--text-primary);
+}
+
+.reply-preview-author {
+  color: var(--accent);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.reply-preview-content {
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Replying-to chip above the message input */
+.reply-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 16px 4px;
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  border-radius: 6px 6px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.reply-chip-text strong {
+  color: var(--text-secondary);
+}
+
+.reply-chip-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.reply-chip-close:hover {
+  color: var(--text-primary);
+}

@@ -135,10 +135,13 @@ model Message {
   editedAt  DateTime?
   pinnedAt  DateTime?
   pinnedBy  String?
+  replyToId String?
 
   channel   Channel    @relation(fields: [channelId], references: [id], onDelete: Cascade)
   author    User       @relation(fields: [authorId], references: [id])
   reactions Reaction[]
+  replyTo   Message?   @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   Message[]  @relation("MessageReplies")
 
   @@index([channelId, createdAt])
 }

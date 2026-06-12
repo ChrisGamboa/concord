@@ -7,7 +7,7 @@ import { toast } from "../stores/toast";
 import { sendWs } from "../lib/ws";
 import { api } from "../lib/api";
 import { avatarColor, avatarUrl } from "../lib/avatar";
-import { Permissions, hasPermission, type ReactionGroup } from "@concord/shared";
+import { Permissions, hasPermission, type ReactionGroup, type MessageReference } from "@concord/shared";
 import { GifPicker } from "./GifPicker";
 import { LinkPreview } from "./LinkPreview";
 import { Lightbox } from "./Lightbox";
@@ -72,6 +72,8 @@ export function ChatArea() {
   const [unreadMarkerId, setUnreadMarkerId] = useState<string | null>(null);
   // Message briefly flash-highlighted after a jump
   const [highlightMsgId, setHighlightMsgId] = useState<string | null>(null);
+  // Message currently being replied to (consumed by the next send)
+  const [replyTarget, setReplyTarget] = useState<MessageReference | null>(null);
 
   // Close reaction picker on click-outside or Escape
   useEffect(() => {
@@ -170,6 +172,7 @@ export function ChatArea() {
     lastMsgIdRef.current = null;
     setShowNewBelow(false);
     setUnreadMarkerId(null);
+    setReplyTarget(null);
 
     // A jump target handed over from another channel (search result) loads
     // the page around the target instead of the latest messages.
@@ -359,6 +362,8 @@ export function ChatArea() {
     if (!channelId || !userId) return;
     const nonce = crypto.randomUUID();
     const me = useAuthStore.getState().user;
+    const reply = replyTarget;
+    setReplyTarget(null);
     useChatStore.getState().addPendingMessage({
       id: `pending-${nonce}`,
       channelId,
@@ -369,15 +374,29 @@ export function ChatArea() {
       author: me
         ? { id: me.id, username: me.username, displayName: me.displayName, avatarUrl: me.avatarUrl, status: me.status }
         : undefined,
+      replyTo: reply,
       pending: true,
       nonce,
     });
-    if (sendWs({ type: "send_message", channelId, content, nonce })) {
+    if (sendWs({ type: "send_message", channelId, content, nonce, replyToId: reply?.id })) {
       watchDelivery(nonce);
     } else {
       useChatStore.getState().markMessageFailed(nonce);
     }
-  }, [channelId, userId, watchDelivery]);
+  }, [channelId, userId, watchDelivery, replyTarget]);
+
+  const handleStartReply = useCallback((msgId: string) => {
+    const m = useChatStore.getState().messages.find((x) => x.id === msgId);
+    if (!m) return;
+    setReplyTarget({
+      id: m.id,
+      content: m.content,
+      authorId: m.authorId,
+      createdAt: m.createdAt,
+      author: m.author,
+    });
+    chatInputRef.current?.focus();
+  }, []);
 
   const retrySend = useCallback((nonce: string, content: string) => {
     if (!channelId) return;
@@ -719,6 +738,7 @@ export function ChatArea() {
           const isGrouped =
             !showDateSep &&
             !isUnreadMarker &&
+            !msg.replyTo &&
             prev !== null &&
             prev.authorId === msg.authorId &&
             msgDate.getTime() - prevDate!.getTime() < GROUP_THRESHOLD_MS;
@@ -760,7 +780,7 @@ export function ChatArea() {
                     <MessageActions
                       msgId={msg.id} content={msg.content} isOwn={isOwnG} canModerate={canModerate} isPinned={!!msg.pinnedAt}
                       isHovered={isHoveredG} isEditing={true} editContent={editContent}
-                      confirmDeleteId={confirmDeleteId} onCancelDelete={() => setConfirmDeleteId(null)}
+                      confirmDeleteId={confirmDeleteId} onCancelDelete={() => setConfirmDeleteId(null)} onReply={handleStartReply}
                       showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete} onPin={handlePin}
                       onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                       onEditChange={setEditContent}
@@ -782,7 +802,7 @@ export function ChatArea() {
                   <MessageActions
                     msgId={msg.id} content={msg.content} isOwn={isOwnG} canModerate={canModerate} isPinned={!!msg.pinnedAt}
                     isHovered={isHoveredG} isEditing={false} editContent={editContent}
-                    confirmDeleteId={confirmDeleteId} onCancelDelete={() => setConfirmDeleteId(null)}
+                    confirmDeleteId={confirmDeleteId} onCancelDelete={() => setConfirmDeleteId(null)} onReply={handleStartReply}
                     showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete} onPin={handlePin}
                     onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                     onEditChange={setEditContent}
@@ -824,6 +844,18 @@ export function ChatArea() {
                   )}
                 </div>
                 <div style={{ ...styles.messageContent, ...(msg.pending ? styles.pendingContent : {}) }}>
+                  {msg.replyTo && (
+                    <div
+                      className="reply-preview"
+                      onClick={() => jumpToMessage(msg.replyTo!.id, msg.replyTo!.createdAt)}
+                      title="Jump to original message"
+                    >
+                      <span className="reply-preview-author">
+                        {msg.replyTo.author?.displayName ?? "Unknown"}
+                      </span>
+                      <span className="reply-preview-content">{msg.replyTo.content}</span>
+                    </div>
+                  )}
                   <div style={styles.messageHeader}>
                     <span
                       style={{ ...styles.authorName, cursor: "pointer" }}
@@ -842,7 +874,7 @@ export function ChatArea() {
                     <MessageActions
                       msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate} isPinned={!!msg.pinnedAt}
                       isHovered={isHovered} isEditing={true} editContent={editContent}
-                      confirmDeleteId={confirmDeleteId} onCancelDelete={() => setConfirmDeleteId(null)}
+                      confirmDeleteId={confirmDeleteId} onCancelDelete={() => setConfirmDeleteId(null)} onReply={handleStartReply}
                       showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete} onPin={handlePin}
                       onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                       onEditChange={setEditContent}
@@ -865,7 +897,7 @@ export function ChatArea() {
                   <MessageActions
                     msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate} isPinned={!!msg.pinnedAt}
                     isHovered={isHovered} isEditing={false} editContent={editContent}
-                    confirmDeleteId={confirmDeleteId} onCancelDelete={() => setConfirmDeleteId(null)}
+                    confirmDeleteId={confirmDeleteId} onCancelDelete={() => setConfirmDeleteId(null)} onReply={handleStartReply}
                     showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete} onPin={handlePin}
                     onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                     onEditChange={setEditContent}
@@ -902,6 +934,20 @@ export function ChatArea() {
             }}
             onClose={() => setShowGifPicker(false)}
           />
+        )}
+        {replyTarget && (
+          <div className="reply-chip">
+            <span className="reply-chip-text">
+              Replying to <strong>{replyTarget.author?.displayName ?? "Unknown"}</strong>
+            </span>
+            <button
+              className="reply-chip-close"
+              onClick={() => setReplyTarget(null)}
+              title="Cancel reply (Esc)"
+            >
+              ×
+            </button>
+          </div>
         )}
         {typingText && <div style={styles.typingIndicator}>{typingText}</div>}
         {mention.isOpen && (
@@ -941,6 +987,10 @@ export function ChatArea() {
             onKeyDown={(e) => {
               mention.handleKeyDown(e);
               if (e.defaultPrevented) return;
+              if (e.key === "Escape" && replyTarget) {
+                setReplyTarget(null);
+                return;
+              }
               // Up arrow in empty input -> edit last own message
               if (e.key === "ArrowUp" && !input.trim()) {
                 const lastOwn = [...messages].reverse().find((m) => m.authorId === userId);
@@ -1031,6 +1081,7 @@ function MessageActions({
   confirmDeleteId,
   showReactionPicker,
   onReact,
+  onReply,
   onStartEdit,
   onDelete,
   onCancelDelete,
@@ -1050,6 +1101,7 @@ function MessageActions({
   confirmDeleteId: string | null;
   showReactionPicker: boolean;
   onReact: (msgId: string) => void;
+  onReply: (msgId: string) => void;
   onStartEdit: (id: string, content: string) => void;
   onDelete: (id: string, skipConfirm: boolean) => void;
   onCancelDelete: () => void;
@@ -1100,6 +1152,9 @@ function MessageActions({
         </div>
       )}
 
+      <button className="msg-action-btn" onClick={() => onReply(msgId)} title="Reply">
+        Reply
+      </button>
       <button className="msg-action-btn" onClick={() => onReact(msgId)} title="Add reaction">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="10" />

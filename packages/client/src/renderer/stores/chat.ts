@@ -123,7 +123,8 @@ export const useChatStore = create<ChatState>()((set) => ({
     })),
   updateMessage: (message) =>
     set((s) => ({
-      messages: s.messages.map((m) => (m.id === message.id ? message : m)),
+      // Merge so fields the payload omits (reactions, pinnedAt) survive an edit broadcast
+      messages: s.messages.map((m) => (m.id === message.id ? { ...m, ...message } : m)),
     })),
   removeMessage: (_channelId, messageId) =>
     set((s) => ({
