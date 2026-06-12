@@ -6,6 +6,7 @@ import { useChatStore } from "../stores/chat";
 import { useAuthStore } from "../stores/auth";
 import { usePresenceStore } from "../stores/presence";
 import { useVoiceStore } from "../stores/voice";
+import { toast } from "../stores/toast";
 import { ServerList } from "./ServerList";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { ChatArea } from "./ChatArea";
@@ -149,6 +150,9 @@ export function AppLayout() {
           break;
         case "unread_count":
           setUnreadCount(msg.channelId, msg.count);
+          break;
+        case "error":
+          toast(msg.message);
           break;
       }
     });

@@ -5,6 +5,7 @@ import { useAuthStore } from "../stores/auth";
 import { useVoiceStore } from "../stores/voice";
 import { ChannelType, Permissions, hasPermission, type VoiceParticipant } from "@concord/shared";
 import { api } from "../lib/api";
+import { toast } from "../stores/toast";
 import { playDisconnect } from "../lib/sounds";
 
 export function ChannelSidebar() {
@@ -43,20 +44,28 @@ export function ChannelSidebar() {
 
   const handleRename = useCallback(async () => {
     if (!renaming || !renaming.name.trim() || !serverId) return;
-    await api.renameChannel(renaming.channelId, renaming.name.trim());
-    const res = await api.getChannels(serverId);
-    setChannels(res.channels);
-    setRenaming(null);
+    try {
+      await api.renameChannel(renaming.channelId, renaming.name.trim());
+      const res = await api.getChannels(serverId);
+      setChannels(res.channels);
+      setRenaming(null);
+    } catch {
+      toast("Failed to rename channel");
+    }
   }, [renaming, serverId, setChannels]);
 
-  const handleDelete = useCallback(async (channelId: string) => {
+  const handleDelete = useCallback(async (targetChannelId: string) => {
     if (!serverId) return;
-    await api.deleteChannel(channelId);
-    const res = await api.getChannels(serverId);
-    setChannels(res.channels);
-    setConfirmDelete(null);
-    if (channelId === channelId) navigate(`/channels/${serverId}`);
-  }, [serverId, setChannels, navigate]);
+    try {
+      await api.deleteChannel(targetChannelId);
+      const res = await api.getChannels(serverId);
+      setChannels(res.channels);
+      setConfirmDelete(null);
+      if (targetChannelId === channelId) navigate(`/channels/${serverId}`);
+    } catch {
+      toast("Failed to delete channel");
+    }
+  }, [serverId, channelId, setChannels, navigate]);
   const voiceConnection = useVoiceStore((s) => s.connection);
   const voiceDisconnect = useVoiceStore((s) => s.disconnect);
   const voiceMuted = useVoiceStore((s) => s.isMuted);
@@ -88,7 +97,7 @@ export function ChannelSidebar() {
       setCreatingChannel(null);
       setNewChannelName("");
     } catch {
-      // ignore
+      toast("Failed to create channel");
     }
   };
 

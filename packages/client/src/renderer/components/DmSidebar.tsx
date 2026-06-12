@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { avatarColor, avatarUrl } from "../lib/avatar";
 import { usePresenceStore } from "../stores/presence";
+import { toast } from "../stores/toast";
 import { onWsMessage } from "../lib/ws";
 
 interface Conversation {
@@ -28,7 +29,7 @@ export function DmSidebar() {
   const [searching, setSearching] = useState(false);
 
   useEffect(() => {
-    api.getConversations().then((res) => setConversations(res.conversations)).catch(() => {});
+    api.getConversations().then((res) => setConversations(res.conversations)).catch(() => toast("Failed to load conversations"));
   }, []);
 
   // Update conversation list when new DMs arrive
@@ -70,7 +71,7 @@ export function DmSidebar() {
       setSearchResults([]);
       navigate(`/channels/@me/${conv.id}`);
     } catch {
-      // ignore
+      toast("Failed to start conversation");
     }
   }, [navigate]);
 

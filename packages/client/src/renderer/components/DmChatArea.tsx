@@ -4,6 +4,7 @@ import { useAuthStore } from "../stores/auth";
 import { api } from "../lib/api";
 import { avatarColor, avatarUrl } from "../lib/avatar";
 import { onWsMessage } from "../lib/ws";
+import { toast } from "../stores/toast";
 import { MarkdownContent } from "./MarkdownContent";
 
 interface DmMessage {
@@ -70,7 +71,7 @@ export function DmChatArea() {
       requestAnimationFrame(() => {
         messagesEndRef.current?.scrollIntoView();
       });
-    }).finally(() => setLoading(false));
+    }).catch(() => toast("Failed to load messages")).finally(() => setLoading(false));
   }, [conversationId]);
 
   // Listen for new DMs
@@ -103,6 +104,8 @@ export function DmChatArea() {
           container.scrollTop = container.scrollHeight - prevHeight;
         }
       });
+    } catch {
+      toast("Failed to load older messages");
     } finally {
       setLoadingMore(false);
     }
@@ -110,8 +113,13 @@ export function DmChatArea() {
 
   const handleSend = () => {
     if (!input.trim() || !conversationId) return;
-    api.sendDm(conversationId, input.trim()).catch(() => {});
+    const content = input.trim();
     setInput("");
+    api.sendDm(conversationId, content).catch(() => {
+      toast("Failed to send message");
+      // Restore the draft so it isn't lost
+      setInput((curr) => (curr.length > 0 ? curr : content));
+    });
   };
 
   if (!conversationId) {

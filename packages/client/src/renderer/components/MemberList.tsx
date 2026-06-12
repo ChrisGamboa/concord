@@ -3,6 +3,7 @@ import { ProfileCard } from "./ProfileCard";
 import { useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { usePresenceStore } from "../stores/presence";
+import { toast } from "../stores/toast";
 import type { ServerMember, PublicUser, Role } from "@concord/shared";
 import { avatarColor, avatarUrl } from "../lib/avatar";
 
@@ -26,7 +27,7 @@ export function MemberList() {
         .filter((m) => m.online)
         .map((m) => m.userId);
       setOnlineUsers(onlineIds);
-    });
+    }).catch(() => toast("Failed to load member list"));
     api.getRoles(serverId).then((res) => {
       setRoles(res.roles.filter((r) => r.position > 0)); // exclude @everyone
     }).catch(() => {});

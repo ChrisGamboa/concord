@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useChatStore } from "../stores/chat";
 import { useAuthStore } from "../stores/auth";
 import { usePresenceStore } from "../stores/presence";
+import { toast } from "../stores/toast";
 import { sendWs } from "../lib/ws";
 import { api } from "../lib/api";
 import { avatarColor, avatarUrl } from "../lib/avatar";
@@ -48,7 +49,6 @@ export function ChatArea() {
   const messagesLoading = useChatStore((s) => s.messagesLoading);
   const [input, setInput] = useState("");
   const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [hoveredMsgId, setHoveredMsgId] = useState<string | null>(null);
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
@@ -108,7 +108,7 @@ export function ChatArea() {
         displayName: m.user?.displayName ?? m.nickname ?? "",
         avatarUrl: m.user?.avatarUrl ?? null,
       })));
-    }).catch(() => {});
+    }).catch(() => toast("Failed to load server members"));
   }, [serverId]);
 
   // Build username -> userId map for mention rendering
@@ -137,6 +137,10 @@ export function ChatArea() {
       requestAnimationFrame(() => {
         messagesEndRef.current?.scrollIntoView();
       });
+    }).catch(() => {
+      if (stale) return;
+      setMessagesLoading(false);
+      toast("Failed to load messages");
     });
 
     sendWs({ type: "subscribe_channel", channelId });
@@ -160,6 +164,8 @@ export function ChatArea() {
           container.scrollTop = container.scrollHeight - prevHeight;
         }
       });
+    } catch {
+      toast("Failed to load older messages");
     } finally {
       setLoadingMore(false);
     }
@@ -217,9 +223,7 @@ export function ChatArea() {
           content: result.url,
         });
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Upload failed";
-        setUploadError(msg);
-        setTimeout(() => setUploadError(""), 5000);
+        toast(err instanceof Error ? err.message : "Upload failed");
       } finally {
         setUploading(false);
       }
@@ -284,7 +288,9 @@ export function ChatArea() {
         const res = await api.getMessages(channelId);
         setMessages(res.messages, res.hasMore);
       }
-    } catch { /* ignore */ }
+    } catch {
+      toast(msg.pinnedAt ? "Failed to unpin message" : "Failed to pin message");
+    }
   };
 
   // Pinned messages panel
@@ -292,7 +298,7 @@ export function ChatArea() {
   const [pinnedMessages, setPinnedMessages] = useState<Array<{ id: string; content: string; createdAt: string; author: any }>>([]);
   useEffect(() => {
     if (!showPins || !channelId) return;
-    api.getPinnedMessages(channelId).then((res) => setPinnedMessages(res.pins)).catch(() => {});
+    api.getPinnedMessages(channelId).then((res) => setPinnedMessages(res.pins)).catch(() => toast("Failed to load pinned messages"));
   }, [showPins, channelId]);
 
   // Message search
@@ -309,7 +315,10 @@ export function ChatArea() {
     const timer = setTimeout(() => {
       api.searchMessages({ q: searchQuery.trim(), serverId })
         .then((res) => setSearchResults(res.results))
-        .catch(() => setSearchResults([]))
+        .catch(() => {
+          setSearchResults([]);
+          toast("Search failed");
+        })
         .finally(() => setSearching(false));
     }, 300);
     return () => clearTimeout(timer);
@@ -615,7 +624,6 @@ export function ChatArea() {
             onClose={() => setShowGifPicker(false)}
           />
         )}
-        {uploadError && <div style={styles.uploadError}>{uploadError}</div>}
         {typingText && <div style={styles.typingIndicator}>{typingText}</div>}
         {mention.isOpen && (
           <MentionDropdown
@@ -1179,14 +1187,6 @@ const styles: Record<string, React.CSSProperties> = {
   },
   inputArea: {
     flexShrink: 0,
-  },
-  uploadError: {
-    padding: "6px 16px",
-    fontSize: "12px",
-    color: "var(--danger)",
-    background: "rgba(237, 66, 69, 0.1)",
-    borderRadius: "4px",
-    margin: "0 16px 4px",
   },
   typingIndicator: {
     padding: "0 16px 4px",

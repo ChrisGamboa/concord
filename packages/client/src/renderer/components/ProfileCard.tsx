@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { useAuthStore } from "../stores/auth";
 import { avatarColor, avatarUrl } from "../lib/avatar";
 import { usePresenceStore } from "../stores/presence";
+import { toast } from "../stores/toast";
 import type { Role } from "@concord/shared";
 
 interface ProfileCardProps {
@@ -145,7 +146,7 @@ export function ProfileCard({ userId, x, y, anchor = "left", onClose }: ProfileC
                 onClose();
                 navigate(`/channels/@me/${conv.id}`);
               } catch {
-                // ignore
+                toast("Failed to start conversation");
               }
             }}
           >

@@ -4,6 +4,7 @@ import { LoginPage } from "./components/LoginPage";
 import { RegisterPage } from "./components/RegisterPage";
 import { AppLayout } from "./components/AppLayout";
 import { UpdateBanner } from "./components/UpdateBanner";
+import { ToastContainer } from "./components/ToastContainer";
 
 export function App() {
   const token = useAuthStore((s) => s.token);
@@ -12,6 +13,7 @@ export function App() {
     <HashRouter>
       <div className="titlebar">Concord</div>
       <UpdateBanner />
+      <ToastContainer />
       <Routes>
         {!token ? (
           <>

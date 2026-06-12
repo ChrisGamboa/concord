@@ -7,6 +7,7 @@ import {
 } from "react";
 import { api } from "../lib/api";
 import { useVoiceStore } from "../stores/voice";
+import { toast } from "../stores/toast";
 import type { MusicSearchResult, MusicState } from "@concord/shared";
 
 export function MusicPlayer() {
@@ -54,6 +55,7 @@ export function MusicPlayer() {
       setSearchResults(res.results);
     } catch {
       setSearchResults([]);
+      toast("Music search failed");
     } finally {
       setSearching(false);
     }
@@ -78,15 +80,19 @@ export function MusicPlayer() {
   const handleAddToQueue = useCallback(
     async (result: MusicSearchResult) => {
       if (!voiceChannelId) return;
-      const state = await api.musicAddToQueue(voiceChannelId, {
-        url: result.url,
-        title: result.title,
-        duration: result.duration,
-        thumbnail: result.thumbnail ?? undefined,
-      });
-      setMusicState(state);
-      setSearchResults([]);
-      setSearchQuery("");
+      try {
+        const state = await api.musicAddToQueue(voiceChannelId, {
+          url: result.url,
+          title: result.title,
+          duration: result.duration,
+          thumbnail: result.thumbnail ?? undefined,
+        });
+        setMusicState(state);
+        setSearchResults([]);
+        setSearchQuery("");
+      } catch {
+        toast("Failed to add track to queue");
+      }
     },
     [voiceChannelId]
   );
@@ -94,36 +100,56 @@ export function MusicPlayer() {
   const handleRemoveFromQueue = useCallback(
     async (index: number) => {
       if (!voiceChannelId) return;
-      const state = await api.musicRemoveFromQueue(voiceChannelId, index);
-      setMusicState(state);
+      try {
+        const state = await api.musicRemoveFromQueue(voiceChannelId, index);
+        setMusicState(state);
+      } catch {
+        toast("Failed to remove track");
+      }
     },
     [voiceChannelId]
   );
 
   const handleClearQueue = useCallback(async () => {
     if (!voiceChannelId) return;
-    const state = await api.musicClearQueue(voiceChannelId);
-    setMusicState(state);
+    try {
+      const state = await api.musicClearQueue(voiceChannelId);
+      setMusicState(state);
+    } catch {
+      toast("Failed to clear queue");
+    }
   }, [voiceChannelId]);
 
   const handleSkip = useCallback(async () => {
     if (!voiceChannelId) return;
-    const state = await api.musicSkip(voiceChannelId);
-    setMusicState(state);
+    try {
+      const state = await api.musicSkip(voiceChannelId);
+      setMusicState(state);
+    } catch {
+      toast("Failed to skip track");
+    }
   }, [voiceChannelId]);
 
   const handlePauseResume = useCallback(async () => {
     if (!voiceChannelId) return;
-    const state = musicState?.isPaused
-      ? await api.musicResume(voiceChannelId)
-      : await api.musicPause(voiceChannelId);
-    setMusicState(state);
+    try {
+      const state = musicState?.isPaused
+        ? await api.musicResume(voiceChannelId)
+        : await api.musicPause(voiceChannelId);
+      setMusicState(state);
+    } catch {
+      toast("Failed to update playback");
+    }
   }, [voiceChannelId, musicState?.isPaused]);
 
   const handleStop = useCallback(async () => {
     if (!voiceChannelId) return;
-    const state = await api.musicStop(voiceChannelId);
-    setMusicState(state);
+    try {
+      const state = await api.musicStop(voiceChannelId);
+      setMusicState(state);
+    } catch {
+      toast("Failed to stop playback");
+    }
   }, [voiceChannelId]);
 
   if (!voiceChannelId) return null;

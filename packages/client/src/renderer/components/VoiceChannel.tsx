@@ -12,6 +12,7 @@ import { Track, VideoPresets } from "livekit-client";
 import { Permissions, hasPermission } from "@concord/shared";
 import { api } from "../lib/api";
 import { avatarColor, avatarUrl } from "../lib/avatar";
+import { toast } from "../stores/toast";
 import { playJoinSelf, playDisconnect, playUserJoined, playUserLeft } from "../lib/sounds";
 import { createRnnoiseTrack } from "../lib/rnnoise-processor";
 import { useVoiceStore } from "../stores/voice";
@@ -291,7 +292,11 @@ function ParticipantVolumeMenu({
             <button
               className="voice-ctx-mute"
               onClick={async () => {
-                await api.voiceMute(channelId, identity, true);
+                try {
+                  await api.voiceMute(channelId, identity, true);
+                } catch {
+                  toast("Failed to server-mute participant");
+                }
                 onAction?.();
               }}
             >
@@ -308,7 +313,11 @@ function ParticipantVolumeMenu({
               className="voice-ctx-mute"
               style={{ color: "var(--danger)" }}
               onClick={async () => {
-                await api.voiceKick(channelId, identity);
+                try {
+                  await api.voiceKick(channelId, identity);
+                } catch {
+                  toast("Failed to kick participant");
+                }
                 onAction?.();
               }}
             >
