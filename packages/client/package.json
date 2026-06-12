@@ -24,6 +24,7 @@
     "@livekit/components-styles": "^1.2.0",
     "@livekit/krisp-noise-filter": "^0.4.1",
     "@sapphi-red/web-noise-suppressor": "^0.3.5",
+    "@tanstack/react-virtual": "^3.14.2",
     "livekit-client": "^2.18.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

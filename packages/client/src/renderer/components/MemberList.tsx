@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { ProfileCard } from "./ProfileCard";
 import { useParams } from "react-router-dom";
 import { api } from "../lib/api";
@@ -104,8 +105,42 @@ export function MemberList() {
 
   const [profilePopup, setProfilePopup] = useState<{ userId: string; x: number; y: number } | null>(null);
 
+  // Flatten section headers and member rows into one virtualizable list
+  type MemberRow =
+    | { type: "header"; label: string }
+    | { type: "member"; member: MemberWithOnline; isOnline: boolean };
+  const rows = useMemo<MemberRow[]>(() => {
+    const result: MemberRow[] = [];
+    if (online.length > 0) {
+      result.push({ type: "header", label: `Online — ${online.length}` });
+      for (const m of online) result.push({ type: "member", member: m, isOnline: true });
+    }
+    if (offline.length > 0) {
+      result.push({ type: "header", label: `Offline — ${offline.length}` });
+      for (const m of offline) result.push({ type: "member", member: m, isOnline: false });
+    }
+    return result;
+  }, [online, offline]);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => containerRef.current,
+    estimateSize: (i) => (rows[i].type === "header" ? 28 : 40),
+    overscan: 10,
+    getItemKey: (i) => {
+      const row = rows[i];
+      return row.type === "header" ? row.label : row.member.userId;
+    },
+  });
+
+  const openCtxMenu = (member: MemberWithOnline, x: number, y: number) => {
+    setConfirmingBan(false);
+    setCtxMenu({ userId: member.userId, name: member.user?.displayName ?? "user", x, y });
+  };
+
   return (
-    <div style={styles.container}>
+    <div ref={containerRef} style={styles.container}>
       {members.length === 0 && (
         <div style={{ padding: "12px 8px", display: "flex", flexDirection: "column", gap: "8px" }}>
           {[0, 1, 2].map((i) => (
@@ -116,36 +151,40 @@ export function MemberList() {
           ))}
         </div>
       )}
-      {online.length > 0 && (
-        <div style={styles.section}>
-          <span style={styles.sectionLabel}>
-            Online — {online.length}
-          </span>
-          {online.map((m) => (
-            <MemberItem
-              key={m.userId} member={m} isOnline presence={statuses[m.userId] ?? "online"} roles={roles}
-              onClickProfile={(member, x, y) => setProfilePopup({ userId: member.userId, x, y })}
-              onContextMenu={canBan && m.userId !== myUserId && m.userId !== serverOwnerId
-                ? (member, x, y) => { setConfirmingBan(false); setCtxMenu({ userId: member.userId, name: member.user?.displayName ?? "user", x, y }); }
-                : undefined}
-            />
-          ))}
-        </div>
-      )}
-      {offline.length > 0 && (
-        <div style={styles.section}>
-          <span style={styles.sectionLabel}>
-            Offline — {offline.length}
-          </span>
-          {offline.map((m) => (
-            <MemberItem
-              key={m.userId} member={m} isOnline={false} presence="offline" roles={roles}
-              onClickProfile={(member, x, y) => setProfilePopup({ userId: member.userId, x, y })}
-              onContextMenu={canBan && m.userId !== myUserId && m.userId !== serverOwnerId
-                ? (member, x, y) => { setConfirmingBan(false); setCtxMenu({ userId: member.userId, name: member.user?.displayName ?? "user", x, y }); }
-                : undefined}
-            />
-          ))}
+      {rows.length > 0 && (
+        <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
+          {rowVirtualizer.getVirtualItems().map((vRow) => {
+            const row = rows[vRow.index];
+            return (
+              <div
+                key={vRow.key}
+                data-index={vRow.index}
+                ref={rowVirtualizer.measureElement}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${vRow.start}px)`,
+                }}
+              >
+                {row.type === "header" ? (
+                  <span style={styles.sectionLabel}>{row.label}</span>
+                ) : (
+                  <MemberItem
+                    member={row.member}
+                    isOnline={row.isOnline}
+                    presence={row.isOnline ? statuses[row.member.userId] ?? "online" : "offline"}
+                    roles={roles}
+                    onClickProfile={(member, x, y) => setProfilePopup({ userId: member.userId, x, y })}
+                    onContextMenu={canBan && row.member.userId !== myUserId && row.member.userId !== serverOwnerId
+                      ? openCtxMenu
+                      : undefined}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

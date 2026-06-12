@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type DragEvent } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type DragEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useChatStore } from "../stores/chat";
 import { useAuthStore } from "../stores/auth";
 import { usePresenceStore } from "../stores/presence";
@@ -132,7 +133,6 @@ export function ChatArea() {
     };
   }, [confirmDeleteId]);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -175,16 +175,43 @@ export function ChatArea() {
   // @mention autocomplete
   const mention = useMentionAutocomplete(members, input, cursorPos, setInput, chatInputRef);
 
+  // Virtualized message list: row 0 is the load-older header, row i+1 is messages[i].
+  // Rows are measured dynamically (images, embeds, code blocks vary in height).
+  const rowVirtualizer = useVirtualizer({
+    count: messages.length > 0 ? messages.length + 1 : 0,
+    getScrollElement: () => messagesContainerRef.current,
+    estimateSize: () => 56,
+    overscan: 12,
+    getItemKey: (i) => (i === 0 ? "__header" : messages[i - 1].id),
+  });
+
+  const scrollToBottom = useCallback((smooth = false) => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+  }, []);
+
+  // While the user sits at the bottom, keep them pinned there as rows measure in
+  // (late-loading images and embeds grow the total size after the initial scroll).
+  const totalSize = rowVirtualizer.getTotalSize();
+  useLayoutEffect(() => {
+    if (atBottomRef.current && !messagesLoading && !loadingMore) {
+      const el = messagesContainerRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }
+  }, [totalSize, messagesLoading, loadingMore]);
+
   // Scroll to a loaded message and flash-highlight it
   const focusMessage = useCallback((messageId: string) => {
     requestAnimationFrame(() => {
-      document.getElementById(`msg-${messageId}`)?.scrollIntoView({ block: "center" });
+      const idx = useChatStore.getState().messages.findIndex((m) => m.id === messageId);
+      if (idx !== -1) rowVirtualizer.scrollToIndex(idx + 1, { align: "center" });
     });
     setHighlightMsgId(messageId);
     setTimeout(() => {
       setHighlightMsgId((curr) => (curr === messageId ? null : curr));
     }, 2000);
-  }, []);
+  }, [rowVirtualizer]);
 
   // Load messages and subscribe to WS channel
   useEffect(() => {
@@ -226,9 +253,7 @@ export function ChatArea() {
           setUnreadMarkerId(res.messages[idx].id);
         }
         // Scroll to bottom after messages render
-        requestAnimationFrame(() => {
-          messagesEndRef.current?.scrollIntoView();
-        });
+        requestAnimationFrame(() => scrollToBottom());
       }).catch(() => {
         if (stale) return;
         setMessagesLoading(false);
@@ -272,34 +297,31 @@ export function ChatArea() {
       atBottomRef.current = true;
       setShowNewBelow(false);
       setMessages(res.messages, res.hasMore, true);
-      requestAnimationFrame(() => {
-        messagesEndRef.current?.scrollIntoView();
-      });
+      requestAnimationFrame(() => scrollToBottom());
     } catch {
       toast("Failed to load latest messages");
     }
-  }, [channelId, setMessages]);
+  }, [channelId, setMessages, scrollToBottom]);
 
-  // Load older messages
+  // Load older messages, keeping the previously-first message anchored in view
   const loadOlder = useCallback(async () => {
     if (!channelId || messages.length === 0 || loadingMore) return;
-    const container = messagesContainerRef.current;
-    const prevHeight = container?.scrollHeight ?? 0;
+    const anchorId = messages[0].id;
     setLoadingMore(true);
     try {
       const res = await api.getMessages(channelId, messages[0].createdAt);
       prependMessages(res.messages, res.hasMore);
       requestAnimationFrame(() => {
-        if (container) {
-          container.scrollTop = container.scrollHeight - prevHeight;
-        }
+        const fresh = useChatStore.getState().messages;
+        const idx = fresh.findIndex((m) => m.id === anchorId);
+        if (idx > 0) rowVirtualizer.scrollToIndex(idx + 1, { align: "start" });
       });
     } catch {
       toast("Failed to load older messages");
     } finally {
       setLoadingMore(false);
     }
-  }, [channelId, messages, loadingMore, prependMessages]);
+  }, [channelId, messages, loadingMore, prependMessages, rowVirtualizer]);
 
   const typingUsersMap = usePresenceStore((s) => s.typingUsers);
   const typingUsers = useMemo(() => {
@@ -324,7 +346,7 @@ export function ChatArea() {
     if (isFirstLoad) return; // initial scroll handled by the load effect
     const isOwn = last.authorId === userId;
     if (atBottomRef.current || isOwn) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      scrollToBottom(true);
       if (!isOwn && channelId && document.hasFocus()) {
         // Reading at the bottom keeps the channel marked as read
         sendWs({ type: "mark_read", channelId });
@@ -333,7 +355,7 @@ export function ChatArea() {
     } else if (!isOwn) {
       setShowNewBelow(true);
     }
-  }, [messages, userId, channelId]);
+  }, [messages, userId, channelId, scrollToBottom]);
 
   const handleMessagesScroll = useCallback(() => {
     const el = messagesContainerRef.current;
@@ -349,7 +371,7 @@ export function ChatArea() {
   }, [channelId]);
 
   const jumpToLatest = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    scrollToBottom(true);
     setShowNewBelow(false);
     if (channelId) {
       sendWs({ type: "mark_read", channelId });
@@ -750,17 +772,6 @@ export function ChatArea() {
       )}
 
       <div ref={messagesContainerRef} style={styles.messages} onScroll={handleMessagesScroll}>
-        {hasMore && !messagesLoading && (
-          <div style={styles.loadMoreContainer}>
-            <button
-              onClick={loadOlder}
-              disabled={loadingMore}
-              style={styles.loadMoreButton}
-            >
-              {loadingMore ? "Loading..." : "Load older messages"}
-            </button>
-          </div>
-        )}
         {messagesLoading && (
           <div style={styles.skeletonContainer}>
             {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -787,7 +798,45 @@ export function ChatArea() {
           </div>
         )}
 
-        {messages.map((msg, i) => {
+        {/* Virtualized rows: only what's near the viewport is mounted. Row 0 is
+            the load-older header; row i+1 renders messages[i]. */}
+        {!messagesLoading && messages.length > 0 && (
+        <div style={{ height: `${totalSize}px`, width: "100%", position: "relative" }}>
+        {rowVirtualizer.getVirtualItems().map((vRow) => {
+          const rowStyle: React.CSSProperties = {
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: "100%",
+            transform: `translateY(${vRow.start}px)`,
+          };
+
+          if (vRow.index === 0) {
+            return (
+              <div key={vRow.key} data-index={vRow.index} ref={rowVirtualizer.measureElement} style={rowStyle}>
+                {hasMore && (
+                  <div style={styles.loadMoreContainer}>
+                    <button
+                      onClick={loadOlder}
+                      disabled={loadingMore}
+                      style={styles.loadMoreButton}
+                    >
+                      {loadingMore ? "Loading..." : "Load older messages"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          const i = vRow.index - 1;
+          const msg = messages[i];
+          if (!msg) return null;
+          // Rows with an open popover/picker must stack above their neighbors
+          // (each transformed row is its own stacking context)
+          if (hoveredMsgId === msg.id || reactionPickerMsgId === msg.id || confirmDeleteId === msg.id) {
+            rowStyle.zIndex = 2;
+          }
           const prev = i > 0 ? messages[i - 1] : null;
           const msgDate = new Date(msg.createdAt);
           const prevDate = prev ? new Date(prev.createdAt) : null;
@@ -822,8 +871,8 @@ export function ChatArea() {
             const isEditingG = editingMsgId === msg.id;
 
             return (
+              <div key={vRow.key} data-index={vRow.index} ref={rowVirtualizer.measureElement} style={rowStyle}>
               <div
-                key={msg.id}
                 id={`msg-${msg.id}`}
                 className={`message-grouped hover-bg${highlightMsgId === msg.id ? " msg-highlight" : ""}`}
                 style={styles.messageGrouped}
@@ -870,6 +919,7 @@ export function ChatArea() {
                   />
                 )}
               </div>
+              </div>
             );
           }
 
@@ -878,7 +928,7 @@ export function ChatArea() {
           const isEditing = editingMsgId === msg.id;
 
           return (
-            <React.Fragment key={msg.id}>
+            <div key={vRow.key} data-index={vRow.index} ref={rowVirtualizer.measureElement} style={rowStyle}>
               {dateSeparator}
               {unreadDivider}
               <div
@@ -965,10 +1015,11 @@ export function ChatArea() {
                   />
                 )}
               </div>
-            </React.Fragment>
+            </div>
           );
         })}
-        <div ref={messagesEndRef} />
+        </div>
+        )}
       </div>
 
       <div style={{ ...styles.inputArea, position: "relative" as const }}>
