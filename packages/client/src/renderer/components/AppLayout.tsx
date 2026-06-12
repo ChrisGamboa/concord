@@ -17,6 +17,7 @@ import { MusicPlayer } from "./MusicPlayer";
 import { MemberList } from "./MemberList";
 import { SettingsPage } from "./SettingsPage";
 import { ServerSettings } from "./ServerSettings";
+import { QuickSwitcher } from "./QuickSwitcher";
 
 export function AppLayout() {
   const { serverId, channelId } = useParams();
@@ -103,6 +104,19 @@ export function AppLayout() {
   const { setUserOnline, setUserOffline, addTyping } = usePresenceStore();
   const [showSettings, setShowSettings] = useState(false);
   const [showServerSettings, setShowServerSettings] = useState(false);
+  const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
+
+  // Ctrl/Cmd+K opens the quick switcher
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setShowQuickSwitcher((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   const isDmView = serverId === "@me";
 
@@ -211,6 +225,7 @@ export function AppLayout() {
         </div>
         <MusicPlayer />
       </div>
+      {showQuickSwitcher && <QuickSwitcher onClose={() => setShowQuickSwitcher(false)} />}
       {showSettings && <SettingsPage onClose={() => setShowSettings(false)} />}
       {showServerSettings && serverId && !isDmView && (
         <ServerSettings serverId={serverId} onClose={() => setShowServerSettings(false)} />
