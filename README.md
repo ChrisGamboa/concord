@@ -38,8 +38,14 @@ Self-hostable Discord alternative built with TypeScript.
 ## Features
 
 - Text channels with real-time messaging (WebSocket)
+  - **Optimistic sending** -- messages appear instantly, with retry on failure
+  - **Message replies** -- quoted reply previews with click-to-jump to the original
+  - **Jump to message** -- search results and pins scroll to and highlight the message
 - **Reactions** -- emoji reactions on messages with animated pills, quick picker from hover menu
-- **Unread indicators** -- bold channel names with count badges, auto-mark-read on view
+- **Unread indicators** -- bold channel names with count badges, auto-mark-read on view, NEW divider at first unread, red @mention badges
+- **Notification muting** -- mute channels or whole servers (no badges, no desktop notifications)
+- **Quick switcher** -- Ctrl/Cmd+K fuzzy-jump to any server, channel, or DM
+- **Presence states** -- online, auto-idle after inactivity, and Do Not Disturb (suppresses notifications)
 - **Link previews** -- Open Graph embeds for shared URLs (YouTube oEmbed, generic HTML scraping)
 - **Image lightbox** -- click any image or GIF in chat for a full-screen preview
 - **GIF picker** -- search and send GIFs inline via Klipy API
@@ -66,6 +72,7 @@ Self-hostable Discord alternative built with TypeScript.
 - **Moderation tools**
   - Voice: kick participants, server-mute (admins)
   - Text: delete any user's messages (MANAGE_MESSAGES permission)
+  - **Bans**: ban members via right-click in the member list (BAN_MEMBERS permission), manage them in Server Settings > Bans
   - Actions available via right-click context menus
 - **User profiles** -- customizable display name, avatar (auto-cropped to 256x256 WebP), and custom status text
 - **Markdown in messages** -- bold, italic, strikethrough, inline code, code blocks, and auto-linked URLs
@@ -180,7 +187,9 @@ The Electron app opens with DevTools (in dev mode). Register an account and crea
 - Type in the message input and press Enter to send
 - Click the **GIF** button to search and send GIFs inline
 - Drag and drop files to upload, or click the `+` button next to the input
-- Hover over messages to react (smiley icon), edit, or delete
+- Hover over messages to **reply**, react (smiley icon), edit, or delete
+- Press **Ctrl/Cmd+K** to open the quick switcher and jump to any server, channel, or DM
+- Right-click a channel to **mute** it; use the bell icon in the channel sidebar header to mute the whole server
 - Click any image or GIF to open it in a **lightbox** (full-screen preview)
 - Format messages with **markdown**: `**bold**`, `*italic*`, `~~strikethrough~~`, `` `inline code` ``, and ```` ```code blocks``` ````
 - Type `@` to **mention** a user -- an autocomplete dropdown filters members as you type; mentions appear highlighted in the message
