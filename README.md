@@ -41,6 +41,8 @@ Self-hostable Discord alternative built with TypeScript.
   - **Optimistic sending** -- messages appear instantly, with retry on failure
   - **Message replies** -- quoted reply previews with click-to-jump to the original
   - **Jump to message** -- search results and pins scroll to and highlight the message
+  - **Virtualized rendering** -- message and member lists only mount what's on screen, so deep scrollback and large servers stay smooth
+- **Message search** -- server-wide search with `from:user`, `in:channel`, `before:`/`after:` date filters
 - **Reactions** -- emoji reactions on messages with animated pills, quick picker from hover menu
 - **Unread indicators** -- bold channel names with count badges, auto-mark-read on view, NEW divider at first unread, red @mention badges
 - **Notification muting** -- mute channels or whole servers (no badges, no desktop notifications)
@@ -50,7 +52,7 @@ Self-hostable Discord alternative built with TypeScript.
 - **Image lightbox** -- click any image or GIF in chat for a full-screen preview
 - **GIF picker** -- search and send GIFs inline via Klipy API
 - **Direct messages** -- 1:1 private conversations as a first-class route (`/channels/@me`), start a DM from any profile card or the conversation sidebar
-  - Full feature parity with channels: optimistic sends, reactions, editing/deletion, typing indicators, GIFs, emoji, uploads
+  - Full feature parity with channels: optimistic sends, replies, reactions, editing/deletion, typing indicators, GIFs, emoji, uploads
   - Unread badges on the DM icon and conversation list
 - Voice chat, video chat (1080p60), and screen sharing via LiveKit
   - **Video spotlight** -- click any video feed to focus it center-stage, others drop to a strip below
@@ -64,7 +66,7 @@ Self-hostable Discord alternative built with TypeScript.
   - Prefetches next track for near-gapless playback
   - Two-column panel layout (search + queue side by side)
 - **Per-participant volume control** -- right-click any participant to adjust their volume or mute them (client-side only)
-- **Server customization** -- server name, icon (auto-cropped to 128x128 WebP), invite links
+- **Server customization** -- server name, icon (auto-cropped to 128x128 WebP), invite links, drag-to-reorder channels
 - **Invite system** -- generate shareable invite codes, join via code instead of raw server IDs
 - **Roles & permissions** -- bitmask-based permission system with 12 granular permissions
   - Server Settings UI with Overview, Invites, and Roles tabs
@@ -192,6 +194,8 @@ The Electron app opens with DevTools (in dev mode). Register an account and crea
 - Hover over messages to **reply**, react (smiley icon), edit, or delete
 - Press **Ctrl/Cmd+K** to open the quick switcher and jump to any server, channel, or DM
 - Right-click a channel to **mute** it; use the bell icon in the channel sidebar header to mute the whole server
+- With MANAGE_CHANNELS, **drag channels** to reorder them within their category
+- Click the search icon to find messages; filter with `from:user`, `in:channel`, `before:`/`after:YYYY-MM-DD`
 - Click any image or GIF to open it in a **lightbox** (full-screen preview)
 - Format messages with **markdown**: `**bold**`, `*italic*`, `~~strikethrough~~`, `` `inline code` ``, and ```` ```code blocks``` ````
 - Type `@` to **mention** a user -- an autocomplete dropdown filters members as you type; mentions appear highlighted in the message
