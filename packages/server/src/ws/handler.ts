@@ -347,6 +347,25 @@ async function handleMessage(
       });
       break;
     }
+    case "dm_typing": {
+      const conv = await prisma.conversation.findUnique({
+        where: { id: msg.conversationId },
+      });
+      if (!conv || (conv.participant1 !== userId && conv.participant2 !== userId)) return;
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { username: true },
+      });
+      if (!user) return;
+      const otherId = conv.participant1 === userId ? conv.participant2 : conv.participant1;
+      sendToUser(otherId, {
+        type: "dm_typing",
+        conversationId: msg.conversationId,
+        userId,
+        username: user.username,
+      });
+      break;
+    }
     case "presence_set": {
       if (!["online", "idle", "dnd"].includes(msg.status)) return;
       setUserStatus(userId, msg.status);

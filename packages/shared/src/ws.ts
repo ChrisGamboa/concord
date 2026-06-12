@@ -12,6 +12,18 @@ import type {
 /** Presence a user can hold while connected; "offline" is derived from disconnection. */
 export type PresenceStatus = "online" | "idle" | "dnd";
 
+/** Direct message payload carried by dm_created/dm_updated. */
+export interface DmMessagePayload {
+  id: string;
+  conversationId: string;
+  authorId: string;
+  content: string;
+  createdAt: string;
+  editedAt: string | null;
+  reactions?: ReactionGroup[];
+  author?: any;
+}
+
 // Client -> Server
 export type ClientMessage =
   // nonce: client-generated id echoed back in message_created so the sender
@@ -24,7 +36,8 @@ export type ClientMessage =
   | { type: "unsubscribe_channel"; channelId: ChannelId }
   | { type: "mark_read"; channelId: ChannelId }
   | { type: "toggle_reaction"; messageId: MessageId; emoji: string }
-  | { type: "presence_set"; status: PresenceStatus };
+  | { type: "presence_set"; status: PresenceStatus }
+  | { type: "dm_typing"; conversationId: string };
 
 // Server -> Client
 export type ServerMessage =
@@ -38,7 +51,11 @@ export type ServerMessage =
       status: PresenceStatus | "offline";
     }
   | { type: "reaction_update"; channelId: ChannelId; messageId: MessageId; reactions: ReactionGroup[] }
-  | { type: "dm_created"; message: { id: string; conversationId: string; authorId: string; content: string; createdAt: string; author?: any } }
+  | { type: "dm_created"; message: DmMessagePayload }
+  | { type: "dm_updated"; message: DmMessagePayload }
+  | { type: "dm_deleted"; conversationId: string; messageId: string }
+  | { type: "dm_reaction_update"; conversationId: string; messageId: string; reactions: ReactionGroup[] }
+  | { type: "dm_typing"; conversationId: string; userId: UserId; username: string }
   | { type: "unread_count"; channelId: ChannelId; count: number; mentions?: number }
   | { type: "error"; message: string }
   | { type: "ready"; userId: UserId; sessionId: string };

@@ -2,6 +2,16 @@ import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "../db.js";
 import { sendToUser } from "../ws/connections.js";
 
+function groupReactions(reactions: Array<{ emoji: string; userId: string }>) {
+  const groups: Record<string, string[]> = {};
+  for (const r of reactions) (groups[r.emoji] ??= []).push(r.userId);
+  return Object.entries(groups).map(([emoji, userIds]) => ({ emoji, count: userIds.length, userIds }));
+}
+
+const DM_AUTHOR_SELECT = {
+  select: { id: true, username: true, displayName: true, avatarUrl: true, status: true },
+} as const;
+
 export const dmRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", app.authenticate);
 
@@ -82,7 +92,8 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
           ...(before ? { createdAt: { lt: new Date(before) } } : {}),
         },
         include: {
-          author: { select: { id: true, username: true, displayName: true, avatarUrl: true, status: true } },
+          author: DM_AUTHOR_SELECT,
+          reactions: { select: { emoji: true, userId: true } },
         },
         orderBy: { createdAt: "desc" },
         take: limit + 1,
@@ -98,6 +109,8 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
           authorId: m.authorId,
           content: m.content,
           createdAt: m.createdAt.toISOString(),
+          editedAt: m.editedAt?.toISOString() ?? null,
+          reactions: groupReactions(m.reactions),
           author: m.author,
         })),
         hasMore,
@@ -124,9 +137,7 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
 
       const dm = await prisma.directMessage.create({
         data: { conversationId, authorId: userId, content: content.trim() },
-        include: {
-          author: { select: { id: true, username: true, displayName: true, avatarUrl: true, status: true } },
-        },
+        include: { author: DM_AUTHOR_SELECT },
       });
 
       const msg = {
@@ -135,15 +146,141 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
         authorId: dm.authorId,
         content: dm.content,
         createdAt: dm.createdAt.toISOString(),
+        editedAt: null,
+        reactions: [],
         author: dm.author,
       };
 
       // Send to both participants via WS
       const otherId = conv.participant1 === userId ? conv.participant2 : conv.participant1;
-      sendToUser(userId, { type: "dm_created", message: msg } as any);
-      sendToUser(otherId, { type: "dm_created", message: msg } as any);
+      sendToUser(userId, { type: "dm_created", message: msg });
+      sendToUser(otherId, { type: "dm_created", message: msg });
 
       return msg;
+    }
+  );
+
+  // Edit a DM (author only)
+  app.patch<{ Params: { messageId: string }; Body: { content: string } }>(
+    "/messages/:messageId",
+    async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      const { messageId } = request.params;
+      const { content } = request.body;
+
+      if (!content?.trim() || content.length > 4000) {
+        return reply.code(400).send({ error: "Message must be 1-4000 characters" });
+      }
+
+      const existing = await prisma.directMessage.findUnique({
+        where: { id: messageId },
+        include: { conversation: true },
+      });
+      if (!existing) return reply.code(404).send({ error: "Message not found" });
+      if (existing.authorId !== userId) return reply.code(403).send({ error: "Not your message" });
+
+      const updated = await prisma.directMessage.update({
+        where: { id: messageId },
+        data: { content: content.trim(), editedAt: new Date() },
+        include: {
+          author: DM_AUTHOR_SELECT,
+          reactions: { select: { emoji: true, userId: true } },
+        },
+      });
+
+      const msg = {
+        id: updated.id,
+        conversationId: updated.conversationId,
+        authorId: updated.authorId,
+        content: updated.content,
+        createdAt: updated.createdAt.toISOString(),
+        editedAt: updated.editedAt?.toISOString() ?? null,
+        reactions: groupReactions(updated.reactions),
+        author: updated.author,
+      };
+
+      sendToUser(existing.conversation.participant1, { type: "dm_updated", message: msg });
+      sendToUser(existing.conversation.participant2, { type: "dm_updated", message: msg });
+
+      return msg;
+    }
+  );
+
+  // Delete a DM (author only)
+  app.delete<{ Params: { messageId: string } }>(
+    "/messages/:messageId",
+    async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      const { messageId } = request.params;
+
+      const existing = await prisma.directMessage.findUnique({
+        where: { id: messageId },
+        include: { conversation: true },
+      });
+      if (!existing) return reply.code(404).send({ error: "Message not found" });
+      if (existing.authorId !== userId) return reply.code(403).send({ error: "Not your message" });
+
+      await prisma.directMessage.delete({ where: { id: messageId } });
+
+      const event = {
+        type: "dm_deleted" as const,
+        conversationId: existing.conversationId,
+        messageId: existing.id,
+      };
+      sendToUser(existing.conversation.participant1, event);
+      sendToUser(existing.conversation.participant2, event);
+
+      return { deleted: true };
+    }
+  );
+
+  // Toggle a reaction on a DM (participants only)
+  app.post<{ Params: { messageId: string }; Body: { emoji: string } }>(
+    "/messages/:messageId/reactions",
+    async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      const { messageId } = request.params;
+      const { emoji } = request.body;
+
+      if (!emoji || emoji.length > 16) {
+        return reply.code(400).send({ error: "Invalid emoji" });
+      }
+
+      const message = await prisma.directMessage.findUnique({
+        where: { id: messageId },
+        include: { conversation: true },
+      });
+      if (!message) return reply.code(404).send({ error: "Message not found" });
+      const { participant1, participant2 } = message.conversation;
+      if (userId !== participant1 && userId !== participant2) {
+        return reply.code(403).send({ error: "Not a participant" });
+      }
+
+      const existing = await prisma.dmReaction.findUnique({
+        where: { messageId_userId_emoji: { messageId, userId, emoji } },
+      });
+      if (existing) {
+        await prisma.dmReaction.delete({ where: { id: existing.id } });
+      } else {
+        await prisma.dmReaction.create({ data: { messageId, userId, emoji } });
+      }
+
+      const reactions = await prisma.dmReaction.findMany({
+        where: { messageId },
+        select: { emoji: true, userId: true },
+      });
+      const groups = groupReactions(reactions);
+
+      const event = {
+        type: "dm_reaction_update" as const,
+        conversationId: message.conversationId,
+        messageId,
+        reactions: groups,
+      };
+      sendToUser(participant1, event);
+      sendToUser(participant2, event);
+
+      return { reactions: groups };
     }
   );
 };
