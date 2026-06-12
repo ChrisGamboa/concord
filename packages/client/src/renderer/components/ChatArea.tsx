@@ -1,31 +1,22 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type DragEvent } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type DragEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useVirtualizer } from "@tanstack/react-virtual";
-import { useChatStore } from "../stores/chat";
+import { useChatStore, type ChatMessage } from "../stores/chat";
 import { useAuthStore } from "../stores/auth";
 import { usePresenceStore } from "../stores/presence";
 import { toast } from "../stores/toast";
 import { sendWs } from "../lib/ws";
 import { api } from "../lib/api";
 import { avatarColor, avatarUrl } from "../lib/avatar";
-import { Permissions, hasPermission, type ReactionGroup, type MessageReference } from "@concord/shared";
+import { Permissions, hasPermission, type MessageReference } from "@concord/shared";
 import { GifPicker } from "./GifPicker";
-import { LinkPreview } from "./LinkPreview";
 import { Lightbox } from "./Lightbox";
 import { ProfileCard } from "./ProfileCard";
-import { MarkdownContent } from "./MarkdownContent";
 import { MentionDropdown, useMentionAutocomplete } from "./MentionAutocomplete";
 import { EmojiPicker } from "./EmojiPicker";
+import { MessageList, type MessageListHandle } from "./chat/MessageList";
+import { MessageActions, MessageBody, ReactionBar, SendFailureNotice } from "./chat/MessageParts";
 
-const IMAGE_REGEX = /\.(png|jpe?g|gif|webp)$/i;
-const UPLOAD_URL_REGEX = /^\/uploads\/.+/;
-import { SERVER_URL as SERVER_BASE } from "../lib/config";
-const GROUP_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 const SEND_TIMEOUT_MS = 10_000; // mark a send as failed if unconfirmed after this
-
-function isImageUrl(text: string): boolean {
-  return IMAGE_REGEX.test(text) || (UPLOAD_URL_REGEX.test(text) && IMAGE_REGEX.test(text));
-}
 
 /** Extract from:/in:/before:/after: filter tokens from a search query. */
 function parseSearchQuery(raw: string) {
@@ -49,16 +40,6 @@ function parseSearchQuery(raw: string) {
     }
   }
   return { text: textParts.join(" "), from, inChannel, before, after };
-}
-
-function formatDateSeparator(date: Date): string {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const diffDays = Math.round((today.getTime() - target.getTime()) / 86400000);
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  return date.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
 }
 
 export function ChatArea() {
@@ -89,14 +70,9 @@ export function ChatArea() {
   const [profilePopup, setProfilePopup] = useState<{ userId: string; x: number; y: number } | null>(null);
   const [cursorPos, setCursorPos] = useState(0);
   const chatInputRef = useRef<HTMLInputElement>(null);
-  // Scroll-follow state: only auto-scroll when the user is already at the bottom
-  const atBottomRef = useRef(true);
-  const lastMsgIdRef = useRef<string | null>(null);
-  const [showNewBelow, setShowNewBelow] = useState(false);
+  const listRef = useRef<MessageListHandle>(null);
   // First unread message on channel entry (where the NEW divider renders)
   const [unreadMarkerId, setUnreadMarkerId] = useState<string | null>(null);
-  // Message briefly flash-highlighted after a jump
-  const [highlightMsgId, setHighlightMsgId] = useState<string | null>(null);
   // Message currently being replied to (consumed by the next send)
   const [replyTarget, setReplyTarget] = useState<MessageReference | null>(null);
 
@@ -133,7 +109,6 @@ export function ChatArea() {
     };
   }, [confirmDeleteId]);
 
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { serverId } = useParams() as { serverId?: string };
@@ -175,43 +150,9 @@ export function ChatArea() {
   // @mention autocomplete
   const mention = useMentionAutocomplete(members, input, cursorPos, setInput, chatInputRef);
 
-  // Virtualized message list: row 0 is the load-older header, row i+1 is messages[i].
-  // Rows are measured dynamically (images, embeds, code blocks vary in height).
-  const rowVirtualizer = useVirtualizer({
-    count: messages.length > 0 ? messages.length + 1 : 0,
-    getScrollElement: () => messagesContainerRef.current,
-    estimateSize: () => 56,
-    overscan: 12,
-    getItemKey: (i) => (i === 0 ? "__header" : messages[i - 1].id),
-  });
-
-  const scrollToBottom = useCallback((smooth = false) => {
-    const el = messagesContainerRef.current;
-    if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
-  }, []);
-
-  // While the user sits at the bottom, keep them pinned there as rows measure in
-  // (late-loading images and embeds grow the total size after the initial scroll).
-  const totalSize = rowVirtualizer.getTotalSize();
-  useLayoutEffect(() => {
-    if (atBottomRef.current && !messagesLoading && !loadingMore) {
-      const el = messagesContainerRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-    }
-  }, [totalSize, messagesLoading, loadingMore]);
-
-  // Scroll to a loaded message and flash-highlight it
   const focusMessage = useCallback((messageId: string) => {
-    requestAnimationFrame(() => {
-      const idx = useChatStore.getState().messages.findIndex((m) => m.id === messageId);
-      if (idx !== -1) rowVirtualizer.scrollToIndex(idx + 1, { align: "center" });
-    });
-    setHighlightMsgId(messageId);
-    setTimeout(() => {
-      setHighlightMsgId((curr) => (curr === messageId ? null : curr));
-    }, 2000);
-  }, [rowVirtualizer]);
+    listRef.current?.focusMessage(messageId);
+  }, []);
 
   // Load messages and subscribe to WS channel
   useEffect(() => {
@@ -219,9 +160,6 @@ export function ChatArea() {
     let stale = false;
     setActiveChannel(channelId);
     setMessagesLoading(true);
-    atBottomRef.current = true;
-    lastMsgIdRef.current = null;
-    setShowNewBelow(false);
     setUnreadMarkerId(null);
     setReplyTarget(null);
 
@@ -233,8 +171,6 @@ export function ChatArea() {
       const before = new Date(new Date(jump.createdAt).getTime() + 1).toISOString();
       api.getMessages(channelId, before).then((res) => {
         if (stale) return;
-        lastMsgIdRef.current = res.messages[res.messages.length - 1]?.id ?? null;
-        atBottomRef.current = false;
         setMessages(res.messages, res.hasMore, false);
         focusMessage(jump.messageId);
       }).catch(() => {
@@ -253,7 +189,7 @@ export function ChatArea() {
           setUnreadMarkerId(res.messages[idx].id);
         }
         // Scroll to bottom after messages render
-        requestAnimationFrame(() => scrollToBottom());
+        requestAnimationFrame(() => listRef.current?.scrollToBottom());
       }).catch(() => {
         if (stale) return;
         setMessagesLoading(false);
@@ -279,8 +215,6 @@ export function ChatArea() {
     try {
       const before = new Date(new Date(createdAt).getTime() + 1).toISOString();
       const res = await api.getMessages(channelId, before);
-      lastMsgIdRef.current = res.messages[res.messages.length - 1]?.id ?? null;
-      atBottomRef.current = false;
       setMessages(res.messages, res.hasMore, false);
       focusMessage(messageId);
     } catch {
@@ -293,35 +227,26 @@ export function ChatArea() {
     if (!channelId) return;
     try {
       const res = await api.getMessages(channelId);
-      lastMsgIdRef.current = res.messages[res.messages.length - 1]?.id ?? null;
-      atBottomRef.current = true;
-      setShowNewBelow(false);
       setMessages(res.messages, res.hasMore, true);
-      requestAnimationFrame(() => scrollToBottom());
+      requestAnimationFrame(() => listRef.current?.scrollToBottom());
     } catch {
       toast("Failed to load latest messages");
     }
-  }, [channelId, setMessages, scrollToBottom]);
+  }, [channelId, setMessages]);
 
-  // Load older messages, keeping the previously-first message anchored in view
+  // Load older messages (MessageList keeps the viewport anchored on prepend)
   const loadOlder = useCallback(async () => {
     if (!channelId || messages.length === 0 || loadingMore) return;
-    const anchorId = messages[0].id;
     setLoadingMore(true);
     try {
       const res = await api.getMessages(channelId, messages[0].createdAt);
       prependMessages(res.messages, res.hasMore);
-      requestAnimationFrame(() => {
-        const fresh = useChatStore.getState().messages;
-        const idx = fresh.findIndex((m) => m.id === anchorId);
-        if (idx > 0) rowVirtualizer.scrollToIndex(idx + 1, { align: "start" });
-      });
     } catch {
       toast("Failed to load older messages");
     } finally {
       setLoadingMore(false);
     }
-  }, [channelId, messages, loadingMore, prependMessages, rowVirtualizer]);
+  }, [channelId, messages, loadingMore, prependMessages]);
 
   const typingUsersMap = usePresenceStore((s) => s.typingUsers);
   const typingUsers = useMemo(() => {
@@ -335,48 +260,11 @@ export function ChatArea() {
     return result;
   }, [channelId, typingUsersMap]);
 
-  // Follow new messages only when already at the bottom (or when it's our own send).
-  // Otherwise show the "new messages" pill instead of yanking the scroll position.
-  useEffect(() => {
-    const last = messages[messages.length - 1];
-    if (!last) return;
-    if (last.id === lastMsgIdRef.current) return; // edit/reaction/prepend, not a new tail
-    const isFirstLoad = lastMsgIdRef.current === null;
-    lastMsgIdRef.current = last.id;
-    if (isFirstLoad) return; // initial scroll handled by the load effect
-    const isOwn = last.authorId === userId;
-    if (atBottomRef.current || isOwn) {
-      scrollToBottom(true);
-      if (!isOwn && channelId && document.hasFocus()) {
-        // Reading at the bottom keeps the channel marked as read
-        sendWs({ type: "mark_read", channelId });
-        useChatStore.getState().setUnreadCount(channelId, 0);
-      }
-    } else if (!isOwn) {
-      setShowNewBelow(true);
-    }
-  }, [messages, userId, channelId, scrollToBottom]);
-
-  const handleMessagesScroll = useCallback(() => {
-    const el = messagesContainerRef.current;
-    if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-    atBottomRef.current = atBottom;
-    if (atBottom) {
-      setShowNewBelow(false);
-      if (channelId && document.hasFocus()) {
-        useChatStore.getState().setUnreadCount(channelId, 0);
-      }
-    }
-  }, [channelId]);
-
-  const jumpToLatest = useCallback(() => {
-    scrollToBottom(true);
-    setShowNewBelow(false);
-    if (channelId) {
-      sendWs({ type: "mark_read", channelId });
-      useChatStore.getState().setUnreadCount(channelId, 0);
-    }
+  // Reading at the bottom keeps the channel marked as read
+  const handleTailRead = useCallback(() => {
+    if (!channelId) return;
+    sendWs({ type: "mark_read", channelId });
+    useChatStore.getState().setUnreadCount(channelId, 0);
   }, [channelId]);
 
   const sendTyping = useCallback(() => {
@@ -771,23 +659,19 @@ export function ChatArea() {
         </div>
       )}
 
-      <div ref={messagesContainerRef} style={styles.messages} onScroll={handleMessagesScroll}>
-        {messagesLoading && (
-          <div style={styles.skeletonContainer}>
-            {[0, 1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="skeleton-message">
-                <div className="skeleton-avatar skeleton-pulse" />
-                <div className="skeleton-content">
-                  <div className="skeleton-header skeleton-pulse" style={{ width: `${60 + (i % 3) * 30}px` }} />
-                  <div className="skeleton-line skeleton-pulse" style={{ width: `${120 + (i % 4) * 50}px` }} />
-                  {i % 2 === 0 && <div className="skeleton-line skeleton-pulse" style={{ width: `${80 + (i % 3) * 40}px` }} />}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {!messagesLoading && messages.length === 0 && (
+      <MessageList<ChatMessage>
+        ref={listRef}
+        messages={messages}
+        loading={messagesLoading}
+        hasMore={hasMore}
+        loadingMore={loadingMore}
+        onLoadOlder={loadOlder}
+        currentUserId={userId}
+        unreadMarkerId={unreadMarkerId}
+        resetKey={channelId ?? ""}
+        onTailRead={handleTailRead}
+        rowElevated={(m) => hoveredMsgId === m.id || reactionPickerMsgId === m.id || confirmDeleteId === m.id}
+        emptyState={
           <div style={styles.emptyState}>
             <h2 style={styles.emptyTitle}>
               Welcome to #{channel?.name ?? "channel"}
@@ -796,105 +680,40 @@ export function ChatArea() {
               This is the beginning of the #{channel?.name ?? "channel"} channel.
             </p>
           </div>
-        )}
+        }
+        renderMessage={(msg, { isGrouped }) => {
+          const isOwn = msg.authorId === userId;
+          const isHovered = hoveredMsgId === msg.id;
+          const isEditing = editingMsgId === msg.id;
 
-        {/* Virtualized rows: only what's near the viewport is mounted. Row 0 is
-            the load-older header; row i+1 renders messages[i]. */}
-        {!messagesLoading && messages.length > 0 && (
-        <div style={{ height: `${totalSize}px`, width: "100%", position: "relative" }}>
-        {rowVirtualizer.getVirtualItems().map((vRow) => {
-          const rowStyle: React.CSSProperties = {
-            position: "absolute",
-            top: 0,
-            left: 0,
-            width: "100%",
-            transform: `translateY(${vRow.start}px)`,
-          };
-
-          if (vRow.index === 0) {
-            return (
-              <div key={vRow.key} data-index={vRow.index} ref={rowVirtualizer.measureElement} style={rowStyle}>
-                {hasMore && (
-                  <div style={styles.loadMoreContainer}>
-                    <button
-                      onClick={loadOlder}
-                      disabled={loadingMore}
-                      style={styles.loadMoreButton}
-                    >
-                      {loadingMore ? "Loading..." : "Load older messages"}
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          }
-
-          const i = vRow.index - 1;
-          const msg = messages[i];
-          if (!msg) return null;
-          // Rows with an open popover/picker must stack above their neighbors
-          // (each transformed row is its own stacking context)
-          if (hoveredMsgId === msg.id || reactionPickerMsgId === msg.id || confirmDeleteId === msg.id) {
-            rowStyle.zIndex = 2;
-          }
-          const prev = i > 0 ? messages[i - 1] : null;
-          const msgDate = new Date(msg.createdAt);
-          const prevDate = prev ? new Date(prev.createdAt) : null;
-          const showDateSep = !prevDate ||
-            msgDate.toDateString() !== prevDate.toDateString();
-
-          const isUnreadMarker = msg.id === unreadMarkerId;
-
-          const isGrouped =
-            !showDateSep &&
-            !isUnreadMarker &&
-            !msg.replyTo &&
-            prev !== null &&
-            prev.authorId === msg.authorId &&
-            msgDate.getTime() - prevDate!.getTime() < GROUP_THRESHOLD_MS;
-
-          const dateSeparator = showDateSep ? (
-            <div key={`sep-${msg.id}`} className="date-separator">
-              <span className="date-separator-text">{formatDateSeparator(msgDate)}</span>
-            </div>
-          ) : null;
-
-          const unreadDivider = isUnreadMarker ? (
-            <div key={`new-${msg.id}`} className="unread-divider">
-              <span className="unread-divider-label">NEW</span>
-            </div>
-          ) : null;
+          const actions = (editing: boolean) => (
+            <MessageActions
+              msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate} isPinned={!!msg.pinnedAt}
+              isHovered={isHovered} isEditing={editing} editContent={editContent}
+              confirmDeleteId={confirmDeleteId} onCancelDelete={() => setConfirmDeleteId(null)} onReply={handleStartReply}
+              showReactionPicker={reactionPickerMsgId === msg.id}
+              onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)}
+              onToggleReaction={(id, emoji) => sendWs({ type: "toggle_reaction", messageId: id, emoji })}
+              onStartEdit={handleStartEdit} onDelete={handleDelete} onPin={handlePin}
+              onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
+              onEditChange={setEditContent}
+            />
+          );
 
           if (isGrouped) {
-            const isOwnG = msg.authorId === userId;
-            const isHoveredG = hoveredMsgId === msg.id;
-            const isEditingG = editingMsgId === msg.id;
-
             return (
-              <div key={vRow.key} data-index={vRow.index} ref={rowVirtualizer.measureElement} style={rowStyle}>
               <div
-                id={`msg-${msg.id}`}
-                className={`message-grouped hover-bg${highlightMsgId === msg.id ? " msg-highlight" : ""}`}
+                className="message-grouped hover-bg"
                 style={styles.messageGrouped}
                 onMouseEnter={() => setHoveredMsgId(msg.id)}
                 onMouseLeave={() => setHoveredMsgId(null)}
               >
                 <span className="grouped-timestamp" style={styles.groupedTimestamp}>
-                  {new Date(msg.createdAt).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+                  {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                 </span>
                 <div style={{ ...styles.groupedContent, ...(msg.pending ? styles.pendingContent : {}) }}>
-                  {isEditingG ? (
-                    <MessageActions
-                      msgId={msg.id} content={msg.content} isOwn={isOwnG} canModerate={canModerate} isPinned={!!msg.pinnedAt}
-                      isHovered={isHoveredG} isEditing={true} editContent={editContent}
-                      confirmDeleteId={confirmDeleteId} onCancelDelete={() => setConfirmDeleteId(null)} onReply={handleStartReply}
-                      showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete} onPin={handlePin}
-                      onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
-                      onEditChange={setEditContent}
-                    />
+                  {isEditing ? (
+                    actions(true)
                   ) : (
                     <>
                       <MessageBody content={msg.content} onImageClick={setLightboxSrc} mentionUsers={mentionUsers} />
@@ -908,134 +727,89 @@ export function ChatArea() {
                     </>
                   )}
                 </div>
-                {!isEditingG && !msg.pending && !msg.failed && (
-                  <MessageActions
-                    msgId={msg.id} content={msg.content} isOwn={isOwnG} canModerate={canModerate} isPinned={!!msg.pinnedAt}
-                    isHovered={isHoveredG} isEditing={false} editContent={editContent}
-                    confirmDeleteId={confirmDeleteId} onCancelDelete={() => setConfirmDeleteId(null)} onReply={handleStartReply}
-                    showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete} onPin={handlePin}
-                    onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
-                    onEditChange={setEditContent}
-                  />
-                )}
-              </div>
+                {!isEditing && !msg.pending && !msg.failed && actions(false)}
               </div>
             );
           }
 
-          const isOwn = msg.authorId === userId;
-          const isHovered = hoveredMsgId === msg.id;
-          const isEditing = editingMsgId === msg.id;
-
           return (
-            <div key={vRow.key} data-index={vRow.index} ref={rowVirtualizer.measureElement} style={rowStyle}>
-              {dateSeparator}
-              {unreadDivider}
+            <div
+              className="hover-bg"
+              style={styles.message}
+              onMouseEnter={() => setHoveredMsgId(msg.id)}
+              onMouseLeave={() => setHoveredMsgId(null)}
+            >
               <div
-                id={`msg-${msg.id}`}
-                className={`hover-bg${highlightMsgId === msg.id ? " msg-highlight" : ""}`}
-                style={styles.message}
-                onMouseEnter={() => setHoveredMsgId(msg.id)}
-                onMouseLeave={() => setHoveredMsgId(null)}
+                style={{ cursor: "pointer", flexShrink: 0, alignSelf: "flex-start" }}
+                onClick={(e) => { e.stopPropagation(); setProfilePopup({ userId: msg.authorId, x: e.clientX, y: e.clientY }); }}
               >
-                <div
-                  style={{ cursor: "pointer", flexShrink: 0, alignSelf: "flex-start" }}
-                  onClick={(e) => { e.stopPropagation(); setProfilePopup({ userId: msg.authorId, x: e.clientX, y: e.clientY }); }}
-                >
-                  {avatarUrl(msg.author?.avatarUrl) ? (
-                    <img
-                      style={{ ...styles.avatar, objectFit: "cover" }}
-                      src={avatarUrl(msg.author?.avatarUrl)!}
-                      alt=""
-                    />
-                  ) : (
-                    <div style={{ ...styles.avatar, background: avatarColor(msg.authorId) }}>
-                      {(msg.author?.displayName ?? "?").charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                </div>
-                <div style={{ ...styles.messageContent, ...(msg.pending ? styles.pendingContent : {}) }}>
-                  {msg.replyTo && (
-                    <div
-                      className="reply-preview"
-                      onClick={() => jumpToMessage(msg.replyTo!.id, msg.replyTo!.createdAt)}
-                      title="Jump to original message"
-                    >
-                      <span className="reply-preview-author">
-                        {msg.replyTo.author?.displayName ?? "Unknown"}
-                      </span>
-                      <span className="reply-preview-content">{msg.replyTo.content}</span>
-                    </div>
-                  )}
-                  <div style={styles.messageHeader}>
-                    <span
-                      style={{ ...styles.authorName, cursor: "pointer" }}
-                      onClick={(e) => { e.stopPropagation(); setProfilePopup({ userId: msg.authorId, x: e.clientX, y: e.clientY }); }}
-                    >
-                      {msg.author?.displayName ?? "Unknown"}
-                    </span>
-                    <span style={styles.timestamp}>
-                      {new Date(msg.createdAt).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                  </div>
-                  {isEditing ? (
-                    <MessageActions
-                      msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate} isPinned={!!msg.pinnedAt}
-                      isHovered={isHovered} isEditing={true} editContent={editContent}
-                      confirmDeleteId={confirmDeleteId} onCancelDelete={() => setConfirmDeleteId(null)} onReply={handleStartReply}
-                      showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete} onPin={handlePin}
-                      onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
-                      onEditChange={setEditContent}
-                    />
-                  ) : (
-                    <>
-                      <MessageBody content={msg.content} onImageClick={setLightboxSrc} mentionUsers={mentionUsers} />
-                      {msg.editedAt && <span style={styles.editedTag}>(edited)</span>}
-                      {msg.failed && msg.nonce && (
-                        <SendFailureNotice
-                          onRetry={() => retrySend(msg.nonce!, msg.content)}
-                          onDiscard={() => discardSend(msg.nonce!)}
-                        />
-                      )}
-                    </>
-                  )}
-                  <ReactionBar reactions={msg.reactions} messageId={msg.id} userId={userId} />
-                </div>
-                {!isEditing && !msg.pending && !msg.failed && (
-                  <MessageActions
-                    msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate} isPinned={!!msg.pinnedAt}
-                    isHovered={isHovered} isEditing={false} editContent={editContent}
-                    confirmDeleteId={confirmDeleteId} onCancelDelete={() => setConfirmDeleteId(null)} onReply={handleStartReply}
-                    showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete} onPin={handlePin}
-                    onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
-                    onEditChange={setEditContent}
+                {avatarUrl(msg.author?.avatarUrl) ? (
+                  <img
+                    style={{ ...styles.avatar, objectFit: "cover" }}
+                    src={avatarUrl(msg.author?.avatarUrl)!}
+                    alt=""
                   />
+                ) : (
+                  <div style={{ ...styles.avatar, background: avatarColor(msg.authorId) }}>
+                    {(msg.author?.displayName ?? "?").charAt(0).toUpperCase()}
+                  </div>
                 )}
               </div>
+              <div style={{ ...styles.messageContent, ...(msg.pending ? styles.pendingContent : {}) }}>
+                {msg.replyTo && (
+                  <div
+                    className="reply-preview"
+                    onClick={() => jumpToMessage(msg.replyTo!.id, msg.replyTo!.createdAt)}
+                    title="Jump to original message"
+                  >
+                    <span className="reply-preview-author">
+                      {msg.replyTo.author?.displayName ?? "Unknown"}
+                    </span>
+                    <span className="reply-preview-content">{msg.replyTo.content}</span>
+                  </div>
+                )}
+                <div style={styles.messageHeader}>
+                  <span
+                    style={{ ...styles.authorName, cursor: "pointer" }}
+                    onClick={(e) => { e.stopPropagation(); setProfilePopup({ userId: msg.authorId, x: e.clientX, y: e.clientY }); }}
+                  >
+                    {msg.author?.displayName ?? "Unknown"}
+                  </span>
+                  <span style={styles.timestamp}>
+                    {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                </div>
+                {isEditing ? (
+                  actions(true)
+                ) : (
+                  <>
+                    <MessageBody content={msg.content} onImageClick={setLightboxSrc} mentionUsers={mentionUsers} />
+                    {msg.editedAt && <span style={styles.editedTag}>(edited)</span>}
+                    {msg.failed && msg.nonce && (
+                      <SendFailureNotice
+                        onRetry={() => retrySend(msg.nonce!, msg.content)}
+                        onDiscard={() => discardSend(msg.nonce!)}
+                      />
+                    )}
+                  </>
+                )}
+                <ReactionBar
+                  reactions={msg.reactions}
+                  userId={userId}
+                  onToggle={(emoji) => sendWs({ type: "toggle_reaction", messageId: msg.id, emoji })}
+                />
+              </div>
+              {!isEditing && !msg.pending && !msg.failed && actions(false)}
             </div>
           );
-        })}
-        </div>
-        )}
-      </div>
+        }}
+      />
 
       <div style={{ ...styles.inputArea, position: "relative" as const }}>
         {!isAtLatest && (
           <button className="history-bar" onClick={jumpToPresent}>
             You're viewing older messages
             <span className="history-bar-action">Jump to present</span>
-          </button>
-        )}
-        {showNewBelow && (
-          <button className="new-messages-pill" onClick={jumpToLatest}>
-            New messages below
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 5v14" />
-              <path d="m19 12-7 7-7-7" />
-            </svg>
           </button>
         )}
         {showGifPicker && (
@@ -1166,239 +940,6 @@ export function ChatArea() {
           onClose={() => setProfilePopup(null)}
         />
       )}
-    </div>
-  );
-}
-
-function SendFailureNotice({ onRetry, onDiscard }: { onRetry: () => void; onDiscard: () => void }) {
-  return (
-    <div className="send-failure">
-      <span>Failed to send.</span>
-      <button className="send-failure-btn" onClick={onRetry}>Retry</button>
-      <span className="send-failure-sep">·</span>
-      <button className="send-failure-btn" onClick={onDiscard}>Discard</button>
-    </div>
-  );
-}
-
-function MessageActions({
-  msgId,
-  content,
-  isOwn,
-  canModerate,
-  isPinned,
-  isHovered,
-  isEditing,
-  editContent,
-  confirmDeleteId,
-  showReactionPicker,
-  onReact,
-  onReply,
-  onStartEdit,
-  onDelete,
-  onCancelDelete,
-  onPin,
-  onSaveEdit,
-  onCancelEdit,
-  onEditChange,
-}: {
-  msgId: string;
-  content: string;
-  isOwn: boolean;
-  canModerate: boolean;
-  isPinned: boolean;
-  isHovered: boolean;
-  isEditing: boolean;
-  editContent: string;
-  confirmDeleteId: string | null;
-  showReactionPicker: boolean;
-  onReact: (msgId: string) => void;
-  onReply: (msgId: string) => void;
-  onStartEdit: (id: string, content: string) => void;
-  onDelete: (id: string, skipConfirm: boolean) => void;
-  onCancelDelete: () => void;
-  onPin: (id: string) => void;
-  onSaveEdit: () => void;
-  onCancelEdit: () => void;
-  onEditChange: (val: string) => void;
-}) {
-  if (isEditing) {
-    return (
-      <div style={styles.editContainer}>
-        <input
-          style={styles.editInput}
-          value={editContent}
-          onChange={(e) => onEditChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") onSaveEdit();
-            if (e.key === "Escape") onCancelEdit();
-          }}
-          autoFocus
-        />
-        <span style={styles.editHint}>
-          escape to cancel, enter to save
-        </span>
-      </div>
-    );
-  }
-
-  const showDeleteConfirm = confirmDeleteId === msgId;
-  if (!isHovered && !showReactionPicker && !showDeleteConfirm) return null;
-
-  return (
-    <div className="msg-action-bar">
-      {showReactionPicker && (
-        <div className="emoji-picker-float" onClick={(e) => e.stopPropagation()}>
-          {QUICK_EMOJIS.map((e) => (
-            <button
-              key={e}
-              className="emoji-picker-btn hover-bg"
-              onClick={() => {
-                sendWs({ type: "toggle_reaction", messageId: msgId, emoji: e });
-                onReact(msgId);
-              }}
-            >
-              {e}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <button className="msg-action-btn" onClick={() => onReply(msgId)} title="Reply">
-        Reply
-      </button>
-      <button className="msg-action-btn" onClick={() => onReact(msgId)} title="Add reaction">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10" />
-          <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-          <line x1="9" y1="9" x2="9.01" y2="9" />
-          <line x1="15" y1="9" x2="15.01" y2="9" />
-        </svg>
-      </button>
-      {canModerate && (
-        <button className="msg-action-btn" onClick={() => onPin(msgId)} title={isPinned ? "Unpin" : "Pin"}>
-          {isPinned ? "Unpin" : "Pin"}
-        </button>
-      )}
-      {isOwn && (
-        <button className="msg-action-btn" onClick={() => onStartEdit(msgId, content)}>
-          Edit
-        </button>
-      )}
-      {(isOwn || canModerate) && (
-        <button
-          className="msg-action-btn msg-action-btn--danger"
-          onClick={(e) => onDelete(msgId, e.shiftKey)}
-          title="Delete message (shift-click to skip confirmation)"
-        >
-          Del
-        </button>
-      )}
-      {showDeleteConfirm && (
-        <div className="delete-confirm-popover" onClick={(e) => e.stopPropagation()}>
-          <span className="delete-confirm-text">Delete this message?</span>
-          <button
-            className="delete-confirm-btn delete-confirm-btn--danger"
-            onClick={() => onDelete(msgId, true)}
-          >
-            Delete
-          </button>
-          <button className="delete-confirm-btn" onClick={onCancelDelete}>
-            Cancel
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-const EXTERNAL_IMAGE_REGEX = /^https?:\/\/.+\.(gif|png|jpe?g|webp)(\?.*)?$/i;
-const EXTERNAL_GIF_DOMAIN_REGEX = /^https?:\/\/(static\.klipy\.com|media[0-9]*\.giphy\.com|media\.tenor\.com)\//i;
-
-/** Renders message content with inline image previews for uploaded files and GIFs. */
-function MessageBody({ content, onImageClick, mentionUsers }: { content: string; onImageClick?: (src: string) => void; mentionUsers?: Map<string, string> }) {
-  // External GIF/image URL (from Klipy, Giphy, Tenor, or any direct image link)
-  const trimmed = content.trim();
-  if (EXTERNAL_GIF_DOMAIN_REGEX.test(trimmed) || (EXTERNAL_IMAGE_REGEX.test(trimmed) && trimmed.startsWith("http"))) {
-    return (
-      <div>
-        <img
-          className="chat-image-clickable"
-          src={trimmed}
-          alt="GIF"
-          style={styles.gifEmbed}
-          loading="lazy"
-          onClick={() => onImageClick?.(trimmed)}
-        />
-      </div>
-    );
-  }
-
-  if (UPLOAD_URL_REGEX.test(content) && isImageUrl(content)) {
-    return (
-      <div>
-        <img
-          className="chat-image-clickable"
-          src={`${SERVER_BASE}${content}`}
-          alt="uploaded image"
-          style={styles.imageEmbed}
-          loading="lazy"
-          onClick={() => onImageClick?.(`${SERVER_BASE}${content}`)}
-        />
-      </div>
-    );
-  }
-
-  if (UPLOAD_URL_REGEX.test(content)) {
-    const filename = content.split("/").pop() ?? "file";
-    return (
-      <a
-        href={`${SERVER_BASE}${content}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        style={styles.fileLink}
-      >
-        {filename}
-      </a>
-    );
-  }
-
-  return (
-    <div>
-      <div style={styles.messageText}>
-        <MarkdownContent content={content} mentionUsers={mentionUsers} />
-      </div>
-      <LinkPreview content={content} />
-    </div>
-  );
-}
-
-
-const QUICK_EMOJIS = ["👍", "❤️", "😂", "🎉", "😮", "😢", "🔥", "👀"];
-
-function ReactionBar({ reactions, messageId, userId }: {
-  reactions?: ReactionGroup[];
-  messageId: string;
-  userId?: string;
-}) {
-  const hasReactions = (reactions ?? []).length > 0;
-  if (!hasReactions) return null;
-
-  return (
-    <div className="reaction-bar">
-      {reactions!.map((r) => {
-        const isMine = r.userIds.includes(userId ?? "");
-        return (
-          <button
-            key={r.emoji}
-            className={`reaction-pill ${isMine ? "reaction-pill--mine" : ""}`}
-            onClick={() => sendWs({ type: "toggle_reaction", messageId, emoji: r.emoji })}
-          >
-            <span className="reaction-pill-emoji">{r.emoji}</span>
-            <span className="reaction-pill-count">{r.count}</span>
-          </button>
-        );
-      })}
     </div>
   );
 }
