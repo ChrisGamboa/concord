@@ -7,7 +7,7 @@ import { toast } from "../stores/toast";
 import { api } from "../lib/api";
 import { avatarColor, avatarUrl } from "../lib/avatar";
 import { onWsMessage, sendWs } from "../lib/ws";
-import type { ReactionGroup } from "@concord/shared";
+import type { ReactionGroup, MessageReference } from "@concord/shared";
 import { GifPicker } from "./GifPicker";
 import { Lightbox } from "./Lightbox";
 import { EmojiPicker } from "./EmojiPicker";
@@ -18,6 +18,7 @@ interface DmMessage extends ListMessage {
   conversationId: string;
   editedAt?: string | null;
   reactions?: ReactionGroup[];
+  replyTo?: MessageReference | null;
   author?: {
     id: string;
     displayName: string;
@@ -53,6 +54,10 @@ export function DmChatArea() {
   const [showGifPicker, setShowGifPicker] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  // Message currently being replied to (consumed by the next send)
+  const [replyTarget, setReplyTarget] = useState<MessageReference | null>(null);
+  // False while viewing a historical page after jump-to-message
+  const [isAtLatest, setIsAtLatest] = useState(true);
   const listRef = useRef<MessageListHandle>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -97,6 +102,8 @@ export function DmChatArea() {
     let stale = false;
     setLoading(true);
     setMessages([]);
+    setReplyTarget(null);
+    setIsAtLatest(true);
     api.getDmMessages(conversationId).then((res) => {
       if (stale) return;
       setMessages(res.messages);
@@ -112,6 +119,8 @@ export function DmChatArea() {
   useEffect(() => {
     return onWsMessage((msg) => {
       if (msg.type === "dm_created" && msg.message.conversationId === conversationId) {
+        // Viewing history: don't append live messages; "Jump to present" catches up
+        if (!isAtLatest) return;
         const dm = msg.message as DmMessage;
         setMessages((prev) => {
           if (prev.some((m) => m.id === dm.id)) return prev;
@@ -127,7 +136,7 @@ export function DmChatArea() {
         setMessages((prev) => prev.map((m) => (m.id === msg.messageId ? { ...m, reactions: msg.reactions } : m)));
       }
     });
-  }, [conversationId, userId]);
+  }, [conversationId, userId, isAtLatest]);
 
   // Load older messages (MessageList keeps the viewport anchored on prepend)
   const loadOlder = useCallback(async () => {
@@ -145,10 +154,16 @@ export function DmChatArea() {
   }, [conversationId, messages, loadingMore]);
 
   // Optimistic send: pending until the POST resolves, failed with retry on error
-  const sendDmMessage = useCallback(async (content: string, existingTempId?: string) => {
+  const sendDmMessage = useCallback(async (
+    content: string,
+    opts?: { existingTempId?: string; replyTo?: MessageReference | null }
+  ) => {
     if (!conversationId || !userId) return;
-    const tempId = existingTempId ?? `pending-${crypto.randomUUID()}`;
-    if (existingTempId) {
+    const tempId = opts?.existingTempId ?? `pending-${crypto.randomUUID()}`;
+    // Retries carry their original reply reference; new sends consume the chip
+    const reply = opts?.existingTempId ? opts.replyTo ?? null : replyTarget;
+    if (!opts?.existingTempId) setReplyTarget(null);
+    if (opts?.existingTempId) {
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, pending: true, failed: false } : m)));
     } else {
       const me = useAuthStore.getState().user;
@@ -160,13 +175,14 @@ export function DmChatArea() {
         createdAt: new Date().toISOString(),
         editedAt: null,
         reactions: [],
+        replyTo: reply,
         author: me ? { id: me.id, displayName: me.displayName, avatarUrl: me.avatarUrl } : undefined,
         pending: true,
         nonce: tempId,
       }]);
     }
     try {
-      const created = await api.sendDm(conversationId, content);
+      const created = await api.sendDm(conversationId, content, reply?.id);
       setMessages((prev) => {
         if (prev.some((m) => m.id === created.id)) {
           return prev.filter((m) => m.id !== tempId);
@@ -176,12 +192,60 @@ export function DmChatArea() {
     } catch {
       setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, pending: false, failed: true } : m)));
     }
-  }, [conversationId, userId]);
+  }, [conversationId, userId, replyTarget]);
 
-  const handleSend = () => {
+  // Return from a historical page to the live view
+  const jumpToPresent = useCallback(async () => {
+    if (!conversationId) return;
+    try {
+      const res = await api.getDmMessages(conversationId);
+      setMessages(res.messages);
+      setHasMore(res.hasMore);
+      setIsAtLatest(true);
+      requestAnimationFrame(() => listRef.current?.scrollToBottom());
+    } catch {
+      toast("Failed to load latest messages");
+    }
+  }, [conversationId]);
+
+  // Jump to a message (e.g. a reply's original), fetching its page if not loaded
+  const jumpToMessage = useCallback(async (messageId: string, createdAt: string) => {
+    if (!conversationId) return;
+    if (messages.some((m) => m.id === messageId)) {
+      listRef.current?.focusMessage(messageId);
+      return;
+    }
+    try {
+      const before = new Date(new Date(createdAt).getTime() + 1).toISOString();
+      const res = await api.getDmMessages(conversationId, before);
+      setMessages(res.messages);
+      setHasMore(res.hasMore);
+      setIsAtLatest(false);
+      listRef.current?.focusMessage(messageId);
+    } catch {
+      toast("Failed to jump to message");
+    }
+  }, [conversationId, messages]);
+
+  const handleStartReply = useCallback((msgId: string) => {
+    const m = messages.find((x) => x.id === msgId);
+    if (!m) return;
+    setReplyTarget({
+      id: m.id,
+      content: m.content,
+      authorId: m.authorId,
+      createdAt: m.createdAt,
+      author: m.author as MessageReference["author"],
+    });
+    inputRef.current?.focus();
+  }, [messages]);
+
+  const handleSend = async () => {
     if (!input.trim() || !conversationId) return;
     const content = input.trim();
     setInput("");
+    // Sending from a historical view returns to the live view first
+    if (!isAtLatest) await jumpToPresent();
     sendDmMessage(content);
   };
 
@@ -324,6 +388,7 @@ export function DmChatArea() {
               showReactionPicker={reactionPickerMsgId === msg.id}
               onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)}
               onToggleReaction={toggleReaction}
+              onReply={handleStartReply}
               onStartEdit={handleStartEdit} onDelete={handleDelete}
               onSaveEdit={handleSaveEdit} onCancelEdit={() => { setEditingMsgId(null); setEditContent(""); }}
               onEditChange={setEditContent}
@@ -350,7 +415,7 @@ export function DmChatArea() {
                       {msg.editedAt && <span style={styles.editedTag}>(edited)</span>}
                       {msg.failed && msg.nonce && (
                         <SendFailureNotice
-                          onRetry={() => sendDmMessage(msg.content, msg.nonce)}
+                          onRetry={() => sendDmMessage(msg.content, { existingTempId: msg.nonce, replyTo: msg.replyTo })}
                           onDiscard={() => setMessages((prev) => prev.filter((m) => m.id !== msg.id))}
                         />
                       )}
@@ -381,6 +446,18 @@ export function DmChatArea() {
                 </div>
               )}
               <div style={{ ...styles.messageContent, ...(msg.pending ? styles.pendingContent : {}) }}>
+                {msg.replyTo && (
+                  <div
+                    className="reply-preview"
+                    onClick={() => jumpToMessage(msg.replyTo!.id, msg.replyTo!.createdAt)}
+                    title="Jump to original message"
+                  >
+                    <span className="reply-preview-author">
+                      {msg.replyTo.author?.displayName ?? "Unknown"}
+                    </span>
+                    <span className="reply-preview-content">{msg.replyTo.content}</span>
+                  </div>
+                )}
                 <div style={styles.messageHeader}>
                   <span style={styles.authorName}>
                     {msg.author?.displayName ?? "Unknown"}
@@ -397,7 +474,7 @@ export function DmChatArea() {
                     {msg.editedAt && <span style={styles.editedTag}>(edited)</span>}
                     {msg.failed && msg.nonce && (
                       <SendFailureNotice
-                        onRetry={() => sendDmMessage(msg.content, msg.nonce)}
+                        onRetry={() => sendDmMessage(msg.content, { existingTempId: msg.nonce, replyTo: msg.replyTo })}
                         onDiscard={() => setMessages((prev) => prev.filter((m) => m.id !== msg.id))}
                       />
                     )}
@@ -416,6 +493,12 @@ export function DmChatArea() {
       />
 
       <div style={{ ...styles.inputArea, position: "relative" as const }}>
+        {!isAtLatest && (
+          <button className="history-bar" onClick={jumpToPresent}>
+            You're viewing older messages
+            <span className="history-bar-action">Jump to present</span>
+          </button>
+        )}
         {showGifPicker && (
           <GifPicker
             onSelect={(gifUrl) => {
@@ -424,6 +507,20 @@ export function DmChatArea() {
             }}
             onClose={() => setShowGifPicker(false)}
           />
+        )}
+        {replyTarget && (
+          <div className="reply-chip">
+            <span className="reply-chip-text">
+              Replying to <strong>{replyTarget.author?.displayName ?? "Unknown"}</strong>
+            </span>
+            <button
+              className="reply-chip-close"
+              onClick={() => setReplyTarget(null)}
+              title="Cancel reply (Esc)"
+            >
+              ×
+            </button>
+          </div>
         )}
         {typingText && <div style={styles.typingIndicator}>{typingText}</div>}
         <form
@@ -457,6 +554,9 @@ export function DmChatArea() {
             onChange={(e) => {
               setInput(e.target.value);
               if (e.target.value.trim()) sendTyping();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && replyTarget) setReplyTarget(null);
             }}
             disabled={uploading}
             autoFocus

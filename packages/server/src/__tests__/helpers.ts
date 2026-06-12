@@ -7,6 +7,7 @@ import { serverRoutes } from "../routes/servers.js";
 import { channelRoutes } from "../routes/channels.js";
 import { messageRoutes } from "../routes/messages.js";
 import { muteRoutes } from "../routes/mutes.js";
+import { dmRoutes } from "../routes/dm.js";
 import "../types.js";
 
 export async function buildApp() {
@@ -32,6 +33,7 @@ export async function buildApp() {
   await app.register(channelRoutes, { prefix: "/api/channels" });
   await app.register(messageRoutes, { prefix: "/api/messages" });
   await app.register(muteRoutes, { prefix: "/api/mutes" });
+  await app.register(dmRoutes, { prefix: "/api/dm" });
 
   return app;
 }

@@ -12,6 +12,35 @@ const DM_AUTHOR_SELECT = {
   select: { id: true, username: true, displayName: true, avatarUrl: true, status: true },
 } as const;
 
+const DM_REPLY_SELECT = {
+  select: {
+    id: true,
+    content: true,
+    authorId: true,
+    createdAt: true,
+    author: DM_AUTHOR_SELECT,
+  },
+} as const;
+
+function mapReplyTo(replyTo: {
+  id: string;
+  content: string;
+  authorId: string;
+  createdAt: Date;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  author: any;
+} | null) {
+  return replyTo
+    ? {
+        id: replyTo.id,
+        content: replyTo.content,
+        authorId: replyTo.authorId,
+        createdAt: replyTo.createdAt.toISOString(),
+        author: replyTo.author,
+      }
+    : null;
+}
+
 export const dmRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", app.authenticate);
 
@@ -94,6 +123,7 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
         include: {
           author: DM_AUTHOR_SELECT,
           reactions: { select: { emoji: true, userId: true } },
+          replyTo: DM_REPLY_SELECT,
         },
         orderBy: { createdAt: "desc" },
         take: limit + 1,
@@ -111,6 +141,7 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
           createdAt: m.createdAt.toISOString(),
           editedAt: m.editedAt?.toISOString() ?? null,
           reactions: groupReactions(m.reactions),
+          replyTo: mapReplyTo(m.replyTo),
           author: m.author,
         })),
         hasMore,
@@ -119,7 +150,7 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
   );
 
   // Send a DM
-  app.post<{ Params: { conversationId: string }; Body: { content: string } }>(
+  app.post<{ Params: { conversationId: string }; Body: { content: string; replyToId?: string } }>(
     "/conversations/:conversationId/messages",
     async (request, reply) => {
       const { userId } = request.user as { userId: string };
@@ -135,9 +166,19 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(403).send({ error: "Not a participant" });
       }
 
+      // A reply must reference a message in the same conversation
+      let replyToId: string | null = null;
+      if (request.body.replyToId) {
+        const target = await prisma.directMessage.findUnique({
+          where: { id: request.body.replyToId },
+          select: { conversationId: true },
+        });
+        if (target?.conversationId === conversationId) replyToId = request.body.replyToId;
+      }
+
       const dm = await prisma.directMessage.create({
-        data: { conversationId, authorId: userId, content: content.trim() },
-        include: { author: DM_AUTHOR_SELECT },
+        data: { conversationId, authorId: userId, content: content.trim(), replyToId },
+        include: { author: DM_AUTHOR_SELECT, replyTo: DM_REPLY_SELECT },
       });
 
       const msg = {
@@ -148,6 +189,7 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
         createdAt: dm.createdAt.toISOString(),
         editedAt: null,
         reactions: [],
+        replyTo: mapReplyTo(dm.replyTo),
         author: dm.author,
       };
 
@@ -185,6 +227,7 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
         include: {
           author: DM_AUTHOR_SELECT,
           reactions: { select: { emoji: true, userId: true } },
+          replyTo: DM_REPLY_SELECT,
         },
       });
 
@@ -196,6 +239,7 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
         createdAt: updated.createdAt.toISOString(),
         editedAt: updated.editedAt?.toISOString() ?? null,
         reactions: groupReactions(updated.reactions),
+        replyTo: mapReplyTo(updated.replyTo),
         author: updated.author,
       };
 

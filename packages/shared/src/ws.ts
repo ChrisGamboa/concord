@@ -2,6 +2,7 @@ import type {
   ChannelId,
   Message,
   MessageId,
+  MessageReference,
   ReactionGroup,
   ServerId,
   UserId,
@@ -21,6 +22,7 @@ export interface DmMessagePayload {
   createdAt: string;
   editedAt: string | null;
   reactions?: ReactionGroup[];
+  replyTo?: MessageReference | null;
   author?: any;
 }
 
