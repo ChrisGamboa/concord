@@ -35,6 +35,6 @@ export type ServerMessage =
     }
   | { type: "reaction_update"; channelId: ChannelId; messageId: MessageId; reactions: ReactionGroup[] }
   | { type: "dm_created"; message: { id: string; conversationId: string; authorId: string; content: string; createdAt: string; author?: any } }
-  | { type: "unread_count"; channelId: ChannelId; count: number }
+  | { type: "unread_count"; channelId: ChannelId; count: number; mentions?: number }
   | { type: "error"; message: string }
   | { type: "ready"; userId: UserId; sessionId: string };

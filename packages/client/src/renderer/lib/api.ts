@@ -243,7 +243,16 @@ export const api = {
     request<ChannelsResponse>(`/channels/server/${serverId}`),
 
   getUnreadCounts: (serverId: string) =>
-    request<{ unread: Record<string, number> }>(`/channels/server/${serverId}/unread`),
+    request<{ unread: Record<string, number>; mentions: Record<string, number> }>(`/channels/server/${serverId}/unread`),
+
+  // Notification mutes
+  getMutes: () => request<{ channels: string[]; servers: string[] }>("/mutes"),
+
+  setChannelMute: (channelId: string, muted: boolean) =>
+    request<{ muted: boolean }>(`/mutes/channel/${channelId}`, { method: muted ? "PUT" : "DELETE" }),
+
+  setServerMute: (serverId: string, muted: boolean) =>
+    request<{ muted: boolean }>(`/mutes/server/${serverId}`, { method: muted ? "PUT" : "DELETE" }),
 
   renameChannel: (channelId: string, name: string) =>
     request<{ id: string; name: string }>(`/channels/${channelId}`, {

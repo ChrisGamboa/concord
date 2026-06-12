@@ -26,6 +26,19 @@ model User {
   conversations2  Conversation[]   @relation("ConvUser2")
   directMessages  DirectMessage[]
   bans            ServerBan[]      @relation("BannedUser")
+  mutes           Mute[]
+}
+
+// Notification mute for a channel or server (row present = muted)
+model Mute {
+  userId     String
+  targetId   String
+  targetType String // "channel" | "server"
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@id([userId, targetId])
 }
 
 model Server {

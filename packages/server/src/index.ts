@@ -19,6 +19,7 @@ import { roleRoutes } from "./routes/roles.js";
 import { gifRoutes } from "./routes/gif.js";
 import { dmRoutes } from "./routes/dm.js";
 import { previewRoutes } from "./routes/preview.js";
+import { muteRoutes } from "./routes/mutes.js";
 import { wsHandler } from "./ws/handler.js";
 import { stopAll as stopAllMusic } from "./music/player.js";
 
@@ -58,6 +59,7 @@ await app.register(roleRoutes, { prefix: "/api/servers" });
 await app.register(gifRoutes, { prefix: "/api/gif" });
 await app.register(dmRoutes, { prefix: "/api/dm" });
 await app.register(previewRoutes, { prefix: "/api/preview" });
+await app.register(muteRoutes, { prefix: "/api/mutes" });
 
 // WebSocket
 await app.register(wsHandler);

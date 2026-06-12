@@ -20,6 +20,11 @@ interface ChatState {
   hasMoreMessages: boolean;
   messagesLoading: boolean;
   unreadCounts: Record<string, number>;
+  /** Unread messages that mention the current user, per channel */
+  mentionCounts: Record<string, number>;
+  /** Channels/servers the user muted (no notifications, subdued sidebar) */
+  mutedChannels: string[];
+  mutedServers: string[];
   /** Unread count captured at the moment each channel was opened (drives the NEW divider) */
   channelEntryUnread: Record<string, number>;
   /** False when viewing a historical page (after jump-to-message); live messages are not appended */
@@ -30,7 +35,11 @@ interface ChatState {
   setServers: (servers: Server[]) => void;
   setChannels: (channels: Channel[]) => void;
   setUnreadCounts: (counts: Record<string, number>) => void;
-  setUnreadCount: (channelId: string, count: number) => void;
+  setUnreadCount: (channelId: string, count: number, mentions?: number) => void;
+  setMentionCounts: (counts: Record<string, number>) => void;
+  setMutes: (mutes: { channels: string[]; servers: string[] }) => void;
+  setChannelMuted: (channelId: string, muted: boolean) => void;
+  setServerMuted: (serverId: string, muted: boolean) => void;
   setChannelEntryUnread: (channelId: string, count: number) => void;
   setMessages: (messages: Message[], hasMore: boolean, isAtLatest?: boolean) => void;
   setPendingJump: (jump: ChatState["pendingJump"]) => void;
@@ -57,20 +66,49 @@ export const useChatStore = create<ChatState>()((set) => ({
   hasMoreMessages: false,
   messagesLoading: false,
   unreadCounts: {},
+  mentionCounts: {},
+  mutedChannels: [],
+  mutedServers: [],
   channelEntryUnread: {},
   isAtLatest: true,
   pendingJump: null,
 
   setServers: (servers) => set({ servers }),
   setUnreadCounts: (counts) => set({ unreadCounts: counts }),
-  setUnreadCount: (channelId, count) =>
+  setUnreadCount: (channelId, count, mentions) =>
     set((s) => {
       if (count === 0) {
-        const { [channelId]: _, ...rest } = s.unreadCounts;
-        return { unreadCounts: rest };
+        const { [channelId]: _, ...restUnread } = s.unreadCounts;
+        const { [channelId]: __, ...restMentions } = s.mentionCounts;
+        return { unreadCounts: restUnread, mentionCounts: restMentions };
       }
-      return { unreadCounts: { ...s.unreadCounts, [channelId]: count } };
+      const next: Partial<ChatState> = {
+        unreadCounts: { ...s.unreadCounts, [channelId]: count },
+      };
+      if (mentions !== undefined) {
+        if (mentions === 0) {
+          const { [channelId]: _, ...rest } = s.mentionCounts;
+          next.mentionCounts = rest;
+        } else {
+          next.mentionCounts = { ...s.mentionCounts, [channelId]: mentions };
+        }
+      }
+      return next;
     }),
+  setMentionCounts: (counts) => set({ mentionCounts: counts }),
+  setMutes: (mutes) => set({ mutedChannels: mutes.channels, mutedServers: mutes.servers }),
+  setChannelMuted: (channelId, muted) =>
+    set((s) => ({
+      mutedChannels: muted
+        ? [...new Set([...s.mutedChannels, channelId])]
+        : s.mutedChannels.filter((id) => id !== channelId),
+    })),
+  setServerMuted: (serverId, muted) =>
+    set((s) => ({
+      mutedServers: muted
+        ? [...new Set([...s.mutedServers, serverId])]
+        : s.mutedServers.filter((id) => id !== serverId),
+    })),
   setChannelEntryUnread: (channelId, count) =>
     set((s) => ({ channelEntryUnread: { ...s.channelEntryUnread, [channelId]: count } })),
   setChannels: (channels) => set({ channels }),

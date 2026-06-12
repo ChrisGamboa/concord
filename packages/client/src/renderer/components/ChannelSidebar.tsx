@@ -102,6 +102,36 @@ export function ChannelSidebar() {
   };
 
   const unreadCounts = useChatStore((s) => s.unreadCounts);
+  const mentionCounts = useChatStore((s) => s.mentionCounts);
+  const mutedChannels = useChatStore((s) => s.mutedChannels);
+  const mutedServers = useChatStore((s) => s.mutedServers);
+  const setChannelMuted = useChatStore((s) => s.setChannelMuted);
+  const setServerMuted = useChatStore((s) => s.setServerMuted);
+  const serverMuted = serverId ? mutedServers.includes(serverId) : false;
+
+  const toggleChannelMute = async (targetChannelId: string) => {
+    const next = !mutedChannels.includes(targetChannelId);
+    setChannelMuted(targetChannelId, next); // optimistic
+    try {
+      await api.setChannelMute(targetChannelId, next);
+    } catch {
+      setChannelMuted(targetChannelId, !next);
+      toast("Failed to update mute");
+    }
+  };
+
+  const toggleServerMute = async () => {
+    if (!serverId) return;
+    const next = !serverMuted;
+    setServerMuted(serverId, next); // optimistic
+    try {
+      await api.setServerMute(serverId, next);
+    } catch {
+      setServerMuted(serverId, !next);
+      toast("Failed to update mute");
+    }
+  };
+
   const textChannels = channels.filter((c) => c.type === ChannelType.Text);
   const voiceChannels = channels.filter((c) => c.type === ChannelType.Voice);
 
@@ -139,6 +169,25 @@ export function ChannelSidebar() {
       <div style={styles.header}>
         <h3 style={styles.serverName}>{server?.name ?? "Server"}</h3>
         <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
+          <button
+            style={{ ...styles.copyId, ...(serverMuted ? { color: "var(--danger)" } : {}) }}
+            onClick={toggleServerMute}
+            title={serverMuted ? "Unmute server notifications" : "Mute server notifications"}
+          >
+            {serverMuted ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                <path d="M18.63 13A17.89 17.89 0 0 1 18 8M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14" />
+                <path d="M18 8a6 6 0 0 0-9.33-5" />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg>
+            )}
+          </button>
           <button
             style={styles.copyId}
             onClick={() => {
@@ -202,6 +251,8 @@ export function ChannelSidebar() {
           )}
             {textChannels.map((channel) => {
               const unread = unreadCounts[channel.id] ?? 0;
+              const mentions = mentionCounts[channel.id] ?? 0;
+              const isMuted = mutedChannels.includes(channel.id) || serverMuted;
               const isActive = channel.id === channelId;
               if (renaming?.channelId === channel.id) {
                 return (
@@ -222,18 +273,31 @@ export function ChannelSidebar() {
                   key={channel.id}
                   className="hover-bg"
                   onClick={() => navigate(`/channels/${serverId}/${channel.id}`)}
-                  onContextMenu={canManageChannels ? (e) => { e.preventDefault(); setCtxMenu({ channelId: channel.id, x: e.clientX, y: e.clientY }); } : undefined}
+                  onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ channelId: channel.id, x: e.clientX, y: e.clientY }); }}
                   style={{
                     ...styles.channelButton,
                     background: isActive ? "rgba(255,255,255,0.06)" : "transparent",
-                    color: isActive ? "var(--text-primary)" : unread > 0 ? "var(--text-primary)" : "var(--text-muted)",
-                    fontWeight: unread > 0 && !isActive ? 700 : 500,
+                    color: isActive
+                      ? "var(--text-primary)"
+                      : isMuted
+                        ? "var(--text-muted)"
+                        : unread > 0
+                          ? "var(--text-primary)"
+                          : "var(--text-muted)",
+                    fontWeight: unread > 0 && !isActive && !isMuted ? 700 : 500,
+                    opacity: isMuted && !isActive ? 0.5 : 1,
                   }}
                 >
                   <span style={styles.hash}>#</span>
                   {channel.name}
-                  {unread > 0 && !isActive && (
-                    <span style={styles.unreadBadge}>{unread > 99 ? "99+" : unread}</span>
+                  {mentions > 0 && !isActive ? (
+                    <span style={{ ...styles.unreadBadge, background: "var(--danger)" }} title="Mentions you">
+                      @{mentions > 99 ? "99+" : mentions}
+                    </span>
+                  ) : (
+                    unread > 0 && !isActive && !isMuted && (
+                      <span style={styles.unreadBadge}>{unread > 99 ? "99+" : unread}</span>
+                    )
                   )}
                 </button>
               );
@@ -348,6 +412,21 @@ export function ChannelSidebar() {
           <button
             className="voice-ctx-mute"
             onClick={() => {
+              toggleChannelMute(ctxMenu.channelId);
+              setCtxMenu(null);
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            {mutedChannels.includes(ctxMenu.channelId) ? "Unmute Channel" : "Mute Channel"}
+          </button>
+          {canManageChannels && (
+          <>
+          <button
+            className="voice-ctx-mute"
+            onClick={() => {
               const ch = channels.find((c) => c.id === ctxMenu.channelId);
               setRenaming({ channelId: ctxMenu.channelId, name: ch?.name ?? "" });
               setCtxMenu(null);
@@ -378,6 +457,8 @@ export function ChannelSidebar() {
             </svg>
             {confirmDelete === ctxMenu.channelId ? "Click again to confirm" : "Delete Channel"}
           </button>
+          </>
+          )}
         </div>
       )}
 

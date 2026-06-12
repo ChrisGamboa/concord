@@ -61,16 +61,28 @@ export const channelRoutes: FastifyPluginAsync = async (app) => {
       });
       const readMap = new Map(lastReads.map((lr) => [lr.channelId, lr.readAt]));
 
+      const me = await prisma.user.findUnique({ where: { id: userId }, select: { username: true } });
+      const mentionToken = me ? `@${me.username}` : null;
+
       const counts: Record<string, number> = {};
+      const mentionCounts: Record<string, number> = {};
       for (const ch of channels) {
         const readAt = readMap.get(ch.id) ?? new Date(0);
         const count = await prisma.message.count({
           where: { channelId: ch.id, createdAt: { gt: readAt } },
         });
-        if (count > 0) counts[ch.id] = count;
+        if (count > 0) {
+          counts[ch.id] = count;
+          if (mentionToken) {
+            const mentions = await prisma.message.count({
+              where: { channelId: ch.id, createdAt: { gt: readAt }, content: { contains: mentionToken } },
+            });
+            if (mentions > 0) mentionCounts[ch.id] = mentions;
+          }
+        }
       }
 
-      return { unread: counts };
+      return { unread: counts, mentions: mentionCounts };
     }
   );
 

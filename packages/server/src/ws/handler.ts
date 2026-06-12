@@ -185,20 +185,28 @@ async function handleMessage(
       // Update unread counts for all server members not subscribed to this channel
       const channel = await prisma.channel.findUnique({ where: { id: msg.channelId }, select: { serverId: true } });
       if (channel) {
-        const members = await prisma.serverMember.findMany({ where: { serverId: channel.serverId }, select: { userId: true } });
+        const members = await prisma.serverMember.findMany({
+          where: { serverId: channel.serverId },
+          select: { userId: true, user: { select: { username: true } } },
+        });
         for (const member of members) {
           if (member.userId === userId) continue; // skip sender
           const lastRead = await prisma.lastRead.findUnique({
             where: { userId_channelId: { userId: member.userId, channelId: msg.channelId } },
           });
+          const since = lastRead?.readAt ?? new Date(0);
           const count = await prisma.message.count({
-            where: {
-              channelId: msg.channelId,
-              createdAt: { gt: lastRead?.readAt ?? new Date(0) },
-            },
+            where: { channelId: msg.channelId, createdAt: { gt: since } },
           });
           if (count > 0) {
-            sendToUser(member.userId, { type: "unread_count", channelId: msg.channelId, count });
+            const mentions = await prisma.message.count({
+              where: {
+                channelId: msg.channelId,
+                createdAt: { gt: since },
+                content: { contains: `@${member.user.username}` },
+              },
+            });
+            sendToUser(member.userId, { type: "unread_count", channelId: msg.channelId, count, mentions });
           }
         }
       }

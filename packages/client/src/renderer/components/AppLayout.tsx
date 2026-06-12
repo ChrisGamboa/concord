@@ -78,10 +78,20 @@ export function AppLayout() {
 
   // Fetch unread counts when server changes (skip for DM view)
   const setUnreadCounts = useChatStore((s) => s.setUnreadCounts);
+  const setMentionCounts = useChatStore((s) => s.setMentionCounts);
   useEffect(() => {
     if (!serverId || serverId === "@me") return;
-    api.getUnreadCounts(serverId).then((res) => setUnreadCounts(res.unread)).catch(() => {});
-  }, [serverId, setUnreadCounts]);
+    api.getUnreadCounts(serverId).then((res) => {
+      setUnreadCounts(res.unread);
+      setMentionCounts(res.mentions ?? {});
+    }).catch(() => {});
+  }, [serverId, setUnreadCounts, setMentionCounts]);
+
+  // Load notification mutes once on mount
+  const setMutes = useChatStore((s) => s.setMutes);
+  useEffect(() => {
+    api.getMutes().then(setMutes).catch(() => {});
+  }, [setMutes]);
 
   // Mark channel as read when viewing it (skip for DM view)
   useEffect(() => {
@@ -136,10 +146,15 @@ export function AppLayout() {
   useEffect(() => {
     return onWsMessage((msg) => {
       switch (msg.type) {
-        case "message_created":
+        case "message_created": {
           addMessage(msg.message, msg.nonce);
-          // Desktop notification when window is not focused
-          if (!document.hasFocus() && msg.message.authorId !== userId) {
+          // Desktop notification when window is not focused (unless channel/server is muted)
+          const chatState = useChatStore.getState();
+          const msgChannel = chatState.channels.find((c) => c.id === msg.message.channelId);
+          const isMuted =
+            chatState.mutedChannels.includes(msg.message.channelId) ||
+            (msgChannel !== undefined && chatState.mutedServers.includes(msgChannel.serverId));
+          if (!isMuted && !document.hasFocus() && msg.message.authorId !== userId) {
             const electron = (window as any).electron;
             electron?.sendNotification?.(
               msg.message.author?.displayName ?? "New message",
@@ -149,6 +164,7 @@ export function AppLayout() {
             );
           }
           break;
+        }
         case "message_updated":
           updateMessage(msg.message);
           break;
@@ -166,7 +182,7 @@ export function AppLayout() {
           updateReactions(msg.messageId, msg.reactions);
           break;
         case "unread_count":
-          setUnreadCount(msg.channelId, msg.count);
+          setUnreadCount(msg.channelId, msg.count, msg.mentions ?? 0);
           break;
         case "error":
           toast(msg.message);
