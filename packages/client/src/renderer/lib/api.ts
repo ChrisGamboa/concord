@@ -263,6 +263,12 @@ export const api = {
   deleteChannel: (channelId: string) =>
     request<{ deleted: boolean }>(`/channels/${channelId}`, { method: "DELETE" }),
 
+  reorderChannels: (serverId: string, channelIds: string[]) =>
+    request<{ reordered: boolean }>(`/channels/server/${serverId}/reorder`, {
+      method: "PATCH",
+      body: JSON.stringify({ channelIds }),
+    }),
+
   createChannel: (serverId: string, name: string, type: string) =>
     request<ChannelsResponse["channels"][0]>(`/channels/server/${serverId}`, {
       method: "POST",

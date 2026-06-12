@@ -2280,3 +2280,8 @@ a {
   color: var(--text-primary);
   background: var(--bg-secondary);
 }
+
+/* Channel drag-to-reorder insertion indicator */
+.channel-drag-over {
+  box-shadow: inset 0 2px 0 var(--accent);
+}

@@ -129,6 +129,42 @@ export const channelRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
+  // Reorder channels: assigns positions from the given ordered ID list
+  app.patch<{ Params: { serverId: string }; Body: { channelIds: string[] } }>(
+    "/server/:serverId/reorder",
+    async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      const { serverId } = request.params;
+      const { channelIds } = request.body;
+
+      if (!await checkPermission(userId, serverId, Permissions.MANAGE_CHANNELS)) {
+        return reply.code(403).send({ error: "Missing MANAGE_CHANNELS permission" });
+      }
+      if (!Array.isArray(channelIds) || channelIds.length === 0) {
+        return reply.code(400).send({ error: "channelIds must be a non-empty array" });
+      }
+
+      // Only reorder channels that belong to this server
+      const channels = await prisma.channel.findMany({
+        where: { serverId },
+        select: { id: true },
+      });
+      const valid = new Set(channels.map((c) => c.id));
+      const ordered = channelIds.filter((id) => valid.has(id));
+      if (ordered.length !== valid.size) {
+        return reply.code(400).send({ error: "channelIds must include every channel in the server exactly once" });
+      }
+
+      await prisma.$transaction(
+        ordered.map((id, index) =>
+          prisma.channel.update({ where: { id }, data: { position: index } })
+        )
+      );
+
+      return { reordered: true };
+    }
+  );
+
   // Rename a channel
   app.patch<{ Params: { channelId: string }; Body: { name: string } }>(
     "/:channelId",

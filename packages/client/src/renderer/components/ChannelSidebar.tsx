@@ -135,6 +135,56 @@ export function ChannelSidebar() {
   const textChannels = channels.filter((c) => c.type === ChannelType.Text);
   const voiceChannels = channels.filter((c) => c.type === ChannelType.Voice);
 
+  // Drag-to-reorder (within a category, MANAGE_CHANNELS only)
+  const [dragChannelId, setDragChannelId] = useState<string | null>(null);
+  const [dragOverChannelId, setDragOverChannelId] = useState<string | null>(null);
+
+  const handleChannelDrop = async (targetId: string) => {
+    const draggedId = dragChannelId;
+    setDragChannelId(null);
+    setDragOverChannelId(null);
+    if (!serverId || !draggedId || draggedId === targetId) return;
+    const dragged = channels.find((c) => c.id === draggedId);
+    const target = channels.find((c) => c.id === targetId);
+    if (!dragged || !target || dragged.type !== target.type) return;
+
+    const category = channels.filter((c) => c.type === dragged.type).filter((c) => c.id !== draggedId);
+    const insertAt = category.findIndex((c) => c.id === targetId);
+    category.splice(insertAt, 0, dragged);
+    const others = channels.filter((c) => c.type !== dragged.type);
+    const reordered = dragged.type === ChannelType.Text ? [...category, ...others] : [...others, ...category];
+
+    const previous = channels;
+    setChannels(reordered.map((c, i) => ({ ...c, position: i }))); // optimistic
+    try {
+      await api.reorderChannels(serverId, reordered.map((c) => c.id));
+    } catch {
+      setChannels(previous);
+      toast("Failed to reorder channels");
+    }
+  };
+
+  const dragProps = (chId: string) =>
+    canManageChannels
+      ? {
+          draggable: true,
+          onDragStart: () => setDragChannelId(chId),
+          onDragOver: (e: React.DragEvent) => {
+            e.preventDefault();
+            if (dragChannelId && dragChannelId !== chId) setDragOverChannelId(chId);
+          },
+          onDragLeave: () => setDragOverChannelId((curr) => (curr === chId ? null : curr)),
+          onDrop: (e: React.DragEvent) => {
+            e.preventDefault();
+            handleChannelDrop(chId);
+          },
+          onDragEnd: () => {
+            setDragChannelId(null);
+            setDragOverChannelId(null);
+          },
+        }
+      : {};
+
   // Poll voice channel participants
   const [voiceParticipants, setVoiceParticipants] = useState<
     Record<string, VoiceParticipant[]>
@@ -271,11 +321,13 @@ export function ChannelSidebar() {
               return (
                 <button
                   key={channel.id}
-                  className="hover-bg"
+                  className={`hover-bg${dragOverChannelId === channel.id ? " channel-drag-over" : ""}`}
                   onClick={() => navigate(`/channels/${serverId}/${channel.id}`)}
                   onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ channelId: channel.id, x: e.clientX, y: e.clientY }); }}
+                  {...dragProps(channel.id)}
                   style={{
                     ...styles.channelButton,
+                    ...(dragChannelId === channel.id ? { opacity: 0.4 } : {}),
                     background: isActive ? "rgba(255,255,255,0.06)" : "transparent",
                     color: isActive
                       ? "var(--text-primary)"
@@ -345,13 +397,15 @@ export function ChannelSidebar() {
               return (
                 <div key={channel.id}>
                   <button
-                    className="hover-bg"
+                    className={`hover-bg${dragOverChannelId === channel.id ? " channel-drag-over" : ""}`}
                     onClick={() =>
                       navigate(`/channels/${serverId}/${channel.id}`)
                     }
                     onContextMenu={canManageChannels ? (e) => { e.preventDefault(); setCtxMenu({ channelId: channel.id, x: e.clientX, y: e.clientY }); } : undefined}
+                    {...dragProps(channel.id)}
                     style={{
                       ...styles.channelButton,
+                      ...(dragChannelId === channel.id ? { opacity: 0.4 } : {}),
                       background:
                         channel.id === channelId
                           ? "rgba(255,255,255,0.06)"
