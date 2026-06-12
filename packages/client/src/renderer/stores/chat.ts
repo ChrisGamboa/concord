@@ -22,13 +22,18 @@ interface ChatState {
   unreadCounts: Record<string, number>;
   /** Unread count captured at the moment each channel was opened (drives the NEW divider) */
   channelEntryUnread: Record<string, number>;
+  /** False when viewing a historical page (after jump-to-message); live messages are not appended */
+  isAtLatest: boolean;
+  /** Jump target handed across a channel navigation (e.g. search result in another channel) */
+  pendingJump: { channelId: string; messageId: string; createdAt: string } | null;
 
   setServers: (servers: Server[]) => void;
   setChannels: (channels: Channel[]) => void;
   setUnreadCounts: (counts: Record<string, number>) => void;
   setUnreadCount: (channelId: string, count: number) => void;
   setChannelEntryUnread: (channelId: string, count: number) => void;
-  setMessages: (messages: Message[], hasMore: boolean) => void;
+  setMessages: (messages: Message[], hasMore: boolean, isAtLatest?: boolean) => void;
+  setPendingJump: (jump: ChatState["pendingJump"]) => void;
   setMessagesLoading: (loading: boolean) => void;
   prependMessages: (messages: Message[], hasMore: boolean) => void;
   addMessage: (message: Message, nonce?: string) => void;
@@ -53,6 +58,8 @@ export const useChatStore = create<ChatState>()((set) => ({
   messagesLoading: false,
   unreadCounts: {},
   channelEntryUnread: {},
+  isAtLatest: true,
+  pendingJump: null,
 
   setServers: (servers) => set({ servers }),
   setUnreadCounts: (counts) => set({ unreadCounts: counts }),
@@ -67,7 +74,9 @@ export const useChatStore = create<ChatState>()((set) => ({
   setChannelEntryUnread: (channelId, count) =>
     set((s) => ({ channelEntryUnread: { ...s.channelEntryUnread, [channelId]: count } })),
   setChannels: (channels) => set({ channels }),
-  setMessages: (messages, hasMore) => set({ messages, hasMoreMessages: hasMore, messagesLoading: false }),
+  setMessages: (messages, hasMore, isAtLatest = true) =>
+    set({ messages, hasMoreMessages: hasMore, messagesLoading: false, isAtLatest }),
+  setPendingJump: (jump) => set({ pendingJump: jump }),
   setMessagesLoading: (loading) => set({ messagesLoading: loading }),
   prependMessages: (messages, hasMore) =>
     set((s) => ({
@@ -77,6 +86,8 @@ export const useChatStore = create<ChatState>()((set) => ({
   addMessage: (message, nonce) =>
     set((s) => {
       if (message.channelId !== s.activeChannelId) return s;
+      // Viewing history: don't append live messages; the "Jump to present" bar covers catch-up
+      if (!s.isAtLatest) return s;
       // Reconcile the sender's optimistic message with the confirmed one
       if (nonce) {
         const idx = s.messages.findIndex((m) => m.nonce === nonce);

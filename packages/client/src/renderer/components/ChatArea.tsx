@@ -42,6 +42,7 @@ export function ChatArea() {
   const messages = useChatStore((s) => s.messages);
   const channels = useChatStore((s) => s.channels);
   const hasMore = useChatStore((s) => s.hasMoreMessages);
+  const isAtLatest = useChatStore((s) => s.isAtLatest);
   const setMessages = useChatStore((s) => s.setMessages);
   const setMessagesLoading = useChatStore((s) => s.setMessagesLoading);
   const prependMessages = useChatStore((s) => s.prependMessages);
@@ -69,6 +70,8 @@ export function ChatArea() {
   const [showNewBelow, setShowNewBelow] = useState(false);
   // First unread message on channel entry (where the NEW divider renders)
   const [unreadMarkerId, setUnreadMarkerId] = useState<string | null>(null);
+  // Message briefly flash-highlighted after a jump
+  const [highlightMsgId, setHighlightMsgId] = useState<string | null>(null);
 
   // Close reaction picker on click-outside or Escape
   useEffect(() => {
@@ -130,6 +133,17 @@ export function ChatArea() {
   // @mention autocomplete
   const mention = useMentionAutocomplete(members, input, cursorPos, setInput, chatInputRef);
 
+  // Scroll to a loaded message and flash-highlight it
+  const focusMessage = useCallback((messageId: string) => {
+    requestAnimationFrame(() => {
+      document.getElementById(`msg-${messageId}`)?.scrollIntoView({ block: "center" });
+    });
+    setHighlightMsgId(messageId);
+    setTimeout(() => {
+      setHighlightMsgId((curr) => (curr === messageId ? null : curr));
+    }, 2000);
+  }, []);
+
   // Load messages and subscribe to WS channel
   useEffect(() => {
     if (!channelId) return;
@@ -141,24 +155,43 @@ export function ChatArea() {
     setShowNewBelow(false);
     setUnreadMarkerId(null);
 
-    api.getMessages(channelId).then((res) => {
-      if (stale) return;
-      setMessages(res.messages, res.hasMore);
-      // Place the NEW divider at the first unread message (count snapshotted on entry)
-      const entryUnread = useChatStore.getState().channelEntryUnread[channelId] ?? 0;
-      if (entryUnread > 0 && res.messages.length > 0) {
-        const idx = Math.max(0, res.messages.length - entryUnread);
-        setUnreadMarkerId(res.messages[idx].id);
-      }
-      // Scroll to bottom after messages render
-      requestAnimationFrame(() => {
-        messagesEndRef.current?.scrollIntoView();
+    // A jump target handed over from another channel (search result) loads
+    // the page around the target instead of the latest messages.
+    const jump = useChatStore.getState().pendingJump;
+    if (jump && jump.channelId === channelId) {
+      useChatStore.getState().setPendingJump(null);
+      const before = new Date(new Date(jump.createdAt).getTime() + 1).toISOString();
+      api.getMessages(channelId, before).then((res) => {
+        if (stale) return;
+        lastMsgIdRef.current = res.messages[res.messages.length - 1]?.id ?? null;
+        atBottomRef.current = false;
+        setMessages(res.messages, res.hasMore, false);
+        focusMessage(jump.messageId);
+      }).catch(() => {
+        if (stale) return;
+        setMessagesLoading(false);
+        toast("Failed to load messages");
       });
-    }).catch(() => {
-      if (stale) return;
-      setMessagesLoading(false);
-      toast("Failed to load messages");
-    });
+    } else {
+      api.getMessages(channelId).then((res) => {
+        if (stale) return;
+        setMessages(res.messages, res.hasMore);
+        // Place the NEW divider at the first unread message (count snapshotted on entry)
+        const entryUnread = useChatStore.getState().channelEntryUnread[channelId] ?? 0;
+        if (entryUnread > 0 && res.messages.length > 0) {
+          const idx = Math.max(0, res.messages.length - entryUnread);
+          setUnreadMarkerId(res.messages[idx].id);
+        }
+        // Scroll to bottom after messages render
+        requestAnimationFrame(() => {
+          messagesEndRef.current?.scrollIntoView();
+        });
+      }).catch(() => {
+        if (stale) return;
+        setMessagesLoading(false);
+        toast("Failed to load messages");
+      });
+    }
 
     sendWs({ type: "subscribe_channel", channelId });
     return () => {
@@ -166,6 +199,43 @@ export function ChatArea() {
       sendWs({ type: "unsubscribe_channel", channelId });
     };
   }, [channelId]);
+
+  // Jump to a message in the current channel, fetching its page if not loaded
+  const jumpToMessage = useCallback(async (messageId: string, createdAt: string) => {
+    if (!channelId) return;
+    const loaded = useChatStore.getState().messages.some((m) => m.id === messageId);
+    if (loaded) {
+      focusMessage(messageId);
+      return;
+    }
+    try {
+      const before = new Date(new Date(createdAt).getTime() + 1).toISOString();
+      const res = await api.getMessages(channelId, before);
+      lastMsgIdRef.current = res.messages[res.messages.length - 1]?.id ?? null;
+      atBottomRef.current = false;
+      setMessages(res.messages, res.hasMore, false);
+      focusMessage(messageId);
+    } catch {
+      toast("Failed to jump to message");
+    }
+  }, [channelId, setMessages, focusMessage]);
+
+  // Return from a historical page to the live view
+  const jumpToPresent = useCallback(async () => {
+    if (!channelId) return;
+    try {
+      const res = await api.getMessages(channelId);
+      lastMsgIdRef.current = res.messages[res.messages.length - 1]?.id ?? null;
+      atBottomRef.current = true;
+      setShowNewBelow(false);
+      setMessages(res.messages, res.hasMore, true);
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView();
+      });
+    } catch {
+      toast("Failed to load latest messages");
+    }
+  }, [channelId, setMessages]);
 
   // Load older messages
   const loadOlder = useCallback(async () => {
@@ -307,13 +377,18 @@ export function ChatArea() {
     useChatStore.getState().removeMessageByNonce(nonce);
   }, []);
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (mention.isOpen) return; // Don't submit while mention dropdown is open
     if (!input.trim() || !channelId) return;
-    sendChannelMessage(input.trim());
+    const content = input.trim();
     setInput("");
     setCursorPos(0);
+    // Sending from a historical view returns to the live view first
+    if (!useChatStore.getState().isAtLatest) {
+      await jumpToPresent();
+    }
+    sendChannelMessage(content);
   };
 
   const handleFileUpload = useCallback(
@@ -384,11 +459,11 @@ export function ChatArea() {
       } else {
         await api.pinMessage(msgId);
       }
-      // Refresh messages to reflect pin state
-      if (channelId) {
-        const res = await api.getMessages(channelId);
-        setMessages(res.messages, res.hasMore);
-      }
+      // Toggle locally instead of refetching (keeps scroll position and history view)
+      useChatStore.getState().updateMessage({
+        ...msg,
+        pinnedAt: msg.pinnedAt ? null : new Date().toISOString(),
+      });
     } catch {
       toast(msg.pinnedAt ? "Failed to unpin message" : "Failed to pin message");
     }
@@ -476,7 +551,16 @@ export function ChatArea() {
             <div style={styles.pinsPanelEmpty}>No pinned messages in this channel</div>
           ) : (
             pinnedMessages.map((pin) => (
-              <div key={pin.id} style={styles.pinItem}>
+              <div
+                key={pin.id}
+                style={{ ...styles.pinItem, cursor: "pointer" }}
+                className="hover-bg"
+                onClick={() => {
+                  setShowPins(false);
+                  jumpToMessage(pin.id, pin.createdAt);
+                }}
+                title="Jump to message"
+              >
                 <div style={styles.pinItemAuthor}>{pin.author?.displayName ?? "Unknown"}</div>
                 <div style={styles.pinItemContent}>{pin.content}</div>
                 <div style={styles.pinItemDate}>{new Date(pin.createdAt).toLocaleDateString()}</div>
@@ -512,10 +596,21 @@ export function ChatArea() {
               style={{ ...styles.pinItem, cursor: "pointer" }}
               className="hover-bg"
               onClick={() => {
-                navigate(`/channels/${serverId}/${result.channelId}`);
                 setShowSearch(false);
                 setSearchQuery("");
+                if (result.channelId === channelId) {
+                  jumpToMessage(result.id, result.createdAt);
+                } else {
+                  // Hand the target to the destination channel's load effect
+                  useChatStore.getState().setPendingJump({
+                    channelId: result.channelId,
+                    messageId: result.id,
+                    createdAt: result.createdAt,
+                  });
+                  navigate(`/channels/${serverId}/${result.channelId}`);
+                }
               }}
+              title="Jump to message"
             >
               <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
                 <span style={styles.pinItemAuthor}>{result.author?.displayName ?? "Unknown"}</span>
@@ -602,7 +697,8 @@ export function ChatArea() {
             return (
               <div
                 key={msg.id}
-                className="message-grouped hover-bg"
+                id={`msg-${msg.id}`}
+                className={`message-grouped hover-bg${highlightMsgId === msg.id ? " msg-highlight" : ""}`}
                 style={styles.messageGrouped}
                 onMouseEnter={() => setHoveredMsgId(msg.id)}
                 onMouseLeave={() => setHoveredMsgId(null)}
@@ -659,7 +755,8 @@ export function ChatArea() {
               {dateSeparator}
               {unreadDivider}
               <div
-                className="hover-bg"
+                id={`msg-${msg.id}`}
+                className={`hover-bg${highlightMsgId === msg.id ? " msg-highlight" : ""}`}
                 style={styles.message}
                 onMouseEnter={() => setHoveredMsgId(msg.id)}
                 onMouseLeave={() => setHoveredMsgId(null)}
@@ -736,6 +833,12 @@ export function ChatArea() {
       </div>
 
       <div style={{ ...styles.inputArea, position: "relative" as const }}>
+        {!isAtLatest && (
+          <button className="history-bar" onClick={jumpToPresent}>
+            You're viewing older messages
+            <span className="history-bar-action">Jump to present</span>
+          </button>
+        )}
         {showNewBelow && (
           <button className="new-messages-pill" onClick={jumpToLatest}>
             New messages below
