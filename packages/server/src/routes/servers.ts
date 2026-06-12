@@ -117,6 +117,13 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(409).send({ error: "Already a member" });
     }
 
+    const ban = await prisma.serverBan.findUnique({
+      where: { serverId_userId: { serverId, userId } },
+    });
+    if (ban) {
+      return reply.code(403).send({ error: "You are banned from this server" });
+    }
+
     await prisma.serverMember.create({ data: { userId, serverId } });
     return reply.code(201).send({ joined: true });
   });
@@ -326,6 +333,13 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(409).send({ error: "Already a member" });
       }
 
+      const ban = await prisma.serverBan.findUnique({
+        where: { serverId_userId: { serverId: invite.serverId, userId } },
+      });
+      if (ban) {
+        return reply.code(403).send({ error: "You are banned from this server" });
+      }
+
       await prisma.$transaction([
         prisma.serverMember.create({ data: { userId, serverId: invite.serverId } }),
         prisma.invite.update({ where: { code }, data: { uses: { increment: 1 } } }),
@@ -336,6 +350,93 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
         serverId: invite.serverId,
         serverName: invite.server.name,
       });
+    }
+  );
+
+  // Ban a member (removes them from the server and blocks rejoining)
+  app.post<{ Params: { serverId: string; targetId: string }; Body: { reason?: string } }>(
+    "/:serverId/bans/:targetId",
+    async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      const { serverId, targetId } = request.params;
+      const reason = request.body?.reason?.trim() || null;
+
+      if (!await checkPermission(userId, serverId, Permissions.BAN_MEMBERS)) {
+        return reply.code(403).send({ error: "Missing BAN_MEMBERS permission" });
+      }
+      if (targetId === userId) {
+        return reply.code(400).send({ error: "You cannot ban yourself" });
+      }
+      const server = await prisma.server.findUnique({ where: { id: serverId } });
+      if (!server) return reply.code(404).send({ error: "Server not found" });
+      if (server.ownerId === targetId) {
+        return reply.code(400).send({ error: "The server owner cannot be banned" });
+      }
+
+      await prisma.$transaction([
+        prisma.serverBan.upsert({
+          where: { serverId_userId: { serverId, userId: targetId } },
+          create: { serverId, userId: targetId, bannedBy: userId, reason },
+          update: { bannedBy: userId, reason },
+        }),
+        prisma.serverMember.deleteMany({ where: { serverId, userId: targetId } }),
+      ]);
+
+      return { banned: true };
+    }
+  );
+
+  // Revoke a ban
+  app.delete<{ Params: { serverId: string; targetId: string } }>(
+    "/:serverId/bans/:targetId",
+    async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      const { serverId, targetId } = request.params;
+
+      if (!await checkPermission(userId, serverId, Permissions.BAN_MEMBERS)) {
+        return reply.code(403).send({ error: "Missing BAN_MEMBERS permission" });
+      }
+
+      await prisma.serverBan.deleteMany({ where: { serverId, userId: targetId } });
+      return { unbanned: true };
+    }
+  );
+
+  // List bans
+  app.get<{ Params: { serverId: string } }>(
+    "/:serverId/bans",
+    async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      const { serverId } = request.params;
+
+      if (!await checkPermission(userId, serverId, Permissions.BAN_MEMBERS)) {
+        return reply.code(403).send({ error: "Missing BAN_MEMBERS permission" });
+      }
+
+      const bans = await prisma.serverBan.findMany({
+        where: { serverId },
+        include: {
+          user: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      // Resolve banner display names in one query
+      const bannerIds = [...new Set(bans.map((b) => b.bannedBy))];
+      const banners = await prisma.user.findMany({
+        where: { id: { in: bannerIds } },
+        select: { id: true, displayName: true },
+      });
+      const bannerNames = new Map(banners.map((u) => [u.id, u.displayName]));
+
+      return {
+        bans: bans.map((b) => ({
+          user: b.user,
+          bannedByName: bannerNames.get(b.bannedBy) ?? "Unknown",
+          reason: b.reason,
+          createdAt: b.createdAt.toISOString(),
+        })),
+      };
     }
   );
 

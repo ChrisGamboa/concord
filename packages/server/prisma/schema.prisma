@@ -25,6 +25,7 @@ model User {
   conversations1  Conversation[]   @relation("ConvUser1")
   conversations2  Conversation[]   @relation("ConvUser2")
   directMessages  DirectMessage[]
+  bans            ServerBan[]      @relation("BannedUser")
 }
 
 model Server {
@@ -39,6 +40,20 @@ model Server {
   roles    Role[]
   members  ServerMember[]
   invites  Invite[]
+  bans     ServerBan[]
+}
+
+model ServerBan {
+  serverId  String
+  userId    String
+  bannedBy  String
+  reason    String?
+  createdAt DateTime @default(now())
+
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  user   User   @relation("BannedUser", fields: [userId], references: [id])
+
+  @@id([serverId, userId])
 }
 
 model Conversation {

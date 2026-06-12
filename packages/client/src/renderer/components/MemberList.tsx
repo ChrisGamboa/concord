@@ -3,8 +3,10 @@ import { ProfileCard } from "./ProfileCard";
 import { useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { usePresenceStore } from "../stores/presence";
+import { useAuthStore } from "../stores/auth";
+import { useChatStore } from "../stores/chat";
 import { toast } from "../stores/toast";
-import type { ServerMember, PublicUser, Role } from "@concord/shared";
+import { Permissions, hasPermission, type ServerMember, type PublicUser, type Role } from "@concord/shared";
 import { avatarColor, avatarUrl } from "../lib/avatar";
 
 interface MemberWithOnline extends ServerMember {
@@ -18,6 +20,59 @@ export function MemberList() {
   const [roles, setRoles] = useState<Role[]>([]);
   const onlineUsers = usePresenceStore((s) => s.onlineUsers);
   const setOnlineUsers = usePresenceStore((s) => s.setOnlineUsers);
+  const myUserId = useAuthStore((s) => s.user?.id);
+  const serverOwnerId = useChatStore((s) => s.servers.find((sv) => sv.id === serverId)?.ownerId);
+
+  // Permissions for moderation (ban)
+  const [myPerms, setMyPerms] = useState(0);
+  useEffect(() => {
+    if (!serverId || !myUserId) return;
+    api.getMyPermissions(serverId, myUserId).then((r) => setMyPerms(r.permissions)).catch(() => {});
+  }, [serverId, myUserId]);
+  const canBan = hasPermission(myPerms, Permissions.BAN_MEMBERS);
+
+  // Right-click context menu for moderation
+  const [ctxMenu, setCtxMenu] = useState<{ userId: string; name: string; x: number; y: number } | null>(null);
+  const [confirmingBan, setConfirmingBan] = useState(false);
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => { setCtxMenu(null); setConfirmingBan(false); };
+    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    const timer = setTimeout(() => {
+      window.addEventListener("click", close);
+      window.addEventListener("keydown", handleKey);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", handleKey);
+    };
+  }, [ctxMenu]);
+
+  const reloadMembers = () => {
+    if (!serverId) return;
+    api.getMembers(serverId).then((res) => {
+      setMembers(res.members as MemberWithOnline[]);
+    }).catch(() => {});
+  };
+
+  const handleBan = async () => {
+    if (!ctxMenu || !serverId) return;
+    if (!confirmingBan) {
+      setConfirmingBan(true);
+      return;
+    }
+    try {
+      await api.banMember(serverId, ctxMenu.userId);
+      toast(`${ctxMenu.name} was banned`, "success");
+      reloadMembers();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Failed to ban member");
+    } finally {
+      setCtxMenu(null);
+      setConfirmingBan(false);
+    }
+  };
 
   useEffect(() => {
     if (!serverId) return;
@@ -56,7 +111,13 @@ export function MemberList() {
             Online — {online.length}
           </span>
           {online.map((m) => (
-            <MemberItem key={m.userId} member={m} isOnline roles={roles} onClickProfile={(member, x, y) => setProfilePopup({ userId: member.userId, x, y })} />
+            <MemberItem
+              key={m.userId} member={m} isOnline roles={roles}
+              onClickProfile={(member, x, y) => setProfilePopup({ userId: member.userId, x, y })}
+              onContextMenu={canBan && m.userId !== myUserId && m.userId !== serverOwnerId
+                ? (member, x, y) => { setConfirmingBan(false); setCtxMenu({ userId: member.userId, name: member.user?.displayName ?? "user", x, y }); }
+                : undefined}
+            />
           ))}
         </div>
       )}
@@ -66,7 +127,13 @@ export function MemberList() {
             Offline — {offline.length}
           </span>
           {offline.map((m) => (
-            <MemberItem key={m.userId} member={m} isOnline={false} roles={roles} onClickProfile={(member, x, y) => setProfilePopup({ userId: member.userId, x, y })} />
+            <MemberItem
+              key={m.userId} member={m} isOnline={false} roles={roles}
+              onClickProfile={(member, x, y) => setProfilePopup({ userId: member.userId, x, y })}
+              onContextMenu={canBan && m.userId !== myUserId && m.userId !== serverOwnerId
+                ? (member, x, y) => { setConfirmingBan(false); setCtxMenu({ userId: member.userId, name: member.user?.displayName ?? "user", x, y }); }
+                : undefined}
+            />
           ))}
         </div>
       )}
@@ -80,6 +147,21 @@ export function MemberList() {
           onClose={() => setProfilePopup(null)}
         />
       )}
+
+      {ctxMenu && (
+        <div
+          className="member-ctx-menu"
+          style={{ top: Math.min(ctxMenu.y, window.innerHeight - 80), left: Math.max(8, ctxMenu.x - 160) }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            className="member-ctx-item member-ctx-item--danger"
+            onClick={handleBan}
+          >
+            {confirmingBan ? `Confirm ban of ${ctxMenu.name}?` : `Ban ${ctxMenu.name}`}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -89,11 +171,13 @@ function MemberItem({
   isOnline,
   roles,
   onClickProfile,
+  onContextMenu,
 }: {
   member: MemberWithOnline;
   isOnline: boolean;
   roles: Role[];
   onClickProfile: (member: MemberWithOnline, x: number, y: number) => void;
+  onContextMenu?: (member: MemberWithOnline, x: number, y: number) => void;
 }) {
   const memberRoles = roles.filter((r) => member.roleIds.includes(r.id));
   const topRole = memberRoles[0];
@@ -103,6 +187,7 @@ function MemberItem({
       className="hover-bg"
       style={{ ...styles.member, opacity: isOnline ? 1 : 0.4, cursor: "pointer" }}
       onClick={(e) => onClickProfile(member, e.currentTarget.getBoundingClientRect().left, e.currentTarget.getBoundingClientRect().top)}
+      onContextMenu={onContextMenu ? (e) => { e.preventDefault(); onContextMenu(member, e.clientX, e.clientY); } : undefined}
     >
       <div style={styles.avatarWrapper}>
         {avatarUrl(member.user?.avatarUrl) ? (

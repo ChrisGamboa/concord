@@ -21,7 +21,7 @@ const PERMISSION_LABELS: { key: string; perm: number; label: string; description
   { key: "STREAM", perm: Permissions.STREAM, label: "Stream", description: "Share screen or camera" },
 ];
 
-type Tab = "overview" | "invites" | "roles";
+type Tab = "overview" | "invites" | "roles" | "bans";
 
 export function ServerSettings({
   serverId,
@@ -55,6 +55,10 @@ export function ServerSettings({
   // Invites state
   const [invites, setInvites] = useState<Array<{ code: string; createdBy: string; maxUses: number | null; uses: number; expiresAt: string | null }>>([]);
 
+  // Bans state
+  const [bans, setBans] = useState<Array<{ user: { id: string; username: string; displayName: string; avatarUrl: string | null }; bannedByName: string; reason: string | null; createdAt: string }>>([]);
+  const [bansError, setBansError] = useState("");
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", handler);
@@ -71,8 +75,28 @@ export function ServerSettings({
     setInvites(res.invites);
   }, [serverId]);
 
+  const loadBans = useCallback(async () => {
+    setBansError("");
+    try {
+      const res = await api.getBans(serverId);
+      setBans(res.bans);
+    } catch (err) {
+      setBansError(err instanceof Error ? err.message : "Failed to load bans");
+    }
+  }, [serverId]);
+
+  const handleUnban = async (targetId: string) => {
+    try {
+      await api.unbanMember(serverId, targetId);
+      setBans((prev) => prev.filter((b) => b.user.id !== targetId));
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Failed to unban");
+    }
+  };
+
   useEffect(() => { loadRoles(); }, [loadRoles]);
   useEffect(() => { if (tab === "invites") loadInvites(); }, [tab, loadInvites]);
+  useEffect(() => { if (tab === "bans") loadBans(); }, [tab, loadBans]);
 
   const selectedRole = roles.find((r) => r.id === selectedRoleId);
   useEffect(() => {
@@ -192,6 +216,10 @@ export function ServerSettings({
           <button className={`settings-nav-item ${tab === "invites" ? "settings-nav-item--active" : ""}`}
             onClick={() => { setTab("invites"); setSelectedRoleId(null); }}>
             Invites
+          </button>
+          <button className={`settings-nav-item ${tab === "bans" ? "settings-nav-item--active" : ""}`}
+            onClick={() => { setTab("bans"); setSelectedRoleId(null); }}>
+            Bans
           </button>
 
           <div className="settings-nav-divider" />
@@ -315,6 +343,53 @@ export function ServerSettings({
                           Delete
                         </button>
                       </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Bans */}
+          {tab === "bans" && !selectedRoleId && (
+            <div className="settings-section">
+              <h2 className="settings-section-title">Bans</h2>
+              <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 16 }}>
+                Banned users cannot rejoin this server until unbanned. Ban members by right-clicking them in the member list.
+              </p>
+              {bansError && <div className="settings-profile-msg">{bansError}</div>}
+              {!bansError && bans.length === 0 && (
+                <div className="settings-card" style={{ color: "var(--text-muted)", fontSize: 13 }}>
+                  No banned users.
+                </div>
+              )}
+              {bans.length > 0 && (
+                <div className="settings-card">
+                  {bans.map((ban) => (
+                    <div key={ban.user.id} className="settings-field">
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                        {avatarUrl(ban.user.avatarUrl) ? (
+                          <img src={avatarUrl(ban.user.avatarUrl)!} alt="" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
+                        ) : (
+                          <div style={{ width: 32, height: 32, borderRadius: "50%", background: avatarColor(ban.user.id), display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600, fontSize: 14, color: "white", flexShrink: 0 }}>
+                            {ban.user.displayName.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>
+                            {ban.user.displayName}
+                            <span style={{ color: "var(--text-muted)", fontWeight: 400, marginLeft: 6 }}>@{ban.user.username}</span>
+                          </div>
+                          <span className="settings-hint">
+                            banned by {ban.bannedByName} on {new Date(ban.createdAt).toLocaleDateString()}
+                            {ban.reason ? ` -- ${ban.reason}` : ""}
+                          </span>
+                        </div>
+                      </div>
+                      <button className="settings-remove-btn" style={{ padding: "4px 10px", fontSize: 11, flexShrink: 0 }}
+                        onClick={() => handleUnban(ban.user.id)}>
+                        Unban
+                      </button>
                     </div>
                   ))}
                 </div>

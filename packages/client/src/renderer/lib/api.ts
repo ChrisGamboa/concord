@@ -146,6 +146,21 @@ export const api = {
   getMembers: (serverId: string) =>
     request<MembersResponse>(`/servers/${serverId}/members`),
 
+  // Bans
+  banMember: (serverId: string, targetId: string, reason?: string) =>
+    request<{ banned: boolean }>(`/servers/${serverId}/bans/${targetId}`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
+
+  unbanMember: (serverId: string, targetId: string) =>
+    request<{ unbanned: boolean }>(`/servers/${serverId}/bans/${targetId}`, { method: "DELETE" }),
+
+  getBans: (serverId: string) =>
+    request<{ bans: Array<{ user: { id: string; username: string; displayName: string; avatarUrl: string | null }; bannedByName: string; reason: string | null; createdAt: string }> }>(
+      `/servers/${serverId}/bans`
+    ),
+
   // Roles
   getRoles: (serverId: string) =>
     request<{ roles: Role[] }>(`/servers/${serverId}/roles`),
