@@ -90,6 +90,22 @@ export function ChatArea() {
     };
   }, [reactionPickerMsgId]);
 
+  // Close delete-confirm popover on click-outside or Escape
+  useEffect(() => {
+    if (!confirmDeleteId) return;
+    const close = () => setConfirmDeleteId(null);
+    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    const timer = setTimeout(() => {
+      window.addEventListener("click", close);
+      window.addEventListener("keydown", handleKey);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", handleKey);
+    };
+  }, [confirmDeleteId]);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -440,13 +456,12 @@ export function ChatArea() {
     setEditContent("");
   };
 
-  const handleDelete = (msgId: string) => {
-    if (confirmDeleteId === msgId) {
+  const handleDelete = (msgId: string, skipConfirm: boolean) => {
+    if (skipConfirm || confirmDeleteId === msgId) {
       sendWs({ type: "delete_message", messageId: msgId });
       setConfirmDeleteId(null);
     } else {
       setConfirmDeleteId(msgId);
-      setTimeout(() => setConfirmDeleteId((curr) => curr === msgId ? null : curr), 2000);
     }
   };
 
@@ -714,7 +729,7 @@ export function ChatArea() {
                     <MessageActions
                       msgId={msg.id} content={msg.content} isOwn={isOwnG} canModerate={canModerate} isPinned={!!msg.pinnedAt}
                       isHovered={isHoveredG} isEditing={true} editContent={editContent}
-                      confirmDeleteId={confirmDeleteId}
+                      confirmDeleteId={confirmDeleteId} onCancelDelete={() => setConfirmDeleteId(null)}
                       showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete} onPin={handlePin}
                       onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                       onEditChange={setEditContent}
@@ -736,7 +751,7 @@ export function ChatArea() {
                   <MessageActions
                     msgId={msg.id} content={msg.content} isOwn={isOwnG} canModerate={canModerate} isPinned={!!msg.pinnedAt}
                     isHovered={isHoveredG} isEditing={false} editContent={editContent}
-                    confirmDeleteId={confirmDeleteId}
+                    confirmDeleteId={confirmDeleteId} onCancelDelete={() => setConfirmDeleteId(null)}
                     showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete} onPin={handlePin}
                     onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                     onEditChange={setEditContent}
@@ -796,7 +811,7 @@ export function ChatArea() {
                     <MessageActions
                       msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate} isPinned={!!msg.pinnedAt}
                       isHovered={isHovered} isEditing={true} editContent={editContent}
-                      confirmDeleteId={confirmDeleteId}
+                      confirmDeleteId={confirmDeleteId} onCancelDelete={() => setConfirmDeleteId(null)}
                       showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete} onPin={handlePin}
                       onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                       onEditChange={setEditContent}
@@ -819,7 +834,7 @@ export function ChatArea() {
                   <MessageActions
                     msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate} isPinned={!!msg.pinnedAt}
                     isHovered={isHovered} isEditing={false} editContent={editContent}
-                    confirmDeleteId={confirmDeleteId}
+                    confirmDeleteId={confirmDeleteId} onCancelDelete={() => setConfirmDeleteId(null)}
                     showReactionPicker={reactionPickerMsgId === msg.id} onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)} onStartEdit={handleStartEdit} onDelete={handleDelete} onPin={handlePin}
                     onSaveEdit={handleSaveEdit} onCancelEdit={handleCancelEdit}
                     onEditChange={setEditContent}
@@ -987,6 +1002,7 @@ function MessageActions({
   onReact,
   onStartEdit,
   onDelete,
+  onCancelDelete,
   onPin,
   onSaveEdit,
   onCancelEdit,
@@ -1004,7 +1020,8 @@ function MessageActions({
   showReactionPicker: boolean;
   onReact: (msgId: string) => void;
   onStartEdit: (id: string, content: string) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string, skipConfirm: boolean) => void;
+  onCancelDelete: () => void;
   onPin: (id: string) => void;
   onSaveEdit: () => void;
   onCancelEdit: () => void;
@@ -1030,7 +1047,8 @@ function MessageActions({
     );
   }
 
-  if (!isHovered && !showReactionPicker) return null;
+  const showDeleteConfirm = confirmDeleteId === msgId;
+  if (!isHovered && !showReactionPicker && !showDeleteConfirm) return null;
 
   return (
     <div className="msg-action-bar">
@@ -1071,11 +1089,26 @@ function MessageActions({
       )}
       {(isOwn || canModerate) && (
         <button
-          className={`msg-action-btn ${confirmDeleteId === msgId ? "msg-action-btn--confirm" : "msg-action-btn--danger"}`}
-          onClick={() => onDelete(msgId)}
+          className="msg-action-btn msg-action-btn--danger"
+          onClick={(e) => onDelete(msgId, e.shiftKey)}
+          title="Delete message (shift-click to skip confirmation)"
         >
-          {confirmDeleteId === msgId ? "Sure?" : "Del"}
+          Del
         </button>
+      )}
+      {showDeleteConfirm && (
+        <div className="delete-confirm-popover" onClick={(e) => e.stopPropagation()}>
+          <span className="delete-confirm-text">Delete this message?</span>
+          <button
+            className="delete-confirm-btn delete-confirm-btn--danger"
+            onClick={() => onDelete(msgId, true)}
+          >
+            Delete
+          </button>
+          <button className="delete-confirm-btn" onClick={onCancelDelete}>
+            Cancel
+          </button>
+        </div>
       )}
     </div>
   );
