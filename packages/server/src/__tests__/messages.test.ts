@@ -66,6 +66,8 @@ describe("Message Routes", () => {
           content: "Hello!",
           createdAt: now,
           editedAt: null,
+          reactions: [],
+          replyTo: null,
           author: {
             id: "user1",
             username: "testuser",
@@ -146,6 +148,8 @@ describe("Message Routes", () => {
         content: `Message ${i}`,
         createdAt: new Date(Date.now() - i * 1000),
         editedAt: null,
+        reactions: [],
+        replyTo: null,
         author: {
           id: "user1",
           username: "testuser",

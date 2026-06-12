@@ -95,7 +95,8 @@ describe("Voice Routes", () => {
       expect(mockCreateToken).toHaveBeenCalledWith(
         "user1",
         "Test User",
-        "voice:ch1"
+        "voice:ch1",
+        { metadata: JSON.stringify({ avatarUrl: null }) }
       );
       await app.close();
     });

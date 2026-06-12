@@ -16,7 +16,15 @@ vi.mock("../db.js", () => ({
       findMany: vi.fn(),
       findUnique: vi.fn(),
       create: vi.fn(),
+      deleteMany: vi.fn(),
     },
+    serverBan: {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      upsert: vi.fn(),
+      deleteMany: vi.fn(),
+    },
+    $transaction: vi.fn(),
   },
 }));
 
@@ -137,6 +145,7 @@ describe("Server Routes", () => {
         createdAt: new Date(),
       });
       mockPrisma.serverMember.findUnique.mockResolvedValue(null);
+      mockPrisma.serverBan.findUnique.mockResolvedValue(null);
       mockPrisma.serverMember.create.mockResolvedValue({
         userId: "user2",
         serverId: "srv1",
