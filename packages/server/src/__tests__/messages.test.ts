@@ -91,6 +91,46 @@ describe("Message Routes", () => {
       await app.close();
     });
 
+    it("should include the reply reference when a message is a reply", async () => {
+      const app = await buildApp();
+      const token = app.jwt.sign({ userId: "user1" });
+
+      mockPrisma.channel.findUnique.mockResolvedValue({ id: "ch1", serverId: "srv1" } as any);
+      mockPrisma.serverMember.findUnique.mockResolvedValue({ userId: "user1", serverId: "srv1" } as any);
+      mockPrisma.message.findMany.mockResolvedValue([
+        {
+          id: "msg2",
+          channelId: "ch1",
+          authorId: "user1",
+          content: "agreed!",
+          createdAt: new Date(),
+          editedAt: null,
+          reactions: [],
+          replyTo: {
+            id: "msg1",
+            content: "original",
+            authorId: "user2",
+            createdAt: new Date("2026-06-01"),
+            author: { id: "user2", username: "u2", displayName: "User Two", avatarUrl: null, status: null },
+          },
+          author: { id: "user1", username: "testuser", displayName: "Test User", avatarUrl: null },
+        },
+      ] as any);
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/api/messages/channel/ch1",
+        headers: authHeader(token),
+      });
+
+      expect(res.statusCode).toBe(200);
+      const msg = res.json().messages[0];
+      expect(msg.replyTo.id).toBe("msg1");
+      expect(msg.replyTo.content).toBe("original");
+      expect(msg.replyTo.author.displayName).toBe("User Two");
+      await app.close();
+    });
+
     it("should return 404 for non-existent channel", async () => {
       const app = await buildApp();
       const token = app.jwt.sign({ userId: "user1" });

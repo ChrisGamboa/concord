@@ -6,6 +6,7 @@ import { authRoutes } from "../routes/auth.js";
 import { serverRoutes } from "../routes/servers.js";
 import { channelRoutes } from "../routes/channels.js";
 import { messageRoutes } from "../routes/messages.js";
+import { muteRoutes } from "../routes/mutes.js";
 import "../types.js";
 
 export async function buildApp() {
@@ -30,6 +31,7 @@ export async function buildApp() {
   await app.register(serverRoutes, { prefix: "/api/servers" });
   await app.register(channelRoutes, { prefix: "/api/channels" });
   await app.register(messageRoutes, { prefix: "/api/messages" });
+  await app.register(muteRoutes, { prefix: "/api/mutes" });
 
   return app;
 }
