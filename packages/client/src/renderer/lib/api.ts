@@ -252,7 +252,7 @@ export const api = {
     ),
 
   getPinnedMessages: (channelId: string) =>
-    request<{ pins: Array<{ id: string; channelId: string; authorId: string; content: string; createdAt: string; pinnedAt: string | null; author: any }> }>(
+    request<{ pins: Array<{ id: string; channelId: string; authorId: string; content: string; createdAt: string; pinnedAt: string | null; pinnedByName: string | null; author: any }> }>(
       `/messages/channel/${channelId}/pins`
     ),
 

@@ -155,6 +155,14 @@ export const messageRoutes: FastifyPluginAsync = async (app) => {
         orderBy: { pinnedAt: "desc" },
       });
 
+      // pinnedBy is a bare user id (no relation) -- resolve display names in one query
+      const pinnerIds = [...new Set(pins.map((p) => p.pinnedBy).filter((id): id is string => id !== null))];
+      const pinners = await prisma.user.findMany({
+        where: { id: { in: pinnerIds } },
+        select: { id: true, displayName: true },
+      });
+      const pinnerNames = new Map(pinners.map((u) => [u.id, u.displayName]));
+
       return {
         pins: pins.map((m) => ({
           id: m.id,
@@ -163,6 +171,7 @@ export const messageRoutes: FastifyPluginAsync = async (app) => {
           content: m.content,
           createdAt: m.createdAt.toISOString(),
           pinnedAt: m.pinnedAt?.toISOString() ?? null,
+          pinnedByName: m.pinnedBy ? pinnerNames.get(m.pinnedBy) ?? null : null,
           author: m.author,
         })),
       };

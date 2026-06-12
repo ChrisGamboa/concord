@@ -2044,3 +2044,20 @@ a {
   background: #c93b3e;
   color: white;
 }
+
+/* Unpin button in the pins panel */
+.pin-remove-btn {
+  background: none;
+  border: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.pin-remove-btn:hover {
+  color: var(--danger);
+  background: var(--bg-primary);
+}

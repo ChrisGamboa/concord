@@ -486,7 +486,21 @@ export function ChatArea() {
 
   // Pinned messages panel
   const [showPins, setShowPins] = useState(false);
-  const [pinnedMessages, setPinnedMessages] = useState<Array<{ id: string; content: string; createdAt: string; author: any }>>([]);
+  const [pinnedMessages, setPinnedMessages] = useState<Array<{ id: string; content: string; createdAt: string; pinnedByName: string | null; author: any }>>([]);
+
+  const handleUnpinFromPanel = async (pinId: string) => {
+    try {
+      await api.unpinMessage(pinId);
+      setPinnedMessages((prev) => prev.filter((p) => p.id !== pinId));
+      // Keep the loaded message's pin state in sync if it's on screen
+      const loaded = useChatStore.getState().messages.find((m) => m.id === pinId);
+      if (loaded) {
+        useChatStore.getState().updateMessage({ ...loaded, pinnedAt: null });
+      }
+    } catch {
+      toast("Failed to unpin message");
+    }
+  };
   useEffect(() => {
     if (!showPins || !channelId) return;
     api.getPinnedMessages(channelId).then((res) => setPinnedMessages(res.pins)).catch(() => toast("Failed to load pinned messages"));
@@ -576,9 +590,26 @@ export function ChatArea() {
                 }}
                 title="Jump to message"
               >
-                <div style={styles.pinItemAuthor}>{pin.author?.displayName ?? "Unknown"}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <div style={{ ...styles.pinItemAuthor, flex: 1 }}>{pin.author?.displayName ?? "Unknown"}</div>
+                  {canModerate && (
+                    <button
+                      className="pin-remove-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleUnpinFromPanel(pin.id);
+                      }}
+                      title="Unpin"
+                    >
+                      Unpin
+                    </button>
+                  )}
+                </div>
                 <div style={styles.pinItemContent}>{pin.content}</div>
-                <div style={styles.pinItemDate}>{new Date(pin.createdAt).toLocaleDateString()}</div>
+                <div style={styles.pinItemDate}>
+                  {new Date(pin.createdAt).toLocaleDateString()}
+                  {pin.pinnedByName ? ` · pinned by ${pin.pinnedByName}` : ""}
+                </div>
               </div>
             ))
           )}
