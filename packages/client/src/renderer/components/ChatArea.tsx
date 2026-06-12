@@ -26,6 +26,30 @@ function isImageUrl(text: string): boolean {
   return IMAGE_REGEX.test(text) || (UPLOAD_URL_REGEX.test(text) && IMAGE_REGEX.test(text));
 }
 
+/** Extract from:/in:/before:/after: filter tokens from a search query. */
+function parseSearchQuery(raw: string) {
+  const textParts: string[] = [];
+  let from: string | null = null;
+  let inChannel: string | null = null;
+  let before: string | null = null;
+  let after: string | null = null;
+  for (const token of raw.trim().split(/\s+/).filter(Boolean)) {
+    const m = token.match(/^(from|in|before|after):(.+)$/i);
+    if (!m) {
+      textParts.push(token);
+      continue;
+    }
+    const value = m[2];
+    switch (m[1].toLowerCase()) {
+      case "from": from = value.replace(/^@/, ""); break;
+      case "in": inChannel = value.replace(/^#/, ""); break;
+      case "before": before = value; break;
+      case "after": after = value; break;
+    }
+  }
+  return { text: textParts.join(" "), from, inChannel, before, after };
+}
+
 function formatDateSeparator(date: Date): string {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -530,14 +554,42 @@ export function ChatArea() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Array<{ id: string; channelId: string; channelName: string; content: string; createdAt: string; author: any }>>([]);
   const [searching, setSearching] = useState(false);
+
+  // Resolve filter tokens against loaded members/channels
+  const searchPlan = useMemo(() => {
+    const parsed = parseSearchQuery(searchQuery);
+    const author = parsed.from
+      ? members.find(
+          (m) =>
+            m.username.toLowerCase() === parsed.from!.toLowerCase() ||
+            m.displayName.toLowerCase() === parsed.from!.toLowerCase()
+        ) ?? null
+      : null;
+    const channelFilter = parsed.inChannel
+      ? channels.find((c) => c.name.toLowerCase() === parsed.inChannel!.toLowerCase()) ?? null
+      : null;
+    const unresolved =
+      (parsed.from !== null && author === null) ||
+      (parsed.inChannel !== null && channelFilter === null);
+    const ready = !unresolved && (parsed.text.length >= 2 || author !== null);
+    return { ...parsed, author, channelFilter, unresolved, ready };
+  }, [searchQuery, members, channels]);
+
   useEffect(() => {
-    if (!showSearch || searchQuery.trim().length < 2 || !serverId) {
+    if (!showSearch || !serverId || !searchPlan.ready) {
       setSearchResults([]);
       return;
     }
     setSearching(true);
     const timer = setTimeout(() => {
-      api.searchMessages({ q: searchQuery.trim(), serverId })
+      api.searchMessages({
+        q: searchPlan.text,
+        serverId,
+        channelId: searchPlan.channelFilter?.id,
+        authorId: searchPlan.author?.userId,
+        before: searchPlan.before ?? undefined,
+        after: searchPlan.after ?? undefined,
+      })
         .then((res) => setSearchResults(res.results))
         .catch(() => {
           setSearchResults([]);
@@ -546,7 +598,7 @@ export function ChatArea() {
         .finally(() => setSearching(false));
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchQuery, showSearch, serverId]);
+  }, [searchPlan, showSearch, serverId]);
 
   const typingText =
     typingUsers.length === 0
@@ -645,14 +697,23 @@ export function ChatArea() {
               onChange={(e) => setSearchQuery(e.target.value)}
               autoFocus
             />
+            <div style={styles.searchHint}>
+              Filters: from:user &middot; in:channel &middot; before:YYYY-MM-DD &middot; after:YYYY-MM-DD
+            </div>
           </div>
           {searching && (
             <div style={styles.pinsPanelEmpty}>Searching...</div>
           )}
-          {!searching && searchQuery.trim().length >= 2 && searchResults.length === 0 && (
+          {!searching && searchPlan.from !== null && searchPlan.author === null && (
+            <div style={styles.pinsPanelEmpty}>No member matching "{searchPlan.from}"</div>
+          )}
+          {!searching && searchPlan.inChannel !== null && searchPlan.channelFilter === null && (
+            <div style={styles.pinsPanelEmpty}>No channel named "#{searchPlan.inChannel}"</div>
+          )}
+          {!searching && searchPlan.ready && searchResults.length === 0 && (
             <div style={styles.pinsPanelEmpty}>No results found</div>
           )}
-          {!searching && searchQuery.trim().length < 2 && searchQuery.trim().length > 0 && (
+          {!searching && !searchPlan.ready && !searchPlan.unresolved && searchQuery.trim().length > 0 && (
             <div style={styles.pinsPanelEmpty}>Type at least 2 characters</div>
           )}
           {searchResults.map((result) => (
@@ -1380,6 +1441,11 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--text-primary)",
     fontSize: "13px",
     outline: "none",
+  },
+  searchHint: {
+    marginTop: "4px",
+    fontSize: "11px",
+    color: "var(--text-muted)",
   },
   messages: {
     flex: 1,

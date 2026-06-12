@@ -90,14 +90,30 @@ export const messageRoutes: FastifyPluginAsync = async (app) => {
 
   // Search messages in a server or channel
   app.get<{
-    Querystring: { q: string; serverId?: string; channelId?: string; limit?: string };
+    Querystring: {
+      q?: string;
+      serverId?: string;
+      channelId?: string;
+      authorId?: string;
+      before?: string;
+      after?: string;
+      limit?: string;
+    };
   }>("/search", async (request, reply) => {
     const { userId } = request.user as { userId: string };
-    const { q, serverId, channelId, limit: limitStr } = request.query;
+    const { q, serverId, channelId, authorId, before, after, limit: limitStr } = request.query;
     const limit = Math.min(parseInt(limitStr ?? "25", 10), 50);
 
-    if (!q || q.trim().length < 2) {
-      return reply.code(400).send({ error: "Query must be at least 2 characters" });
+    const text = q?.trim() ?? "";
+    // Allow filter-only searches (e.g. everything from one author), but not unfiltered dumps
+    if (text.length < 2 && !authorId) {
+      return reply.code(400).send({ error: "Query must be at least 2 characters (or include a from: filter)" });
+    }
+
+    const beforeDate = before ? new Date(before) : null;
+    const afterDate = after ? new Date(after) : null;
+    if ((beforeDate && isNaN(beforeDate.getTime())) || (afterDate && isNaN(afterDate.getTime()))) {
+      return reply.code(400).send({ error: "Invalid date filter" });
     }
 
     // Build filter: either a specific channel or all channels in a server
@@ -124,7 +140,16 @@ export const messageRoutes: FastifyPluginAsync = async (app) => {
     const messages = await prisma.message.findMany({
       where: {
         channelId: { in: channelIds },
-        content: { contains: q.trim(), mode: "insensitive" },
+        ...(text.length >= 2 ? { content: { contains: text, mode: "insensitive" } } : {}),
+        ...(authorId ? { authorId } : {}),
+        ...(beforeDate || afterDate
+          ? {
+              createdAt: {
+                ...(beforeDate ? { lt: beforeDate } : {}),
+                ...(afterDate ? { gt: afterDate } : {}),
+              },
+            }
+          : {}),
       },
       include: {
         author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
