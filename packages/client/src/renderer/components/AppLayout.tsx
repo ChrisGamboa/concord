@@ -93,6 +93,41 @@ export function AppLayout() {
     api.getMutes().then(setMutes).catch(() => {});
   }, [setMutes]);
 
+  // Auto-idle after inactivity (skipped while DND is chosen manually)
+  useEffect(() => {
+    const IDLE_AFTER_MS = 5 * 60 * 1000;
+    const ACTIVITY_THROTTLE_MS = 1000;
+    let idleTimer: ReturnType<typeof setTimeout>;
+    let isIdle = false;
+    let lastActivity = 0;
+
+    const manualDnd = () => localStorage.getItem("concord-presence") === "dnd";
+    const goIdle = () => {
+      if (manualDnd()) return;
+      isIdle = true;
+      sendWs({ type: "presence_set", status: "idle" });
+    };
+    const onActivity = () => {
+      const now = Date.now();
+      if (now - lastActivity < ACTIVITY_THROTTLE_MS) return;
+      lastActivity = now;
+      if (isIdle && !manualDnd()) {
+        isIdle = false;
+        sendWs({ type: "presence_set", status: "online" });
+      }
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(goIdle, IDLE_AFTER_MS);
+    };
+
+    const events = ["mousemove", "keydown", "mousedown"] as const;
+    events.forEach((e) => window.addEventListener(e, onActivity));
+    idleTimer = setTimeout(goIdle, IDLE_AFTER_MS);
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, onActivity));
+      clearTimeout(idleTimer);
+    };
+  }, []);
+
   // Mark channel as read when viewing it (skip for DM view)
   useEffect(() => {
     if (!channelId || isVoiceChannel || serverId === "@me") return;
@@ -111,7 +146,7 @@ export function AppLayout() {
     isVoiceChannel && voiceConnection?.channelId !== channelId;
 
   const userId = useAuthStore((s) => s.user?.id);
-  const { setUserOnline, setUserOffline, addTyping } = usePresenceStore();
+  const { setPresence, addTyping } = usePresenceStore();
   const [showSettings, setShowSettings] = useState(false);
   const [showServerSettings, setShowServerSettings] = useState(false);
   const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
@@ -154,7 +189,9 @@ export function AppLayout() {
           const isMuted =
             chatState.mutedChannels.includes(msg.message.channelId) ||
             (msgChannel !== undefined && chatState.mutedServers.includes(msgChannel.serverId));
-          if (!isMuted && !document.hasFocus() && msg.message.authorId !== userId) {
+          const isDnd = userId !== undefined &&
+            usePresenceStore.getState().statuses[userId] === "dnd";
+          if (!isMuted && !isDnd && !document.hasFocus() && msg.message.authorId !== userId) {
             const electron = (window as any).electron;
             electron?.sendNotification?.(
               msg.message.author?.displayName ?? "New message",
@@ -172,8 +209,13 @@ export function AppLayout() {
           removeMessage(msg.channelId, msg.messageId);
           break;
         case "presence_update":
-          if (msg.status === "online") setUserOnline(msg.userId);
-          else setUserOffline(msg.userId);
+          setPresence(msg.userId, msg.status);
+          break;
+        case "ready":
+          // Restore a manually chosen DND status across reconnects
+          if (localStorage.getItem("concord-presence") === "dnd") {
+            sendWs({ type: "presence_set", status: "dnd" });
+          }
           break;
         case "typing":
           addTyping(msg.channelId, msg.userId, msg.username);
@@ -189,7 +231,7 @@ export function AppLayout() {
           break;
       }
     });
-  }, [addMessage, updateMessage, removeMessage, setUserOnline, setUserOffline, addTyping, setUnreadCount, updateReactions]);
+  }, [addMessage, updateMessage, removeMessage, setPresence, addTyping, setUnreadCount, updateReactions]);
 
   return (
     <div style={styles.layout}>

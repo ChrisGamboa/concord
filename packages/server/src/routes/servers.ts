@@ -6,7 +6,7 @@ import sharp from "sharp";
 import { prisma } from "../db.js";
 import { Permissions } from "@concord/shared";
 import { checkPermission } from "../permissions.js";
-import { getOnlineUserIds } from "../ws/connections.js";
+import { getOnlineUserIds, getUserStatus } from "../ws/connections.js";
 import { randomUUID } from "crypto";
 
 const UPLOADS_DIR = join(process.cwd(), "uploads");
@@ -159,6 +159,7 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
         joinedAt: m.joinedAt.toISOString(),
         user: m.user,
         online: onlineIds.has(m.userId),
+        presence: onlineIds.has(m.userId) ? getUserStatus(m.userId) ?? "online" : "offline",
       })),
     };
   });

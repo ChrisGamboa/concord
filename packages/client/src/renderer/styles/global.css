@@ -2256,3 +2256,27 @@ a {
   background: var(--danger);
   color: white;
 }
+
+/* Presence selector in settings */
+.presence-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.presence-option:hover {
+  color: var(--text-primary);
+}
+
+.presence-option--active {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}

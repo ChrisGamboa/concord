@@ -22,6 +22,11 @@ export function DmSidebar() {
   const { channelId: activeConvId } = useParams();
   const navigate = useNavigate();
   const onlineUsers = usePresenceStore((s) => s.onlineUsers);
+  const statuses = usePresenceStore((s) => s.statuses);
+  const presenceColor = (uid: string) => {
+    const st = statuses[uid] ?? (onlineUsers.has(uid) ? "online" : "offline");
+    return st === "online" ? "var(--success)" : st === "idle" ? "#f0b232" : st === "dnd" ? "var(--danger)" : "var(--text-muted)";
+  };
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [showNewDm, setShowNewDm] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -199,7 +204,7 @@ export function DmSidebar() {
                 <div
                   style={{
                     ...styles.statusDot,
-                    background: isOnline ? "var(--success)" : "var(--text-muted)",
+                    background: presenceColor(conv.otherUser.id),
                   }}
                 />
               </div>

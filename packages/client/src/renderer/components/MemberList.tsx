@@ -12,14 +12,23 @@ import { avatarColor, avatarUrl } from "../lib/avatar";
 interface MemberWithOnline extends ServerMember {
   user?: PublicUser;
   online?: boolean;
+  presence?: "online" | "idle" | "dnd" | "offline";
 }
+
+export const PRESENCE_COLORS: Record<string, string> = {
+  online: "var(--success)",
+  idle: "#f0b232",
+  dnd: "var(--danger)",
+  offline: "var(--text-muted)",
+};
 
 export function MemberList() {
   const { serverId } = useParams();
   const [members, setMembers] = useState<MemberWithOnline[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const onlineUsers = usePresenceStore((s) => s.onlineUsers);
-  const setOnlineUsers = usePresenceStore((s) => s.setOnlineUsers);
+  const statuses = usePresenceStore((s) => s.statuses);
+  const setPresences = usePresenceStore((s) => s.setPresences);
   const myUserId = useAuthStore((s) => s.user?.id);
   const serverOwnerId = useChatStore((s) => s.servers.find((sv) => sv.id === serverId)?.ownerId);
 
@@ -77,16 +86,18 @@ export function MemberList() {
   useEffect(() => {
     if (!serverId) return;
     api.getMembers(serverId).then((res) => {
-      setMembers(res.members as MemberWithOnline[]);
-      const onlineIds = (res.members as MemberWithOnline[])
-        .filter((m) => m.online)
-        .map((m) => m.userId);
-      setOnlineUsers(onlineIds);
+      const fetched = res.members as MemberWithOnline[];
+      setMembers(fetched);
+      setPresences(
+        Object.fromEntries(
+          fetched.filter((m) => m.online).map((m) => [m.userId, m.presence ?? "online"])
+        )
+      );
     }).catch(() => toast("Failed to load member list"));
     api.getRoles(serverId).then((res) => {
       setRoles(res.roles.filter((r) => r.position > 0)); // exclude @everyone
     }).catch(() => {});
-  }, [serverId, setOnlineUsers]);
+  }, [serverId, setPresences]);
 
   const online = members.filter((m) => onlineUsers.has(m.userId));
   const offline = members.filter((m) => !onlineUsers.has(m.userId));
@@ -112,7 +123,7 @@ export function MemberList() {
           </span>
           {online.map((m) => (
             <MemberItem
-              key={m.userId} member={m} isOnline roles={roles}
+              key={m.userId} member={m} isOnline presence={statuses[m.userId] ?? "online"} roles={roles}
               onClickProfile={(member, x, y) => setProfilePopup({ userId: member.userId, x, y })}
               onContextMenu={canBan && m.userId !== myUserId && m.userId !== serverOwnerId
                 ? (member, x, y) => { setConfirmingBan(false); setCtxMenu({ userId: member.userId, name: member.user?.displayName ?? "user", x, y }); }
@@ -128,7 +139,7 @@ export function MemberList() {
           </span>
           {offline.map((m) => (
             <MemberItem
-              key={m.userId} member={m} isOnline={false} roles={roles}
+              key={m.userId} member={m} isOnline={false} presence="offline" roles={roles}
               onClickProfile={(member, x, y) => setProfilePopup({ userId: member.userId, x, y })}
               onContextMenu={canBan && m.userId !== myUserId && m.userId !== serverOwnerId
                 ? (member, x, y) => { setConfirmingBan(false); setCtxMenu({ userId: member.userId, name: member.user?.displayName ?? "user", x, y }); }
@@ -169,12 +180,14 @@ export function MemberList() {
 function MemberItem({
   member,
   isOnline,
+  presence,
   roles,
   onClickProfile,
   onContextMenu,
 }: {
   member: MemberWithOnline;
   isOnline: boolean;
+  presence: "online" | "idle" | "dnd" | "offline";
   roles: Role[];
   onClickProfile: (member: MemberWithOnline, x: number, y: number) => void;
   onContextMenu?: (member: MemberWithOnline, x: number, y: number) => void;
@@ -200,8 +213,9 @@ function MemberItem({
         <div
           style={{
             ...styles.statusDot,
-            background: isOnline ? "var(--success)" : "var(--text-muted)",
+            background: PRESENCE_COLORS[presence],
           }}
+          title={presence === "dnd" ? "Do Not Disturb" : presence}
         />
       </div>
       <div style={{ minWidth: 0, flex: 1 }}>

@@ -75,3 +75,21 @@ export function isUserOnline(userId: string): boolean {
   }
   return false;
 }
+
+// ---- Presence status (online/idle/dnd) for connected users ----
+
+type PresenceStatus = "online" | "idle" | "dnd";
+
+const userStatuses = new Map<string, PresenceStatus>();
+
+export function setUserStatus(userId: string, status: PresenceStatus) {
+  userStatuses.set(userId, status);
+}
+
+export function getUserStatus(userId: string): PresenceStatus | undefined {
+  return userStatuses.get(userId);
+}
+
+export function clearUserStatus(userId: string) {
+  userStatuses.delete(userId);
+}

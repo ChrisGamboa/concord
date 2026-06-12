@@ -30,7 +30,11 @@ export function ProfileCard({ userId, x, y, anchor = "left", onClose }: ProfileC
   const navigate = useNavigate();
   const currentUserId = useAuthStore((s) => s.user?.id);
   const onlineUsers = usePresenceStore((s) => s.onlineUsers);
+  const statuses = usePresenceStore((s) => s.statuses);
   const isOnline = onlineUsers.has(userId);
+  const presence = statuses[userId] ?? (isOnline ? "online" : "offline");
+  const presenceColor =
+    presence === "online" ? "var(--success)" : presence === "idle" ? "#f0b232" : presence === "dnd" ? "var(--danger)" : "var(--text-muted)";
   const isOwnProfile = userId === currentUserId;
   const [member, setMember] = useState<MemberData | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -93,7 +97,7 @@ export function ProfileCard({ userId, x, y, anchor = "left", onClose }: ProfileC
             {(member?.displayName ?? "?").charAt(0).toUpperCase()}
           </div>
         )}
-        <div className="profile-card-status-dot" style={{ background: isOnline ? "var(--success)" : "var(--text-muted)" }} />
+        <div className="profile-card-status-dot" style={{ background: presenceColor }} title={presence === "dnd" ? "Do Not Disturb" : presence} />
       </div>
       <div className="profile-card-body">
         <div className="profile-card-name">{member?.displayName ?? "Loading..."}</div>

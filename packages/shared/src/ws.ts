@@ -9,6 +9,9 @@ import type {
 
 // ---- WebSocket message protocol ----
 
+/** Presence a user can hold while connected; "offline" is derived from disconnection. */
+export type PresenceStatus = "online" | "idle" | "dnd";
+
 // Client -> Server
 export type ClientMessage =
   // nonce: client-generated id echoed back in message_created so the sender
@@ -20,7 +23,8 @@ export type ClientMessage =
   | { type: "subscribe_channel"; channelId: ChannelId }
   | { type: "unsubscribe_channel"; channelId: ChannelId }
   | { type: "mark_read"; channelId: ChannelId }
-  | { type: "toggle_reaction"; messageId: MessageId; emoji: string };
+  | { type: "toggle_reaction"; messageId: MessageId; emoji: string }
+  | { type: "presence_set"; status: PresenceStatus };
 
 // Server -> Client
 export type ServerMessage =
@@ -31,7 +35,7 @@ export type ServerMessage =
   | {
       type: "presence_update";
       userId: UserId;
-      status: "online" | "offline";
+      status: PresenceStatus | "offline";
     }
   | { type: "reaction_update"; channelId: ChannelId; messageId: MessageId; reactions: ReactionGroup[] }
   | { type: "dm_created"; message: { id: string; conversationId: string; authorId: string; content: string; createdAt: string; author?: any } }

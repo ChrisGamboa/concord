@@ -1,12 +1,16 @@
 import { create } from "zustand";
 
+export type UserPresence = "online" | "idle" | "dnd" | "offline";
+
 interface PresenceState {
   onlineUsers: Set<string>;
+  /** Presence per user; absent or "offline" means offline */
+  statuses: Record<string, UserPresence>;
   typingUsers: Map<string, { username: string; timeout: ReturnType<typeof setTimeout> }>;
 
-  setUserOnline: (userId: string) => void;
-  setUserOffline: (userId: string) => void;
+  setPresence: (userId: string, status: UserPresence) => void;
   setOnlineUsers: (userIds: string[]) => void;
+  setPresences: (statuses: Record<string, UserPresence>) => void;
   addTyping: (channelId: string, userId: string, username: string) => void;
   getTypingUsers: (channelId: string) => string[];
 }
@@ -14,24 +18,40 @@ interface PresenceState {
 // Typing indicators are keyed by "channelId:userId"
 export const usePresenceStore = create<PresenceState>()((set, get) => ({
   onlineUsers: new Set<string>(),
+  statuses: {},
   typingUsers: new Map(),
 
-  setUserOnline: (userId) =>
+  setPresence: (userId, status) =>
     set((s) => {
-      const next = new Set(s.onlineUsers);
-      next.add(userId);
-      return { onlineUsers: next };
-    }),
-
-  setUserOffline: (userId) =>
-    set((s) => {
-      const next = new Set(s.onlineUsers);
-      next.delete(userId);
-      return { onlineUsers: next };
+      const online = new Set(s.onlineUsers);
+      const statuses = { ...s.statuses };
+      if (status === "offline") {
+        online.delete(userId);
+        delete statuses[userId];
+      } else {
+        online.add(userId);
+        statuses[userId] = status;
+      }
+      return { onlineUsers: online, statuses };
     }),
 
   setOnlineUsers: (userIds) =>
-    set({ onlineUsers: new Set(userIds) }),
+    set((s) => ({
+      onlineUsers: new Set(userIds),
+      statuses: Object.fromEntries(
+        userIds.map((id) => [id, s.statuses[id] ?? "online"])
+      ) as Record<string, UserPresence>,
+    })),
+
+  setPresences: (statuses) =>
+    set({
+      statuses,
+      onlineUsers: new Set(
+        Object.entries(statuses)
+          .filter(([, st]) => st !== "offline")
+          .map(([id]) => id)
+      ),
+    }),
 
   addTyping: (channelId, userId, username) => {
     const key = `${channelId}:${userId}`;

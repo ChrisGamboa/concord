@@ -12,6 +12,9 @@ import {
   sendToUser,
   isUserOnline,
   getOnlineUserIds,
+  setUserStatus,
+  getUserStatus,
+  clearUserStatus,
 } from "./connections.js";
 
 export const wsHandler: FastifyPluginAsync = async (app) => {
@@ -31,10 +34,12 @@ export const wsHandler: FastifyPluginAsync = async (app) => {
         addConnection(sessionId, socket, userId);
         send({ type: "ready", userId, sessionId });
 
-        // Broadcast online presence if this is their first connection
+        // Broadcast presence if this is their first connection. A status set by
+        // another recent session (e.g. dnd) survives reconnects within a run.
         if (!wasOnline) {
+          if (!getUserStatus(userId)) setUserStatus(userId, "online");
           broadcastToAll(
-            { type: "presence_update", userId, status: "online" },
+            { type: "presence_update", userId, status: getUserStatus(userId) ?? "online" },
             sessionId
           );
         }
@@ -74,6 +79,7 @@ export const wsHandler: FastifyPluginAsync = async (app) => {
 
       // Broadcast offline if user has no remaining connections
       if (disconnectedUserId && !isUserOnline(disconnectedUserId)) {
+        clearUserStatus(disconnectedUserId);
         broadcastToAll({
           type: "presence_update",
           userId: disconnectedUserId,
@@ -339,6 +345,13 @@ async function handleMessage(
         messageId: msg.messageId,
         reactions: reactionGroups,
       });
+      break;
+    }
+    case "presence_set": {
+      if (!["online", "idle", "dnd"].includes(msg.status)) return;
+      setUserStatus(userId, msg.status);
+      // Broadcast to everyone including the sender's other sessions
+      broadcastToAll({ type: "presence_update", userId, status: msg.status });
       break;
     }
     case "mark_read": {

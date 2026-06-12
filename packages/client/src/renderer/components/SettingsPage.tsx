@@ -1,7 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useAuthStore } from "../stores/auth";
+import { usePresenceStore } from "../stores/presence";
 import { api } from "../lib/api";
+import { sendWs } from "../lib/ws";
 import { avatarColor, avatarUrl } from "../lib/avatar";
+
+const PRESENCE_OPTIONS = [
+  { value: "online" as const, label: "Online", color: "var(--success)" },
+  { value: "idle" as const, label: "Idle", color: "#f0b232" },
+  { value: "dnd" as const, label: "Do Not Disturb", color: "var(--danger)" },
+];
 
 interface MediaDeviceOption {
   deviceId: string;
@@ -9,6 +17,35 @@ interface MediaDeviceOption {
 }
 
 type Section = "account" | "notifications" | "audio" | "video";
+
+function PresenceSelector({ userId }: { userId?: string }) {
+  const statuses = usePresenceStore((s) => s.statuses);
+  const setPresence = usePresenceStore((s) => s.setPresence);
+  const current = (userId && statuses[userId]) || "online";
+
+  const choose = (status: "online" | "idle" | "dnd") => {
+    // Remember the manual choice so DND survives restarts and idle detection respects it
+    if (status === "dnd") localStorage.setItem("concord-presence", "dnd");
+    else localStorage.removeItem("concord-presence");
+    sendWs({ type: "presence_set", status });
+    if (userId) setPresence(userId, status);
+  };
+
+  return (
+    <div style={{ display: "flex", gap: "8px" }}>
+      {PRESENCE_OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          className={`presence-option${current === opt.value ? " presence-option--active" : ""}`}
+          onClick={() => choose(opt.value)}
+        >
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: opt.color, flexShrink: 0 }} />
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function SettingsPage({ onClose }: { onClose: () => void }) {
   const user = useAuthStore((s) => s.user);
@@ -322,6 +359,13 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                       </svg>
                     </button>
                   )}
+                </div>
+                <div className="settings-field-col">
+                  <span className="settings-label">Presence</span>
+                  <span className="settings-hint">
+                    Do Not Disturb suppresses desktop notifications. Idle is set automatically after inactivity.
+                  </span>
+                  <PresenceSelector userId={user?.id} />
                 </div>
                 <div className="settings-field-col">
                   <span className="settings-label">Status</span>
