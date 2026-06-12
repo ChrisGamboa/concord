@@ -85,6 +85,9 @@ export function AppLayout() {
   // Mark channel as read when viewing it (skip for DM view)
   useEffect(() => {
     if (!channelId || isVoiceChannel || serverId === "@me") return;
+    // Snapshot the unread count before zeroing it so ChatArea can place the NEW divider
+    const store = useChatStore.getState();
+    store.setChannelEntryUnread(channelId, store.unreadCounts[channelId] ?? 0);
     sendWs({ type: "mark_read", channelId });
     setUnreadCount(channelId, 0);
   }, [channelId, isVoiceChannel, setUnreadCount, serverId]);

@@ -20,11 +20,14 @@ interface ChatState {
   hasMoreMessages: boolean;
   messagesLoading: boolean;
   unreadCounts: Record<string, number>;
+  /** Unread count captured at the moment each channel was opened (drives the NEW divider) */
+  channelEntryUnread: Record<string, number>;
 
   setServers: (servers: Server[]) => void;
   setChannels: (channels: Channel[]) => void;
   setUnreadCounts: (counts: Record<string, number>) => void;
   setUnreadCount: (channelId: string, count: number) => void;
+  setChannelEntryUnread: (channelId: string, count: number) => void;
   setMessages: (messages: Message[], hasMore: boolean) => void;
   setMessagesLoading: (loading: boolean) => void;
   prependMessages: (messages: Message[], hasMore: boolean) => void;
@@ -49,6 +52,7 @@ export const useChatStore = create<ChatState>()((set) => ({
   hasMoreMessages: false,
   messagesLoading: false,
   unreadCounts: {},
+  channelEntryUnread: {},
 
   setServers: (servers) => set({ servers }),
   setUnreadCounts: (counts) => set({ unreadCounts: counts }),
@@ -60,6 +64,8 @@ export const useChatStore = create<ChatState>()((set) => ({
       }
       return { unreadCounts: { ...s.unreadCounts, [channelId]: count } };
     }),
+  setChannelEntryUnread: (channelId, count) =>
+    set((s) => ({ channelEntryUnread: { ...s.channelEntryUnread, [channelId]: count } })),
   setChannels: (channels) => set({ channels }),
   setMessages: (messages, hasMore) => set({ messages, hasMoreMessages: hasMore, messagesLoading: false }),
   setMessagesLoading: (loading) => set({ messagesLoading: loading }),

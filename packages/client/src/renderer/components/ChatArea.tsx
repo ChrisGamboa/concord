@@ -63,6 +63,12 @@ export function ChatArea() {
   const [profilePopup, setProfilePopup] = useState<{ userId: string; x: number; y: number } | null>(null);
   const [cursorPos, setCursorPos] = useState(0);
   const chatInputRef = useRef<HTMLInputElement>(null);
+  // Scroll-follow state: only auto-scroll when the user is already at the bottom
+  const atBottomRef = useRef(true);
+  const lastMsgIdRef = useRef<string | null>(null);
+  const [showNewBelow, setShowNewBelow] = useState(false);
+  // First unread message on channel entry (where the NEW divider renders)
+  const [unreadMarkerId, setUnreadMarkerId] = useState<string | null>(null);
 
   // Close reaction picker on click-outside or Escape
   useEffect(() => {
@@ -130,10 +136,20 @@ export function ChatArea() {
     let stale = false;
     setActiveChannel(channelId);
     setMessagesLoading(true);
+    atBottomRef.current = true;
+    lastMsgIdRef.current = null;
+    setShowNewBelow(false);
+    setUnreadMarkerId(null);
 
     api.getMessages(channelId).then((res) => {
       if (stale) return;
       setMessages(res.messages, res.hasMore);
+      // Place the NEW divider at the first unread message (count snapshotted on entry)
+      const entryUnread = useChatStore.getState().channelEntryUnread[channelId] ?? 0;
+      if (entryUnread > 0 && res.messages.length > 0) {
+        const idx = Math.max(0, res.messages.length - entryUnread);
+        setUnreadMarkerId(res.messages[idx].id);
+      }
       // Scroll to bottom after messages render
       requestAnimationFrame(() => {
         messagesEndRef.current?.scrollIntoView();
@@ -184,9 +200,49 @@ export function ChatArea() {
     return result;
   }, [channelId, typingUsersMap]);
 
+  // Follow new messages only when already at the bottom (or when it's our own send).
+  // Otherwise show the "new messages" pill instead of yanking the scroll position.
   useEffect(() => {
+    const last = messages[messages.length - 1];
+    if (!last) return;
+    if (last.id === lastMsgIdRef.current) return; // edit/reaction/prepend, not a new tail
+    const isFirstLoad = lastMsgIdRef.current === null;
+    lastMsgIdRef.current = last.id;
+    if (isFirstLoad) return; // initial scroll handled by the load effect
+    const isOwn = last.authorId === userId;
+    if (atBottomRef.current || isOwn) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      if (!isOwn && channelId && document.hasFocus()) {
+        // Reading at the bottom keeps the channel marked as read
+        sendWs({ type: "mark_read", channelId });
+        useChatStore.getState().setUnreadCount(channelId, 0);
+      }
+    } else if (!isOwn) {
+      setShowNewBelow(true);
+    }
+  }, [messages, userId, channelId]);
+
+  const handleMessagesScroll = useCallback(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    atBottomRef.current = atBottom;
+    if (atBottom) {
+      setShowNewBelow(false);
+      if (channelId && document.hasFocus()) {
+        useChatStore.getState().setUnreadCount(channelId, 0);
+      }
+    }
+  }, [channelId]);
+
+  const jumpToLatest = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    setShowNewBelow(false);
+    if (channelId) {
+      sendWs({ type: "mark_read", channelId });
+      useChatStore.getState().setUnreadCount(channelId, 0);
+    }
+  }, [channelId]);
 
   const sendTyping = useCallback(() => {
     if (!channelId) return;
@@ -472,7 +528,7 @@ export function ChatArea() {
         </div>
       )}
 
-      <div ref={messagesContainerRef} style={styles.messages}>
+      <div ref={messagesContainerRef} style={styles.messages} onScroll={handleMessagesScroll}>
         {hasMore && !messagesLoading && (
           <div style={styles.loadMoreContainer}>
             <button
@@ -517,8 +573,11 @@ export function ChatArea() {
           const showDateSep = !prevDate ||
             msgDate.toDateString() !== prevDate.toDateString();
 
+          const isUnreadMarker = msg.id === unreadMarkerId;
+
           const isGrouped =
             !showDateSep &&
+            !isUnreadMarker &&
             prev !== null &&
             prev.authorId === msg.authorId &&
             msgDate.getTime() - prevDate!.getTime() < GROUP_THRESHOLD_MS;
@@ -526,6 +585,12 @@ export function ChatArea() {
           const dateSeparator = showDateSep ? (
             <div key={`sep-${msg.id}`} className="date-separator">
               <span className="date-separator-text">{formatDateSeparator(msgDate)}</span>
+            </div>
+          ) : null;
+
+          const unreadDivider = isUnreadMarker ? (
+            <div key={`new-${msg.id}`} className="unread-divider">
+              <span className="unread-divider-label">NEW</span>
             </div>
           ) : null;
 
@@ -592,6 +657,7 @@ export function ChatArea() {
           return (
             <React.Fragment key={msg.id}>
               {dateSeparator}
+              {unreadDivider}
               <div
                 className="hover-bg"
                 style={styles.message}
@@ -670,6 +736,15 @@ export function ChatArea() {
       </div>
 
       <div style={{ ...styles.inputArea, position: "relative" as const }}>
+        {showNewBelow && (
+          <button className="new-messages-pill" onClick={jumpToLatest}>
+            New messages below
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 5v14" />
+              <path d="m19 12-7 7-7-7" />
+            </svg>
+          </button>
+        )}
         {showGifPicker && (
           <GifPicker
             onSelect={(gifUrl) => {

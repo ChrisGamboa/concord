@@ -1909,3 +1909,53 @@ a {
 .send-failure-sep {
   color: var(--text-muted);
 }
+
+/* Unread NEW divider */
+.unread-divider {
+  display: flex;
+  align-items: center;
+  margin: 8px 16px 0;
+  height: 1px;
+  background: var(--danger);
+  position: relative;
+}
+
+.unread-divider-label {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--danger);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+/* New-messages pill (shown when scrolled up and messages arrive) */
+.new-messages-pill {
+  position: absolute;
+  top: -38px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  z-index: 5;
+  animation: toast-in 0.15s ease-out;
+}
+
+.new-messages-pill:hover {
+  background: var(--accent-hover);
+}
