@@ -226,12 +226,34 @@ export function AppLayout() {
         case "unread_count":
           setUnreadCount(msg.channelId, msg.count, msg.mentions ?? 0);
           break;
+        case "dm_created": {
+          if (msg.message.authorId === userId) break;
+          const viewingThisConv = serverId === "@me" && channelId === msg.message.conversationId;
+          if (!viewingThisConv) {
+            useChatStore.getState().addDmUnread(msg.message.conversationId);
+          }
+          const isDnd = userId !== undefined &&
+            usePresenceStore.getState().statuses[userId] === "dnd";
+          if (!isDnd && (!viewingThisConv || !document.hasFocus())) {
+            const electron = (window as any).electron;
+            electron?.sendNotification?.(
+              msg.message.author?.displayName ?? "New message",
+              msg.message.content.length > 100
+                ? msg.message.content.slice(0, 100) + "..."
+                : msg.message.content
+            );
+          }
+          break;
+        }
+        case "dm_typing":
+          addTyping(msg.conversationId, msg.userId, msg.username);
+          break;
         case "error":
           toast(msg.message);
           break;
       }
     });
-  }, [addMessage, updateMessage, removeMessage, setPresence, addTyping, setUnreadCount, updateReactions]);
+  }, [addMessage, updateMessage, removeMessage, setPresence, addTyping, setUnreadCount, updateReactions, userId, serverId, channelId]);
 
   return (
     <div style={styles.layout}>

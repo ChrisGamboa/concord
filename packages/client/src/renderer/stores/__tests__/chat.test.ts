@@ -154,6 +154,19 @@ describe("chat store", () => {
     });
   });
 
+  describe("dm unread", () => {
+    it("tracks unread conversations without duplicates and clears them", () => {
+      const store = useChatStore.getState();
+      store.addDmUnread("conv1");
+      store.addDmUnread("conv1");
+      store.addDmUnread("conv2");
+      expect(useChatStore.getState().dmUnreadConvIds).toEqual(["conv1", "conv2"]);
+
+      store.clearDmUnread("conv1");
+      expect(useChatStore.getState().dmUnreadConvIds).toEqual(["conv2"]);
+    });
+  });
+
   describe("pagination", () => {
     it("prepends older messages while keeping order", () => {
       const store = useChatStore.getState();

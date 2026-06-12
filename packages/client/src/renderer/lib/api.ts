@@ -211,6 +211,21 @@ export const api = {
       body: JSON.stringify({ content }),
     }),
 
+  editDm: (messageId: string, content: string) =>
+    request<any>(`/dm/messages/${messageId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ content }),
+    }),
+
+  deleteDm: (messageId: string) =>
+    request<{ deleted: boolean }>(`/dm/messages/${messageId}`, { method: "DELETE" }),
+
+  toggleDmReaction: (messageId: string, emoji: string) =>
+    request<{ reactions: Array<{ emoji: string; count: number; userIds: string[] }> }>(
+      `/dm/messages/${messageId}/reactions`,
+      { method: "POST", body: JSON.stringify({ emoji }) }
+    ),
+
   // Link previews
   getLinkPreview: (url: string) =>
     request<{ title: string | null; description: string | null; image: string | null; siteName: string | null; url: string }>(

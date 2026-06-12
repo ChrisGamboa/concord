@@ -25,6 +25,8 @@ interface ChatState {
   /** Channels/servers the user muted (no notifications, subdued sidebar) */
   mutedChannels: string[];
   mutedServers: string[];
+  /** Conversations with DMs received while not viewing them (client-session state) */
+  dmUnreadConvIds: string[];
   /** Unread count captured at the moment each channel was opened (drives the NEW divider) */
   channelEntryUnread: Record<string, number>;
   /** False when viewing a historical page (after jump-to-message); live messages are not appended */
@@ -40,6 +42,8 @@ interface ChatState {
   setMutes: (mutes: { channels: string[]; servers: string[] }) => void;
   setChannelMuted: (channelId: string, muted: boolean) => void;
   setServerMuted: (serverId: string, muted: boolean) => void;
+  addDmUnread: (conversationId: string) => void;
+  clearDmUnread: (conversationId: string) => void;
   setChannelEntryUnread: (channelId: string, count: number) => void;
   setMessages: (messages: Message[], hasMore: boolean, isAtLatest?: boolean) => void;
   setPendingJump: (jump: ChatState["pendingJump"]) => void;
@@ -69,6 +73,7 @@ export const useChatStore = create<ChatState>()((set) => ({
   mentionCounts: {},
   mutedChannels: [],
   mutedServers: [],
+  dmUnreadConvIds: [],
   channelEntryUnread: {},
   isAtLatest: true,
   pendingJump: null,
@@ -108,6 +113,14 @@ export const useChatStore = create<ChatState>()((set) => ({
       mutedServers: muted
         ? [...new Set([...s.mutedServers, serverId])]
         : s.mutedServers.filter((id) => id !== serverId),
+    })),
+  addDmUnread: (conversationId) =>
+    set((s) => ({
+      dmUnreadConvIds: [...new Set([...s.dmUnreadConvIds, conversationId])],
+    })),
+  clearDmUnread: (conversationId) =>
+    set((s) => ({
+      dmUnreadConvIds: s.dmUnreadConvIds.filter((id) => id !== conversationId),
     })),
   setChannelEntryUnread: (channelId, count) =>
     set((s) => ({ channelEntryUnread: { ...s.channelEntryUnread, [channelId]: count } })),

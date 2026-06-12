@@ -50,6 +50,8 @@ Self-hostable Discord alternative built with TypeScript.
 - **Image lightbox** -- click any image or GIF in chat for a full-screen preview
 - **GIF picker** -- search and send GIFs inline via Klipy API
 - **Direct messages** -- 1:1 private conversations as a first-class route (`/channels/@me`), start a DM from any profile card or the conversation sidebar
+  - Full feature parity with channels: optimistic sends, reactions, editing/deletion, typing indicators, GIFs, emoji, uploads
+  - Unread badges on the DM icon and conversation list
 - Voice chat, video chat (1080p60), and screen sharing via LiveKit
   - **Video spotlight** -- click any video feed to focus it center-stage, others drop to a strip below
   - **Persistent voice sessions** -- stay connected while browsing text channels

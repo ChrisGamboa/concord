@@ -7,6 +7,7 @@ import { avatarUrl } from "../lib/avatar";
 export function ServerList({ loading }: { loading?: boolean }) {
   const servers = useChatStore((s) => s.servers);
   const setServers = useChatStore((s) => s.setServers);
+  const dmUnreadCount = useChatStore((s) => s.dmUnreadConvIds.length);
   const { serverId: activeServerId } = useParams();
   const navigate = useNavigate();
   const [showMenu, setShowMenu] = useState(false);
@@ -74,6 +75,7 @@ export function ServerList({ loading }: { loading?: boolean }) {
           onClick={() => navigate("/channels/@me")}
           style={{
             ...styles.serverButton,
+            position: "relative",
             borderRadius: activeServerId === "@me" ? "16px" : "24px",
             background: activeServerId === "@me" ? "var(--accent)" : "var(--bg-tertiary)",
             color: activeServerId === "@me" ? "white" : "var(--text-muted)",
@@ -83,6 +85,9 @@ export function ServerList({ loading }: { loading?: boolean }) {
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
+          {dmUnreadCount > 0 && (
+            <span style={styles.dmBadge}>{dmUnreadCount > 9 ? "9+" : dmUnreadCount}</span>
+          )}
         </button>
         <div style={styles.divider} />
         {loading && [0, 1, 2].map((i) => (
@@ -234,6 +239,23 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     width: "100%",
     paddingBottom: "8px",
+  },
+  dmBadge: {
+    position: "absolute",
+    bottom: "-2px",
+    right: "-2px",
+    minWidth: "18px",
+    height: "18px",
+    padding: "0 4px",
+    borderRadius: "9px",
+    background: "var(--danger)",
+    color: "white",
+    fontSize: "11px",
+    fontWeight: 700,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    border: "2px solid var(--bg-primary)",
   },
   serverButton: {
     width: "48px",

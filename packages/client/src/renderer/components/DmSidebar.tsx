@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { avatarColor, avatarUrl } from "../lib/avatar";
 import { usePresenceStore } from "../stores/presence";
+import { useChatStore } from "../stores/chat";
 import { toast } from "../stores/toast";
 import { onWsMessage } from "../lib/ws";
 
@@ -23,6 +24,7 @@ export function DmSidebar() {
   const navigate = useNavigate();
   const onlineUsers = usePresenceStore((s) => s.onlineUsers);
   const statuses = usePresenceStore((s) => s.statuses);
+  const dmUnreadConvIds = useChatStore((s) => s.dmUnreadConvIds);
   const presenceColor = (uid: string) => {
     const st = statuses[uid] ?? (onlineUsers.has(uid) ? "online" : "offline");
     return st === "online" ? "var(--success)" : st === "idle" ? "#f0b232" : st === "dnd" ? "var(--danger)" : "var(--text-muted)";
@@ -182,7 +184,7 @@ export function DmSidebar() {
 
         {conversations.map((conv) => {
           const isActive = conv.id === activeConvId;
-          const isOnline = onlineUsers.has(conv.otherUser.id);
+          const isUnread = dmUnreadConvIds.includes(conv.id);
           return (
             <button
               key={conv.id}
@@ -209,7 +211,9 @@ export function DmSidebar() {
                 />
               </div>
               <div style={styles.convInfo}>
-                <div style={styles.convName}>{conv.otherUser.displayName}</div>
+                <div style={{ ...styles.convName, ...(isUnread ? { fontWeight: 700, color: "var(--text-primary)" } : {}) }}>
+                  {conv.otherUser.displayName}
+                </div>
                 {conv.lastMessage && (
                   <div style={styles.convPreview}>
                     {conv.lastMessage.content.length > 30
@@ -218,6 +222,7 @@ export function DmSidebar() {
                   </div>
                 )}
               </div>
+              {isUnread && <span style={styles.unreadDot} />}
             </button>
           );
         })}
@@ -347,6 +352,13 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap" as const,
+  },
+  unreadDot: {
+    width: "8px",
+    height: "8px",
+    borderRadius: "50%",
+    background: "var(--danger)",
+    flexShrink: 0,
   },
   convPreview: {
     fontSize: "11px",
