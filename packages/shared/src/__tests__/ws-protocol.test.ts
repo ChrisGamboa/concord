@@ -5,6 +5,7 @@ describe("WebSocket Protocol Types", () => {
   it("should serialize client messages to valid JSON", () => {
     const messages: ClientMessage[] = [
       { type: "send_message", channelId: "ch1", content: "hello" },
+      { type: "send_message", channelId: "ch1", content: "hello", nonce: "abc-123" },
       { type: "edit_message", messageId: "msg1", content: "edited" },
       { type: "delete_message", messageId: "msg1" },
       { type: "typing_start", channelId: "ch1" },
@@ -31,6 +32,18 @@ describe("WebSocket Protocol Types", () => {
           createdAt: new Date().toISOString(),
           editedAt: null,
         },
+      },
+      {
+        type: "message_created",
+        message: {
+          id: "msg2",
+          channelId: "ch1",
+          authorId: "user1",
+          content: "optimistic",
+          createdAt: new Date().toISOString(),
+          editedAt: null,
+        },
+        nonce: "abc-123",
       },
       {
         type: "message_deleted",

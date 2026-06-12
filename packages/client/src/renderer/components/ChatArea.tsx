@@ -20,6 +20,7 @@ const IMAGE_REGEX = /\.(png|jpe?g|gif|webp)$/i;
 const UPLOAD_URL_REGEX = /^\/uploads\/.+/;
 import { SERVER_URL as SERVER_BASE } from "../lib/config";
 const GROUP_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+const SEND_TIMEOUT_MS = 10_000; // mark a send as failed if unconfirmed after this
 
 function isImageUrl(text: string): boolean {
   return IMAGE_REGEX.test(text) || (UPLOAD_URL_REGEX.test(text) && IMAGE_REGEX.test(text));
@@ -202,11 +203,59 @@ export function ChatArea() {
     if (e.target.value.trim()) sendTyping();
   };
 
+  // Optimistic send: show the message immediately, reconcile when the server
+  // echoes it back (matched by nonce), mark failed if no echo in time.
+  const watchDelivery = useCallback((nonce: string) => {
+    setTimeout(() => {
+      const store = useChatStore.getState();
+      const msg = store.messages.find((m) => m.nonce === nonce);
+      if (msg?.pending) store.markMessageFailed(nonce);
+    }, SEND_TIMEOUT_MS);
+  }, []);
+
+  const sendChannelMessage = useCallback((content: string) => {
+    if (!channelId || !userId) return;
+    const nonce = crypto.randomUUID();
+    const me = useAuthStore.getState().user;
+    useChatStore.getState().addPendingMessage({
+      id: `pending-${nonce}`,
+      channelId,
+      authorId: userId,
+      content,
+      createdAt: new Date().toISOString(),
+      editedAt: null,
+      author: me
+        ? { id: me.id, username: me.username, displayName: me.displayName, avatarUrl: me.avatarUrl, status: me.status }
+        : undefined,
+      pending: true,
+      nonce,
+    });
+    if (sendWs({ type: "send_message", channelId, content, nonce })) {
+      watchDelivery(nonce);
+    } else {
+      useChatStore.getState().markMessageFailed(nonce);
+    }
+  }, [channelId, userId, watchDelivery]);
+
+  const retrySend = useCallback((nonce: string, content: string) => {
+    if (!channelId) return;
+    useChatStore.getState().markMessagePending(nonce);
+    if (sendWs({ type: "send_message", channelId, content, nonce })) {
+      watchDelivery(nonce);
+    } else {
+      useChatStore.getState().markMessageFailed(nonce);
+    }
+  }, [channelId, watchDelivery]);
+
+  const discardSend = useCallback((nonce: string) => {
+    useChatStore.getState().removeMessageByNonce(nonce);
+  }, []);
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (mention.isOpen) return; // Don't submit while mention dropdown is open
     if (!input.trim() || !channelId) return;
-    sendWs({ type: "send_message", channelId, content: input.trim() });
+    sendChannelMessage(input.trim());
     setInput("");
     setCursorPos(0);
   };
@@ -217,18 +266,14 @@ export function ChatArea() {
       setUploading(true);
       try {
         const result = await api.uploadFile(file);
-        sendWs({
-          type: "send_message",
-          channelId,
-          content: result.url,
-        });
+        sendChannelMessage(result.url);
       } catch (err) {
         toast(err instanceof Error ? err.message : "Upload failed");
       } finally {
         setUploading(false);
       }
     },
-    [channelId]
+    [channelId, sendChannelMessage]
   );
 
   const handleDrop = useCallback(
@@ -503,7 +548,7 @@ export function ChatArea() {
                     minute: "2-digit",
                   })}
                 </span>
-                <div style={styles.groupedContent}>
+                <div style={{ ...styles.groupedContent, ...(msg.pending ? styles.pendingContent : {}) }}>
                   {isEditingG ? (
                     <MessageActions
                       msgId={msg.id} content={msg.content} isOwn={isOwnG} canModerate={canModerate} isPinned={!!msg.pinnedAt}
@@ -517,10 +562,16 @@ export function ChatArea() {
                     <>
                       <MessageBody content={msg.content} onImageClick={setLightboxSrc} mentionUsers={mentionUsers} />
                       {msg.editedAt && <span style={styles.editedTag}>(edited)</span>}
+                      {msg.failed && msg.nonce && (
+                        <SendFailureNotice
+                          onRetry={() => retrySend(msg.nonce!, msg.content)}
+                          onDiscard={() => discardSend(msg.nonce!)}
+                        />
+                      )}
                     </>
                   )}
                 </div>
-                {!isEditingG && (
+                {!isEditingG && !msg.pending && !msg.failed && (
                   <MessageActions
                     msgId={msg.id} content={msg.content} isOwn={isOwnG} canModerate={canModerate} isPinned={!!msg.pinnedAt}
                     isHovered={isHoveredG} isEditing={false} editContent={editContent}
@@ -563,7 +614,7 @@ export function ChatArea() {
                     </div>
                   )}
                 </div>
-                <div style={styles.messageContent}>
+                <div style={{ ...styles.messageContent, ...(msg.pending ? styles.pendingContent : {}) }}>
                   <div style={styles.messageHeader}>
                     <span
                       style={{ ...styles.authorName, cursor: "pointer" }}
@@ -591,11 +642,17 @@ export function ChatArea() {
                     <>
                       <MessageBody content={msg.content} onImageClick={setLightboxSrc} mentionUsers={mentionUsers} />
                       {msg.editedAt && <span style={styles.editedTag}>(edited)</span>}
+                      {msg.failed && msg.nonce && (
+                        <SendFailureNotice
+                          onRetry={() => retrySend(msg.nonce!, msg.content)}
+                          onDiscard={() => discardSend(msg.nonce!)}
+                        />
+                      )}
                     </>
                   )}
                   <ReactionBar reactions={msg.reactions} messageId={msg.id} userId={userId} />
                 </div>
-                {!isEditing && (
+                {!isEditing && !msg.pending && !msg.failed && (
                   <MessageActions
                     msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={canModerate} isPinned={!!msg.pinnedAt}
                     isHovered={isHovered} isEditing={false} editContent={editContent}
@@ -616,9 +673,7 @@ export function ChatArea() {
         {showGifPicker && (
           <GifPicker
             onSelect={(gifUrl) => {
-              if (channelId) {
-                sendWs({ type: "send_message", channelId, content: gifUrl });
-              }
+              sendChannelMessage(gifUrl);
               setShowGifPicker(false);
             }}
             onClose={() => setShowGifPicker(false)}
@@ -725,6 +780,17 @@ export function ChatArea() {
           onClose={() => setProfilePopup(null)}
         />
       )}
+    </div>
+  );
+}
+
+function SendFailureNotice({ onRetry, onDiscard }: { onRetry: () => void; onDiscard: () => void }) {
+  return (
+    <div className="send-failure">
+      <span>Failed to send.</span>
+      <button className="send-failure-btn" onClick={onRetry}>Retry</button>
+      <span className="send-failure-sep">·</span>
+      <button className="send-failure-btn" onClick={onDiscard}>Discard</button>
     </div>
   );
 }
@@ -1126,6 +1192,9 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "11px",
     color: "var(--text-muted)",
     marginLeft: "4px",
+  },
+  pendingContent: {
+    opacity: 0.55,
   },
   actionBar: {
     position: "absolute",

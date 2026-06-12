@@ -46,10 +46,13 @@ export function disconnectWs() {
   socket = null;
 }
 
-export function sendWs(msg: ClientMessage) {
+/** Send a message if the socket is open. Returns false when disconnected (message dropped). */
+export function sendWs(msg: ClientMessage): boolean {
   if (socket?.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(msg));
+    return true;
   }
+  return false;
 }
 
 export function onWsMessage(handler: MessageHandler): () => void {

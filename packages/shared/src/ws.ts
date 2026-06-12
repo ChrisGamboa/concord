@@ -11,7 +11,9 @@ import type {
 
 // Client -> Server
 export type ClientMessage =
-  | { type: "send_message"; channelId: ChannelId; content: string }
+  // nonce: client-generated id echoed back in message_created so the sender
+  // can reconcile its optimistic (pending) message with the persisted one
+  | { type: "send_message"; channelId: ChannelId; content: string; nonce?: string }
   | { type: "edit_message"; messageId: MessageId; content: string }
   | { type: "delete_message"; messageId: MessageId }
   | { type: "typing_start"; channelId: ChannelId }
@@ -22,7 +24,7 @@ export type ClientMessage =
 
 // Server -> Client
 export type ServerMessage =
-  | { type: "message_created"; message: Message }
+  | { type: "message_created"; message: Message; nonce?: string }
   | { type: "message_updated"; message: Message }
   | { type: "message_deleted"; channelId: ChannelId; messageId: MessageId }
   | { type: "typing"; channelId: ChannelId; userId: UserId; username: string }

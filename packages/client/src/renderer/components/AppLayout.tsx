@@ -120,7 +120,7 @@ export function AppLayout() {
     return onWsMessage((msg) => {
       switch (msg.type) {
         case "message_created":
-          addMessage(msg.message);
+          addMessage(msg.message, msg.nonce);
           // Desktop notification when window is not focused
           if (!document.hasFocus() && msg.message.authorId !== userId) {
             const electron = (window as any).electron;

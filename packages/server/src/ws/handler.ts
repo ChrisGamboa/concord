@@ -148,6 +148,7 @@ async function handleMessage(
           editedAt: null,
           author: message.author,
         },
+        ...(msg.nonce ? { nonce: msg.nonce } : {}),
       };
 
       broadcastToChannel(msg.channelId, serverMsg);

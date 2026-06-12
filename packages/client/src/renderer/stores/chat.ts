@@ -1,10 +1,20 @@
 import { create } from "zustand";
 import type { Server, Channel, Message, ReactionGroup } from "@concord/shared";
 
+/** A channel message plus client-only optimistic-send state. */
+export type ChatMessage = Message & {
+  /** Sent but not yet confirmed by the server */
+  pending?: boolean;
+  /** Send failed (socket closed or no confirmation in time) */
+  failed?: boolean;
+  /** Client-generated id used to match the server confirmation */
+  nonce?: string;
+};
+
 interface ChatState {
   servers: Server[];
   channels: Channel[];
-  messages: Message[];
+  messages: ChatMessage[];
   activeServerId: string | null;
   activeChannelId: string | null;
   hasMoreMessages: boolean;
@@ -18,7 +28,11 @@ interface ChatState {
   setMessages: (messages: Message[], hasMore: boolean) => void;
   setMessagesLoading: (loading: boolean) => void;
   prependMessages: (messages: Message[], hasMore: boolean) => void;
-  addMessage: (message: Message) => void;
+  addMessage: (message: Message, nonce?: string) => void;
+  addPendingMessage: (message: ChatMessage) => void;
+  markMessageFailed: (nonce: string) => void;
+  markMessagePending: (nonce: string) => void;
+  removeMessageByNonce: (nonce: string) => void;
   updateMessage: (message: Message) => void;
   removeMessage: (channelId: string, messageId: string) => void;
   setActiveServer: (serverId: string | null) => void;
@@ -54,11 +68,42 @@ export const useChatStore = create<ChatState>()((set) => ({
       messages: [...messages, ...s.messages],
       hasMoreMessages: hasMore,
     })),
-  addMessage: (message) =>
+  addMessage: (message, nonce) =>
+    set((s) => {
+      if (message.channelId !== s.activeChannelId) return s;
+      // Reconcile the sender's optimistic message with the confirmed one
+      if (nonce) {
+        const idx = s.messages.findIndex((m) => m.nonce === nonce);
+        if (idx !== -1) {
+          const next = [...s.messages];
+          next[idx] = message;
+          return { messages: next };
+        }
+      }
+      if (s.messages.some((m) => m.id === message.id)) return s;
+      return { messages: [...s.messages, message] };
+    }),
+  addPendingMessage: (message) =>
     set((s) => {
       if (message.channelId !== s.activeChannelId) return s;
       return { messages: [...s.messages, message] };
     }),
+  markMessageFailed: (nonce) =>
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.nonce === nonce ? { ...m, pending: false, failed: true } : m
+      ),
+    })),
+  markMessagePending: (nonce) =>
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.nonce === nonce ? { ...m, pending: true, failed: false } : m
+      ),
+    })),
+  removeMessageByNonce: (nonce) =>
+    set((s) => ({
+      messages: s.messages.filter((m) => m.nonce !== nonce),
+    })),
   updateMessage: (message) =>
     set((s) => ({
       messages: s.messages.map((m) => (m.id === message.id ? message : m)),
