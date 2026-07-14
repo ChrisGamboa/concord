@@ -7,6 +7,7 @@ import multipart from "@fastify/multipart";
 import staticPlugin from "@fastify/static";
 import { join } from "path";
 import { env } from "./env.js";
+import { Permissions } from "@concord/shared";
 import { prisma } from "./db.js";
 import { authRoutes } from "./routes/auth.js";
 import { serverRoutes } from "./routes/servers.js";
@@ -92,6 +93,13 @@ try {
   const { isYtdlpAvailable } = await import("./music/ytdlp.js");
   const ytdlp = await isYtdlpAvailable();
   console.log(`[music] yt-dlp: ${ytdlp ? "available" : "NOT FOUND — music features disabled"}`);
+
+  // Backfill: grant STREAM to legacy @everyone roles created before it became a
+  // default, so screen-share keeps working after voice-permission enforcement.
+  const backfilled = await prisma.$executeRaw`
+    UPDATE "Role" SET permissions = permissions | ${Permissions.STREAM}
+    WHERE position = 0 AND (permissions & ${Permissions.STREAM}) = 0`;
+  if (backfilled > 0) console.log(`[migrate] granted STREAM to ${backfilled} legacy @everyone role(s)`);
 
   // Connect the cross-instance message bus (degrades to single-instance if Redis is down)
   await initConnections();

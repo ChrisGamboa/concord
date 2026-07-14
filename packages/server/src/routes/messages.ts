@@ -128,12 +128,18 @@ export const messageRoutes: FastifyPluginAsync = async (app) => {
         where: { userId_serverId: { userId, serverId: channel.serverId } },
       });
       if (!member) return reply.code(403).send({ error: "Not a member" });
+      if (!(await checkPermission(userId, channel.serverId, Permissions.READ_MESSAGES))) {
+        return reply.code(403).send({ error: "Missing READ_MESSAGES permission" });
+      }
       channelIds.push(channelId);
     } else if (serverId) {
       const member = await prisma.serverMember.findUnique({
         where: { userId_serverId: { userId, serverId } },
       });
       if (!member) return reply.code(403).send({ error: "Not a member" });
+      if (!(await checkPermission(userId, serverId, Permissions.READ_MESSAGES))) {
+        return reply.code(403).send({ error: "Missing READ_MESSAGES permission" });
+      }
       const channels = await prisma.channel.findMany({ where: { serverId }, select: { id: true } });
       channelIds.push(...channels.map((c) => c.id));
     } else {
@@ -192,6 +198,9 @@ export const messageRoutes: FastifyPluginAsync = async (app) => {
         where: { userId_serverId: { userId, serverId: channel.serverId } },
       });
       if (!member) return reply.code(403).send({ error: "Not a member" });
+      if (!(await checkPermission(userId, channel.serverId, Permissions.READ_MESSAGES))) {
+        return reply.code(403).send({ error: "Missing READ_MESSAGES permission" });
+      }
 
       const pins = await prisma.message.findMany({
         where: { channelId, pinnedAt: { not: null } },

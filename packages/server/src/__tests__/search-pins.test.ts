@@ -26,9 +26,17 @@ vi.mock("../db.js", () => ({
 const { prisma } = await import("../db.js");
 const mockPrisma = vi.mocked(prisma);
 
+// Grant the @everyone role READ_MESSAGES so getUserPermissions passes read checks.
+function grantReadPermission() {
+  mockPrisma.server.findUnique.mockResolvedValue(null as any); // not owner
+  mockPrisma.memberRole.findMany.mockResolvedValue([] as any);
+  mockPrisma.role.findFirst.mockResolvedValue({ permissions: 0xffffffff } as any);
+}
+
 function mockServerMembership() {
   mockPrisma.serverMember.findUnique.mockResolvedValue({ userId: "user1", serverId: "srv1" } as any);
   mockPrisma.channel.findMany.mockResolvedValue([{ id: "ch1" }, { id: "ch2" }] as any);
+  grantReadPermission();
 }
 
 describe("Message Search Filters", () => {
@@ -131,6 +139,7 @@ describe("Pinned Messages", () => {
 
     mockPrisma.channel.findUnique.mockResolvedValue({ serverId: "srv1" } as any);
     mockPrisma.serverMember.findUnique.mockResolvedValue({ userId: "user1", serverId: "srv1" } as any);
+    grantReadPermission();
     mockPrisma.message.findMany.mockResolvedValue([
       {
         id: "msg1",

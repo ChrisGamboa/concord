@@ -110,20 +110,6 @@ export const wsHandler: FastifyPluginAsync = async (app) => {
   });
 };
 
-async function verifyChannelAccess(
-  userId: string,
-  channelId: string
-): Promise<boolean> {
-  const channel = await prisma.channel.findUnique({
-    where: { id: channelId },
-    select: { serverId: true },
-  });
-  if (!channel) return false;
-  const member = await prisma.serverMember.findUnique({
-    where: { userId_serverId: { userId, serverId: channel.serverId } },
-  });
-  return member !== null;
-}
 
 async function handleMessage(
   sessionId: string,
@@ -132,7 +118,17 @@ async function handleMessage(
 ) {
   switch (msg.type) {
     case "subscribe_channel": {
-      if (!(await verifyChannelAccess(userId, msg.channelId))) return;
+      const ch = await prisma.channel.findUnique({
+        where: { id: msg.channelId },
+        select: { serverId: true },
+      });
+      if (!ch) return;
+      const mem = await prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId, serverId: ch.serverId } },
+      });
+      if (!mem) return;
+      // Live delivery must honor READ_MESSAGES just like the REST fetch does.
+      if (!(await checkPermission(userId, ch.serverId, Permissions.READ_MESSAGES))) return;
       subscribeToChannel(sessionId, msg.channelId);
       break;
     }
