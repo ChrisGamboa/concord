@@ -348,6 +348,8 @@ Clients (Electron apps)
 
 PostgreSQL and Redis should **not** be publicly exposed -- only the API, WebSocket, and LiveKit need to be reachable from the internet.
 
+**Horizontal scaling:** the API/WebSocket server is stateless apart from the shared Postgres and Redis. Run multiple instances behind the reverse proxy; they fan out WebSocket broadcasts and share presence over Redis pub/sub, so a client connected to one instance still receives messages and presence from users on another. If Redis is unreachable the server degrades to single-instance automatically.
+
 ### Step 1: Provision a Server
 
 Any Linux VPS works. Recommended minimum specs:

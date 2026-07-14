@@ -10,12 +10,14 @@ import {
   broadcastToChannel,
   broadcastToAll,
   sendToUser,
-  isUserOnline,
-  getOnlineUserIds,
+} from "./connections.js";
+import {
+  addSession,
+  removeSession,
   setUserStatus,
   getUserStatus,
   clearUserStatus,
-} from "./connections.js";
+} from "./presence.js";
 
 export const wsHandler: FastifyPluginAsync = async (app) => {
   app.get("/ws", { websocket: true }, (socket, request) => {
@@ -27,27 +29,30 @@ export const wsHandler: FastifyPluginAsync = async (app) => {
       (request.query as Record<string, string>).token ?? null;
 
     if (token) {
+      let decodedUserId: string;
       try {
-        const decoded = app.jwt.verify<{ userId: string }>(token);
-        userId = decoded.userId;
-        const wasOnline = isUserOnline(userId);
-        addConnection(sessionId, socket, userId);
-        send({ type: "ready", userId, sessionId });
-
-        // Broadcast presence if this is their first connection. A status set by
-        // another recent session (e.g. dnd) survives reconnects within a run.
-        if (!wasOnline) {
-          if (!getUserStatus(userId)) setUserStatus(userId, "online");
-          broadcastToAll(
-            { type: "presence_update", userId, status: getUserStatus(userId) ?? "online" },
-            sessionId
-          );
-        }
+        decodedUserId = app.jwt.verify<{ userId: string }>(token).userId;
       } catch {
         send({ type: "error", message: "Invalid token" });
         socket.close();
         return;
       }
+      userId = decodedUserId;
+      addConnection(sessionId, socket, userId);
+      send({ type: "ready", userId, sessionId });
+
+      // Broadcast presence if this is their first connection. A status set by
+      // another recent session (e.g. dnd) survives reconnects within a run.
+      void (async () => {
+        const isFirst = await addSession(sessionId, decodedUserId);
+        if (!isFirst) return;
+        const existing = await getUserStatus(decodedUserId);
+        if (!existing) await setUserStatus(decodedUserId, "online");
+        broadcastToAll(
+          { type: "presence_update", userId: decodedUserId, status: existing ?? "online" },
+          sessionId
+        );
+      })();
     } else {
       send({ type: "error", message: "Token required as query param" });
       socket.close();
@@ -76,16 +81,19 @@ export const wsHandler: FastifyPluginAsync = async (app) => {
     socket.on("close", () => {
       const disconnectedUserId = userId;
       removeConnection(sessionId);
+      if (!disconnectedUserId) return;
 
-      // Broadcast offline if user has no remaining connections
-      if (disconnectedUserId && !isUserOnline(disconnectedUserId)) {
-        clearUserStatus(disconnectedUserId);
+      // Broadcast offline if the user has no remaining sessions on any instance
+      void (async () => {
+        const isLast = await removeSession(sessionId, disconnectedUserId);
+        if (!isLast) return;
+        await clearUserStatus(disconnectedUserId);
         broadcastToAll({
           type: "presence_update",
           userId: disconnectedUserId,
           status: "offline",
         });
-      }
+      })();
     });
 
     function send(msg: ServerMessage) {
@@ -368,7 +376,7 @@ async function handleMessage(
     }
     case "presence_set": {
       if (!["online", "idle", "dnd"].includes(msg.status)) return;
-      setUserStatus(userId, msg.status);
+      await setUserStatus(userId, msg.status);
       // Broadcast to everyone including the sender's other sessions
       broadcastToAll({ type: "presence_update", userId, status: msg.status });
       break;

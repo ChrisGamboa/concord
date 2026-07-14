@@ -21,6 +21,9 @@ import { dmRoutes } from "./routes/dm.js";
 import { previewRoutes } from "./routes/preview.js";
 import { muteRoutes } from "./routes/mutes.js";
 import { wsHandler } from "./ws/handler.js";
+import { initConnections } from "./ws/connections.js";
+import { closeBus } from "./ws/bus.js";
+import { startPresenceHeartbeat, stopPresenceHeartbeat } from "./ws/presence.js";
 import { stopAll as stopAllMusic } from "./music/player.js";
 
 const app = Fastify({ logger: true });
@@ -73,7 +76,9 @@ const shutdown = async () => {
   const forceExit = setTimeout(() => process.exit(1), 3000);
   forceExit.unref();
 
+  stopPresenceHeartbeat();
   await stopAllMusic();
+  await closeBus();
   await prisma.$disconnect();
   await app.close();
   process.exit(0);
@@ -87,6 +92,10 @@ try {
   const { isYtdlpAvailable } = await import("./music/ytdlp.js");
   const ytdlp = await isYtdlpAvailable();
   console.log(`[music] yt-dlp: ${ytdlp ? "available" : "NOT FOUND — music features disabled"}`);
+
+  // Connect the cross-instance message bus (degrades to single-instance if Redis is down)
+  await initConnections();
+  startPresenceHeartbeat();
 
   await app.listen({ port: env.PORT, host: "0.0.0.0" });
   console.log(`Server running on port ${env.PORT}`);
