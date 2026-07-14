@@ -30,6 +30,23 @@ function localSessionCount(userId: string): number {
   return n;
 }
 
+// Add/remove run as atomic Lua so the per-user ZSET and the global users index
+// never drift, and concurrent first-connects across instances see distinct counts
+// (exactly one observes count == 1 and broadcasts "online").
+const ADD_LUA = `
+redis.call('ZADD', KEYS[1], ARGV[1], ARGV[2])
+redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, ARGV[4])
+local c = redis.call('ZCARD', KEYS[1])
+redis.call('ZADD', KEYS[2], ARGV[1], ARGV[3])
+return c`;
+
+const REMOVE_LUA = `
+redis.call('ZREM', KEYS[1], ARGV[1])
+redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, ARGV[3])
+local c = redis.call('ZCARD', KEYS[1])
+if c == 0 then redis.call('ZREM', KEYS[2], ARGV[2]) end
+return c`;
+
 /** Register a session. Returns true if it is the user's first active session. */
 export async function addSession(sessionId: string, userId: string): Promise<boolean> {
   localSessions.set(sessionId, userId);
@@ -37,11 +54,11 @@ export async function addSession(sessionId: string, userId: string): Promise<boo
   if (r) {
     try {
       const now = Date.now();
-      await r.zadd(userKey(userId), now + TTL_MS, sessionId);
-      await r.zremrangebyscore(userKey(userId), 0, now);
-      await r.zadd(USERS_KEY, now + TTL_MS, userId);
-      const count = await r.zcard(userKey(userId));
-      return count <= 1;
+      const count = (await r.eval(
+        ADD_LUA, 2, userKey(userId), USERS_KEY,
+        String(now + TTL_MS), sessionId, userId, String(now),
+      )) as number;
+      return count === 1;
     } catch {
       /* fall through to local */
     }
@@ -56,10 +73,10 @@ export async function removeSession(sessionId: string, userId: string): Promise<
   if (r) {
     try {
       const now = Date.now();
-      await r.zrem(userKey(userId), sessionId);
-      await r.zremrangebyscore(userKey(userId), 0, now);
-      const count = await r.zcard(userKey(userId));
-      if (count === 0) await r.zrem(USERS_KEY, userId);
+      const count = (await r.eval(
+        REMOVE_LUA, 2, userKey(userId), USERS_KEY,
+        sessionId, userId, String(now),
+      )) as number;
       return count === 0;
     } catch {
       /* fall through to local */
