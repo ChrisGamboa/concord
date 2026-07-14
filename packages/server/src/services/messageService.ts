@@ -115,48 +115,32 @@ export function serializeDm(m: DmMessageRow): DmMessagePayload {
 
 /**
  * Push updated unread/mention counts to every server member who isn't the sender.
- * Set-based: 3 queries total (members, their lastReads, the unread window) instead
- * of the previous per-member fan-out (1 + 2N–3N queries).
+ * One grouped aggregate computed in Postgres (index-backed on Message(channelId,
+ * createdAt)) — no per-member round-trips and no message rows transferred to Node,
+ * fixing both the old N+1 and a naive full-history scan. `strpos` keeps the mention
+ * match a case-sensitive exact substring (matching the prior `contains` behavior).
  */
 async function fanOutUnread(channelId: string, serverId: string, senderId: string): Promise<void> {
-  const members = await prisma.serverMember.findMany({
-    where: { serverId, NOT: { userId: senderId } },
-    select: { userId: true, user: { select: { username: true } } },
-  });
-  if (members.length === 0) return;
+  const rows = await prisma.$queryRaw<Array<{ userId: string; unread: bigint; mentions: bigint }>>`
+    SELECT sm."userId" AS "userId",
+           COUNT(m.id) AS unread,
+           COUNT(m.id) FILTER (WHERE strpos(m.content, '@' || u.username) > 0) AS mentions
+    FROM "ServerMember" sm
+    JOIN "User" u ON u.id = sm."userId"
+    LEFT JOIN "LastRead" lr ON lr."userId" = sm."userId" AND lr."channelId" = ${channelId}
+    LEFT JOIN "Message" m ON m."channelId" = ${channelId}
+      AND m."createdAt" > COALESCE(lr."readAt", to_timestamp(0))
+    WHERE sm."serverId" = ${serverId} AND sm."userId" <> ${senderId}
+    GROUP BY sm."userId"
+    HAVING COUNT(m.id) > 0`;
 
-  const lastReads = await prisma.lastRead.findMany({
-    where: { channelId, userId: { in: members.map((m) => m.userId) } },
-    select: { userId: true, readAt: true },
-  });
-  const readMap = new Map(lastReads.map((lr) => [lr.userId, lr.readAt]));
-  const EPOCH = new Date(0);
-
-  // Fetch just the window of messages any member could still have unread.
-  let earliest = new Date();
-  for (const m of members) {
-    const since = readMap.get(m.userId) ?? EPOCH;
-    if (since < earliest) earliest = since;
-  }
-  const unreadWindow = await prisma.message.findMany({
-    where: { channelId, createdAt: { gt: earliest } },
-    select: { createdAt: true, content: true },
-  });
-
-  for (const m of members) {
-    const since = readMap.get(m.userId) ?? EPOCH;
-    const tag = `@${m.user.username}`;
-    let count = 0;
-    let mentions = 0;
-    for (const msg of unreadWindow) {
-      if (msg.createdAt > since) {
-        count++;
-        if (msg.content.includes(tag)) mentions++;
-      }
-    }
-    if (count > 0) {
-      sendToUser(m.userId, { type: "unread_count", channelId, count, mentions });
-    }
+  for (const r of rows) {
+    sendToUser(r.userId, {
+      type: "unread_count",
+      channelId,
+      count: Number(r.unread),
+      mentions: Number(r.mentions),
+    });
   }
 }
 
