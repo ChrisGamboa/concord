@@ -227,6 +227,8 @@ export function AppLayout() {
           setUnreadCount(msg.channelId, msg.count, msg.mentions ?? 0);
           break;
         case "dm_created": {
+          // Reconcile/append into the open conversation (no-op if not viewing it).
+          useChatStore.getState().addDmMessage(msg.message, msg.nonce);
           if (msg.message.authorId === userId) break;
           const viewingThisConv = serverId === "@me" && channelId === msg.message.conversationId;
           if (!viewingThisConv) {
@@ -245,6 +247,15 @@ export function AppLayout() {
           }
           break;
         }
+        case "dm_updated":
+          useChatStore.getState().updateDmMessage(msg.message);
+          break;
+        case "dm_deleted":
+          useChatStore.getState().removeDmMessage(msg.messageId);
+          break;
+        case "dm_reaction_update":
+          useChatStore.getState().updateDmReactions(msg.messageId, msg.reactions);
+          break;
         case "dm_typing":
           addTyping(msg.conversationId, msg.userId, msg.username);
           break;

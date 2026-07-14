@@ -205,10 +205,10 @@ export const api = {
     return request<{ messages: any[]; hasMore: boolean }>(`/dm/conversations/${conversationId}/messages?${params}`);
   },
 
-  sendDm: (conversationId: string, content: string, replyToId?: string) =>
+  sendDm: (conversationId: string, content: string, replyToId?: string, nonce?: string) =>
     request<any>(`/dm/conversations/${conversationId}/messages`, {
       method: "POST",
-      body: JSON.stringify({ content, replyToId }),
+      body: JSON.stringify({ content, replyToId, nonce }),
     }),
 
   editDm: (messageId: string, content: string) =>

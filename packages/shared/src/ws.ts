@@ -53,7 +53,8 @@ export type ServerMessage =
       status: PresenceStatus | "offline";
     }
   | { type: "reaction_update"; channelId: ChannelId; messageId: MessageId; reactions: ReactionGroup[] }
-  | { type: "dm_created"; message: DmMessagePayload }
+  // nonce: echoed only to the sender so they can reconcile their optimistic copy
+  | { type: "dm_created"; message: DmMessagePayload; nonce?: string }
   | { type: "dm_updated"; message: DmMessagePayload }
   | { type: "dm_deleted"; conversationId: string; messageId: string }
   | { type: "dm_reaction_update"; conversationId: string; messageId: string; reactions: ReactionGroup[] }

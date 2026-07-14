@@ -150,12 +150,12 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
   );
 
   // Send a DM
-  app.post<{ Params: { conversationId: string }; Body: { content: string; replyToId?: string } }>(
+  app.post<{ Params: { conversationId: string }; Body: { content: string; replyToId?: string; nonce?: string } }>(
     "/conversations/:conversationId/messages",
     async (request, reply) => {
       const { userId } = request.user as { userId: string };
       const { conversationId } = request.params;
-      const { content } = request.body;
+      const { content, nonce } = request.body;
 
       if (!content?.trim() || content.length > 4000) {
         return reply.code(400).send({ error: "Message must be 1-4000 characters" });
@@ -193,9 +193,10 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
         author: dm.author,
       };
 
-      // Send to both participants via WS
+      // Send to both participants via WS. The nonce is echoed only to the sender
+      // so they can reconcile their optimistic (pending) copy with the persisted one.
       const otherId = conv.participant1 === userId ? conv.participant2 : conv.participant1;
-      sendToUser(userId, { type: "dm_created", message: msg });
+      sendToUser(userId, { type: "dm_created", message: msg, ...(nonce ? { nonce } : {}) });
       sendToUser(otherId, { type: "dm_created", message: msg });
 
       return msg;
