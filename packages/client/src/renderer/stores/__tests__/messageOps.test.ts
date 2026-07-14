@@ -9,12 +9,14 @@ const msg = (id: string, extra: Partial<M> = {}): M => ({ id, ...extra });
 
 describe("messageOps.reconcile", () => {
   it("replaces the optimistic copy matched by nonce", () => {
+    // The persisted payload carries no nonce; the nonce lives on the WS envelope (arg).
     const list = [msg("real-1"), msg("pending-x", { nonce: "x", pending: true })];
-    const confirmed = msg("real-2", { nonce: "x" });
+    const confirmed = msg("real-2");
     const next = ops.reconcile(list, confirmed, "x");
     expect(next).toHaveLength(2);
     expect(next[1]).toEqual(confirmed);
     expect(next[1].pending).toBeUndefined();
+    expect(next[1].nonce).toBeUndefined();
   });
 
   it("appends when no nonce match and id is new", () => {
@@ -36,11 +38,13 @@ describe("messageOps.reconcile", () => {
   });
 
   it("dedupes a WS echo arriving after nonce reconciliation", () => {
-    // Send flow: pending -> reconciled by nonce -> WS echo (same real id) is a no-op
+    // Send flow: pending -> reconciled by nonce -> the second echo (same real id,
+    // no longer a nonce match) falls through to id-dedup and is a no-op.
     let list: M[] = [msg("pending-x", { nonce: "x", pending: true })];
-    list = ops.reconcile(list, msg("real", { nonce: "x" }), "x");
-    const after = ops.reconcile(list, msg("real", { nonce: "x" }), "x");
+    list = ops.reconcile(list, msg("real"), "x");
+    const after = ops.reconcile(list, msg("real"), "x");
     expect(after.map((m) => m.id)).toEqual(["real"]);
+    expect(after).toBe(list);
   });
 });
 

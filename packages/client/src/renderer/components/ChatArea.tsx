@@ -355,20 +355,27 @@ export function ChatArea() {
     sendChannelMessage(content);
   }, [mention.isOpen, input, channelId, jumpToPresent, sendChannelMessage]);
 
+  // Send new content (file/GIF): from a historical view, return to live first so
+  // the optimistic message reconciles instead of stranding as pending.
+  const submitContent = useCallback(async (content: string) => {
+    if (!useChatStore.getState().isAtLatest) await jumpToPresent();
+    sendChannelMessage(content);
+  }, [jumpToPresent, sendChannelMessage]);
+
   const handleFileUpload = useCallback(
     async (file: File) => {
       if (!channelId) return;
       setUploading(true);
       try {
         const result = await api.uploadFile(file);
-        sendChannelMessage(result.url);
+        await submitContent(result.url);
       } catch (err) {
         toast(err instanceof Error ? err.message : "Upload failed");
       } finally {
         setUploading(false);
       }
     },
-    [channelId, sendChannelMessage]
+    [channelId, submitContent]
   );
 
   const handleDrop = useCallback(
@@ -728,7 +735,7 @@ export function ChatArea() {
         placeholder={uploading ? "Uploading..." : `Message #${channel?.name ?? "channel"}`}
         uploading={uploading}
         onFileSelected={handleFileUpload}
-        onGifSelected={(url) => sendChannelMessage(url)}
+        onGifSelected={(url) => submitContent(url)}
         replyTarget={replyTarget}
         onCancelReply={() => setReplyTarget(null)}
         typingText={typingText}

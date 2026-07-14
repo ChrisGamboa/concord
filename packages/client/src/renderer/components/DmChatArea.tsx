@@ -88,8 +88,9 @@ export function DmChatArea() {
     let stale = false;
     const store = useChatStore.getState();
     store.setActiveConversation(conversationId);
-    store.setDmMessagesLoading(true);
+    // Clear the previous conversation, then flag loading (setDmMessages resets it).
     store.setDmMessages([], false);
+    store.setDmMessagesLoading(true);
     setReplyTarget(null);
     api.getDmMessages(conversationId).then((res) => {
       if (stale) return;
@@ -199,14 +200,19 @@ export function DmChatArea() {
     inputRef.current?.focus();
   }, []);
 
+  // Send new content (text/file/GIF): from a historical view, return to live first
+  // so the optimistic message reconciles instead of stranding as pending.
+  const submitContent = useCallback(async (content: string) => {
+    if (!useChatStore.getState().dmIsAtLatest) await jumpToPresent();
+    sendDmMessage(content);
+  }, [jumpToPresent, sendDmMessage]);
+
   const handleSend = useCallback(async () => {
     if (!input.trim() || !conversationId) return;
     const content = input.trim();
     setInput("");
-    // Sending from a historical view returns to the live view first
-    if (!useChatStore.getState().dmIsAtLatest) await jumpToPresent();
-    sendDmMessage(content);
-  }, [input, conversationId, jumpToPresent, sendDmMessage]);
+    await submitContent(content);
+  }, [input, conversationId, submitContent]);
 
   const sendTyping = useCallback(() => {
     if (!conversationId) return;
@@ -222,13 +228,13 @@ export function DmChatArea() {
     setUploading(true);
     try {
       const result = await api.uploadFile(file);
-      sendDmMessage(result.url);
+      await submitContent(result.url);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
     }
-  }, [conversationId, sendDmMessage]);
+  }, [conversationId, submitContent]);
 
   const handleStartEdit = (msgId: string, content: string) => {
     setEditingMsgId(msgId);
@@ -374,7 +380,7 @@ export function DmChatArea() {
         placeholder={uploading ? "Uploading..." : `Message ${otherUser?.displayName ?? "..."}`}
         uploading={uploading}
         onFileSelected={handleFileUpload}
-        onGifSelected={(url) => sendDmMessage(url)}
+        onGifSelected={(url) => submitContent(url)}
         replyTarget={replyTarget}
         onCancelReply={() => setReplyTarget(null)}
         typingText={typingText}
