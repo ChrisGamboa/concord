@@ -58,7 +58,8 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
               Permissions.SEND_MESSAGES |
               Permissions.READ_MESSAGES |
               Permissions.CONNECT_VOICE |
-              Permissions.SPEAK,
+              Permissions.SPEAK |
+              Permissions.STREAM,
             position: 0,
           },
         },

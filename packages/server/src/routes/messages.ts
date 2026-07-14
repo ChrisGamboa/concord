@@ -31,6 +31,9 @@ export const messageRoutes: FastifyPluginAsync = async (app) => {
     if (!member) {
       return reply.code(403).send({ error: "Not a member of this server" });
     }
+    if (!(await checkPermission(userId, channel.serverId, Permissions.READ_MESSAGES))) {
+      return reply.code(403).send({ error: "Missing READ_MESSAGES permission" });
+    }
 
     const messages = await prisma.message.findMany({
       where: {

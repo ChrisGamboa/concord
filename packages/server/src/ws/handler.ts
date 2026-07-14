@@ -2,6 +2,8 @@ import type { FastifyPluginAsync } from "fastify";
 import { randomUUID } from "crypto";
 import { prisma } from "../db.js";
 import type { ClientMessage, ServerMessage } from "@concord/shared";
+import { Permissions } from "@concord/shared";
+import { checkPermission } from "../permissions.js";
 import {
   addConnection,
   removeConnection,
@@ -23,6 +25,9 @@ export const wsHandler: FastifyPluginAsync = async (app) => {
   app.get("/ws", { websocket: true }, (socket, request) => {
     const sessionId = randomUUID();
     let userId: string | null = null;
+    // Resolves once this session's presence registration completes, so the close
+    // handler never races ahead of its own connect (which would strand a session).
+    let presenceReady: Promise<boolean> = Promise.resolve(false);
 
     // Authenticate via first message or query param
     const token =
@@ -43,8 +48,8 @@ export const wsHandler: FastifyPluginAsync = async (app) => {
 
       // Broadcast presence if this is their first connection. A status set by
       // another recent session (e.g. dnd) survives reconnects within a run.
-      void (async () => {
-        const isFirst = await addSession(sessionId, decodedUserId);
+      presenceReady = addSession(sessionId, decodedUserId);
+      void presenceReady.then(async (isFirst) => {
         if (!isFirst) return;
         const existing = await getUserStatus(decodedUserId);
         if (!existing) await setUserStatus(decodedUserId, "online");
@@ -52,7 +57,7 @@ export const wsHandler: FastifyPluginAsync = async (app) => {
           { type: "presence_update", userId: decodedUserId, status: existing ?? "online" },
           sessionId
         );
-      })();
+      });
     } else {
       send({ type: "error", message: "Token required as query param" });
       socket.close();
@@ -83,17 +88,18 @@ export const wsHandler: FastifyPluginAsync = async (app) => {
       removeConnection(sessionId);
       if (!disconnectedUserId) return;
 
-      // Broadcast offline if the user has no remaining sessions on any instance
-      void (async () => {
-        const isLast = await removeSession(sessionId, disconnectedUserId);
+      // Broadcast offline if the user has no remaining sessions on any instance.
+      // Wait for this session's own registration first so add/remove stay ordered.
+      void presenceReady.then(() => removeSession(sessionId, disconnectedUserId)).then((isLast) => {
         if (!isLast) return;
-        await clearUserStatus(disconnectedUserId);
-        broadcastToAll({
-          type: "presence_update",
-          userId: disconnectedUserId,
-          status: "offline",
+        return clearUserStatus(disconnectedUserId).then(() => {
+          broadcastToAll({
+            type: "presence_update",
+            userId: disconnectedUserId,
+            status: "offline",
+          });
         });
-      })();
+      });
     });
 
     function send(msg: ServerMessage) {
@@ -136,7 +142,16 @@ async function handleMessage(
     }
     case "send_message": {
       if (!msg.content || msg.content.trim().length === 0 || msg.content.length > 4000) return;
-      if (!(await verifyChannelAccess(userId, msg.channelId))) return;
+      const sendChannel = await prisma.channel.findUnique({
+        where: { id: msg.channelId },
+        select: { serverId: true },
+      });
+      if (!sendChannel) return;
+      const sender = await prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId, serverId: sendChannel.serverId } },
+      });
+      if (!sender) return;
+      if (!(await checkPermission(userId, sendChannel.serverId, Permissions.SEND_MESSAGES))) return;
 
       // A reply must reference a message in the same channel
       let replyToId: string | null = null;
@@ -284,8 +299,6 @@ async function handleMessage(
 
       // Allow if author OR has MANAGE_MESSAGES permission
       if (toDelete.authorId !== userId) {
-        const { checkPermission } = await import("../permissions.js");
-        const { Permissions } = await import("@concord/shared");
         const canManage = await checkPermission(userId, toDelete.channel.serverId, Permissions.MANAGE_MESSAGES);
         if (!canManage) return;
       }
