@@ -1,6 +1,9 @@
 import "./types.js";
 import Fastify from "fastify";
+import type { FastifyError, FastifyReply, FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
+import helmet from "@fastify/helmet";
+import rateLimit from "@fastify/rate-limit";
 import jwt from "@fastify/jwt";
 import websocket from "@fastify/websocket";
 import multipart from "@fastify/multipart";
@@ -27,7 +30,18 @@ import { closeBus } from "./ws/bus.js";
 import { startPresenceHeartbeat, stopPresenceHeartbeat } from "./ws/presence.js";
 import { stopAll as stopAllMusic } from "./music/player.js";
 
-const app = Fastify({ logger: true });
+// trustProxy so client IPs (behind the documented nginx reverse proxy) are read
+// from X-Forwarded-For — required for correct per-IP rate limiting.
+const app = Fastify({ logger: true, trustProxy: true });
+
+// Security headers. CSP is off (this is a JSON API, not an HTML app) and CORP is
+// cross-origin so the Electron client can load /uploads images from another origin.
+await app.register(helmet, {
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+});
+// Global rate limit (per IP). Auth routes tighten this further via route config.
+await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
 
 await app.register(cors, { origin: true, methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] });
 await app.register(jwt, { secret: env.JWT_SECRET });
@@ -67,6 +81,19 @@ await app.register(muteRoutes, { prefix: "/api/mutes" });
 
 // WebSocket
 await app.register(wsHandler);
+
+// Central error handler: surface validation/4xx cleanly, hide 5xx internals.
+app.setErrorHandler((error: FastifyError, request: FastifyRequest, reply: FastifyReply) => {
+  if (error.validation) {
+    return reply.code(400).send({ error: "Invalid request", details: error.message });
+  }
+  const status = error.statusCode ?? 500;
+  if (status < 500) {
+    return reply.code(status).send({ error: error.message });
+  }
+  request.log.error(error);
+  return reply.code(500).send({ error: "Internal server error" });
+});
 
 // Health check
 app.get("/health", async () => ({ status: "ok" }));

@@ -21,8 +21,12 @@ function toUserResponse(user: { id: string; username: string; displayName: strin
   };
 }
 
+// Tighter limit on unauthenticated auth endpoints to blunt brute-force/credential
+// stuffing (the global limiter is far more permissive).
+const AUTH_RATE_LIMIT = { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } };
+
 export const authRoutes: FastifyPluginAsync = async (app) => {
-  app.post<{ Body: RegisterRequest }>("/register", async (request, reply) => {
+  app.post<{ Body: RegisterRequest }>("/register", AUTH_RATE_LIMIT, async (request, reply) => {
     const { username, password, displayName } = request.body;
 
     if (!username || !password || !displayName) {
@@ -52,7 +56,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     return reply.code(201).send(response);
   });
 
-  app.post<{ Body: LoginRequest }>("/login", async (request, reply) => {
+  app.post<{ Body: LoginRequest }>("/login", AUTH_RATE_LIMIT, async (request, reply) => {
     const { username, password } = request.body;
 
     if (!username || !password) {

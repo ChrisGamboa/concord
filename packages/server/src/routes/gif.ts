@@ -28,9 +28,17 @@ export const gifRoutes: FastifyPluginAsync = async (app) => {
       const endpoint = q?.trim() ? "search" : "trending";
       const url = `${KLIPY_BASE}/${env.KLIPY_API_KEY}/gifs/${endpoint}?${params}`;
 
-      const res = await fetch(url);
+      let res: Response;
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeout);
+      } catch {
+        return reply.code(502).send({ error: "GIF service unavailable" });
+      }
       if (!res.ok) {
-        return reply.code(res.status).send({ error: "Klipy API error" });
+        return reply.code(502).send({ error: "Klipy API error" });
       }
 
       const json = await res.json() as {

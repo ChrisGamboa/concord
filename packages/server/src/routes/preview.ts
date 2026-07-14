@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { safeFetch } from "../urlGuard.js";
 
 interface OgData {
   title: string | null;
@@ -30,14 +31,14 @@ async function fetchOgData(url: string): Promise<OgData> {
   const timeout = setTimeout(() => controller.abort(), 5000);
 
   try {
-    const res = await fetch(url, {
+    // safeFetch blocks private/loopback targets and re-validates each redirect hop.
+    const res = await safeFetch(url, {
       signal: controller.signal,
       headers: {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml",
         "Accept-Language": "en-US,en;q=0.9",
       },
-      redirect: "follow",
     });
     clearTimeout(timeout);
 
