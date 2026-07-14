@@ -14,6 +14,11 @@ import {
   sendToUser,
 } from "./connections.js";
 import {
+  createChannelMessage,
+  serializeMessage,
+  MESSAGE_INCLUDE,
+} from "../services/messageService.js";
+import {
   addSession,
   removeSession,
   setUserStatus,
@@ -149,93 +154,14 @@ async function handleMessage(
       if (!sender) return;
       if (!(await checkPermission(userId, sendChannel.serverId, Permissions.SEND_MESSAGES))) return;
 
-      // A reply must reference a message in the same channel
-      let replyToId: string | null = null;
-      if (msg.replyToId) {
-        const target = await prisma.message.findUnique({
-          where: { id: msg.replyToId },
-          select: { channelId: true },
-        });
-        if (target?.channelId === msg.channelId) replyToId = msg.replyToId;
-      }
-
-      const message = await prisma.message.create({
-        data: {
-          channelId: msg.channelId,
-          authorId: userId,
-          content: msg.content,
-          replyToId,
-        },
-        include: {
-          author: {
-            select: { id: true, username: true, displayName: true, avatarUrl: true, status: true },
-          },
-          replyTo: {
-            select: {
-              id: true,
-              content: true,
-              authorId: true,
-              createdAt: true,
-              author: { select: { id: true, username: true, displayName: true, avatarUrl: true, status: true } },
-            },
-          },
-        },
+      await createChannelMessage({
+        channelId: msg.channelId,
+        serverId: sendChannel.serverId,
+        authorId: userId,
+        content: msg.content,
+        replyToId: msg.replyToId,
+        nonce: msg.nonce,
       });
-
-      const serverMsg: ServerMessage = {
-        type: "message_created",
-        message: {
-          id: message.id,
-          channelId: message.channelId,
-          authorId: message.authorId,
-          content: message.content,
-          createdAt: message.createdAt.toISOString(),
-          editedAt: null,
-          author: message.author,
-          replyTo: message.replyTo
-            ? {
-                id: message.replyTo.id,
-                content: message.replyTo.content,
-                authorId: message.replyTo.authorId,
-                createdAt: message.replyTo.createdAt.toISOString(),
-                author: message.replyTo.author,
-              }
-            : null,
-        },
-        ...(msg.nonce ? { nonce: msg.nonce } : {}),
-      };
-
-      broadcastToChannel(msg.channelId, serverMsg);
-
-      // Update unread counts for all server members not subscribed to this channel
-      const channel = await prisma.channel.findUnique({ where: { id: msg.channelId }, select: { serverId: true } });
-      if (channel) {
-        const members = await prisma.serverMember.findMany({
-          where: { serverId: channel.serverId },
-          select: { userId: true, user: { select: { username: true } } },
-        });
-        for (const member of members) {
-          if (member.userId === userId) continue; // skip sender
-          const lastRead = await prisma.lastRead.findUnique({
-            where: { userId_channelId: { userId: member.userId, channelId: msg.channelId } },
-          });
-          const since = lastRead?.readAt ?? new Date(0);
-          const count = await prisma.message.count({
-            where: { channelId: msg.channelId, createdAt: { gt: since } },
-          });
-          if (count > 0) {
-            const mentions = await prisma.message.count({
-              where: {
-                channelId: msg.channelId,
-                createdAt: { gt: since },
-                content: { contains: `@${member.user.username}` },
-              },
-            });
-            sendToUser(member.userId, { type: "unread_count", channelId: msg.channelId, count, mentions });
-          }
-        }
-      }
-
       break;
     }
     case "edit_message": {
@@ -247,42 +173,12 @@ async function handleMessage(
       const updated = await prisma.message.update({
         where: { id: msg.messageId },
         data: { content: msg.content, editedAt: new Date() },
-        include: {
-          author: {
-            select: { id: true, username: true, displayName: true, avatarUrl: true, status: true },
-          },
-          replyTo: {
-            select: {
-              id: true,
-              content: true,
-              authorId: true,
-              createdAt: true,
-              author: { select: { id: true, username: true, displayName: true, avatarUrl: true, status: true } },
-            },
-          },
-        },
+        include: MESSAGE_INCLUDE,
       });
 
       broadcastToChannel(updated.channelId, {
         type: "message_updated",
-        message: {
-          id: updated.id,
-          channelId: updated.channelId,
-          authorId: updated.authorId,
-          content: updated.content,
-          createdAt: updated.createdAt.toISOString(),
-          editedAt: updated.editedAt?.toISOString() ?? null,
-          author: updated.author,
-          replyTo: updated.replyTo
-            ? {
-                id: updated.replyTo.id,
-                content: updated.replyTo.content,
-                authorId: updated.replyTo.authorId,
-                createdAt: updated.replyTo.createdAt.toISOString(),
-                author: updated.replyTo.author,
-              }
-            : null,
-        },
+        message: serializeMessage(updated),
       });
       break;
     }

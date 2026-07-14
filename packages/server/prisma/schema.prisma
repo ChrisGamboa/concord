@@ -99,6 +99,7 @@ model DirectMessage {
   replies      DirectMessage[] @relation("DmReplies")
 
   @@index([conversationId, createdAt])
+  @@index([authorId])
 }
 
 model DmReaction {
@@ -191,6 +192,7 @@ model Message {
   replies   Message[]  @relation("MessageReplies")
 
   @@index([channelId, createdAt])
+  @@index([authorId])
 }
 
 model Role {
@@ -218,6 +220,7 @@ model ServerMember {
   memberRoles MemberRole[]
 
   @@id([userId, serverId])
+  @@index([serverId])
 }
 
 model MemberRole {

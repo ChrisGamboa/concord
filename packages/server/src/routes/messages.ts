@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "../db.js";
 import { Permissions } from "@concord/shared";
 import { checkPermission } from "../permissions.js";
+import { createChannelMessage, serializeMessage, MESSAGE_INCLUDE } from "../services/messageService.js";
 
 export const messageRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", app.authenticate);
@@ -40,21 +41,7 @@ export const messageRoutes: FastifyPluginAsync = async (app) => {
         channelId,
         ...(before ? { createdAt: { lt: new Date(before) } } : {}),
       },
-      include: {
-        author: {
-          select: { id: true, username: true, displayName: true, avatarUrl: true, status: true },
-        },
-        reactions: { select: { emoji: true, userId: true } },
-        replyTo: {
-          select: {
-            id: true,
-            content: true,
-            authorId: true,
-            createdAt: true,
-            author: { select: { id: true, username: true, displayName: true, avatarUrl: true, status: true } },
-          },
-        },
-      },
+      include: MESSAGE_INCLUDE,
       orderBy: { createdAt: "desc" },
       take: limit + 1,
     });
@@ -63,32 +50,45 @@ export const messageRoutes: FastifyPluginAsync = async (app) => {
     const page = hasMore ? messages.slice(0, limit) : messages;
 
     return {
-      messages: page.reverse().map((m) => ({
-        id: m.id,
-        channelId: m.channelId,
-        authorId: m.authorId,
-        content: m.content,
-        createdAt: m.createdAt.toISOString(),
-        editedAt: m.editedAt?.toISOString() ?? null,
-        pinnedAt: m.pinnedAt?.toISOString() ?? null,
-        author: m.author,
-        replyTo: m.replyTo
-          ? {
-              id: m.replyTo.id,
-              content: m.replyTo.content,
-              authorId: m.replyTo.authorId,
-              createdAt: m.replyTo.createdAt.toISOString(),
-              author: m.replyTo.author,
-            }
-          : null,
-        reactions: (() => {
-          const groups: Record<string, string[]> = {};
-          for (const r of m.reactions) (groups[r.emoji] ??= []).push(r.userId);
-          return Object.entries(groups).map(([emoji, userIds]) => ({ emoji, count: userIds.length, userIds }));
-        })(),
-      })),
+      messages: page.reverse().map(serializeMessage),
       hasMore,
     };
+  });
+
+  // Create a message over HTTP (parity with the WebSocket send path; shares the
+  // same service so validation, broadcast, and unread fan-out stay identical).
+  app.post<{
+    Params: { channelId: string };
+    Body: { content: string; replyToId?: string; nonce?: string };
+  }>("/channel/:channelId", async (request, reply) => {
+    const { userId } = request.user as { userId: string };
+    const { channelId } = request.params;
+    const { content, replyToId, nonce } = request.body;
+
+    if (!content?.trim() || content.length > 4000) {
+      return reply.code(400).send({ error: "Message must be 1-4000 characters" });
+    }
+    const channel = await prisma.channel.findUnique({
+      where: { id: channelId },
+      select: { serverId: true },
+    });
+    if (!channel) return reply.code(404).send({ error: "Channel not found" });
+    const member = await prisma.serverMember.findUnique({
+      where: { userId_serverId: { userId, serverId: channel.serverId } },
+    });
+    if (!member) return reply.code(403).send({ error: "Not a member of this server" });
+    if (!(await checkPermission(userId, channel.serverId, Permissions.SEND_MESSAGES))) {
+      return reply.code(403).send({ error: "Missing SEND_MESSAGES permission" });
+    }
+
+    return createChannelMessage({
+      channelId,
+      serverId: channel.serverId,
+      authorId: userId,
+      content: content.trim(),
+      replyToId,
+      nonce,
+    });
   });
 
   // Search messages in a server or channel
