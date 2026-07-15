@@ -1,0 +1,55 @@
+name: Release
+
+# Cuts a cross-platform release. Flow:
+#   1. Set the repo variable VITE_SERVER_URL (Settings > Secrets and variables >
+#      Actions > Variables) to your production server URL, e.g. https://concord.example.com
+#   2. Bump "version" in packages/client/package.json to match the tag you'll push.
+#   3. git tag vX.Y.Z && git push origin vX.Y.Z
+# electron-builder publishes to the GitHub Release matching the client package
+# version (see packages/client/electron-builder.yml -> publish).
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write # allow the built-in token to create/upload the GitHub Release
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter @concord/shared build
+
+      - name: Build and publish client
+        env:
+          # Built-in token has contents:write for this repo; electron-builder reads GH_TOKEN.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Baked into the app at build time; must be set as a repo variable.
+          VITE_SERVER_URL: ${{ vars.VITE_SERVER_URL }}
+          # No signing certs in CI — skip macOS auto-signing to avoid build failures.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          pnpm --filter @concord/client run build
+          pnpm --filter @concord/client exec electron-builder --config electron-builder.yml --publish always

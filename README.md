@@ -326,7 +326,13 @@ This uploads the installer to a GitHub Release tagged with the version from `pac
 
 Output goes to `packages/client/release/`. Cross-compilation has limits -- build macOS on macOS, Windows on Windows (or use CI).
 
-**CI/CD tip:** Use GitHub Actions with `electron-builder` action to build all platforms automatically. The `electron-builder` docs have [ready-made workflow templates](https://www.electron.build/multi-platform-build).
+**CI/CD:** This repo ships a release workflow at `.github/workflows/release.yml` that builds macOS, Windows, and Linux on their native runners and publishes to GitHub Releases. To cut a release:
+
+1. Set the repository variable `VITE_SERVER_URL` (Settings > Secrets and variables > Actions > Variables) to your production server URL. It is baked into the app at build time.
+2. Bump `version` in `packages/client/package.json` to the release version.
+3. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+
+The workflow authenticates with the built-in `GITHUB_TOKEN` and skips code-signing (set signing secrets if you need signed builds). Cross-platform builds must run on their own OS, which is why this uses a runner matrix rather than a single `build:publish` invocation.
 
 ## Hosting & Public Deployment
 
