@@ -25,11 +25,13 @@ import {
   getUserStatus,
   clearUserStatus,
 } from "./presence.js";
+import { createConnectionLimiter, SEND_TYPES } from "./rateLimiter.js";
 
 export const wsHandler: FastifyPluginAsync = async (app) => {
   app.get("/ws", { websocket: true }, (socket, request) => {
     const sessionId = randomUUID();
     let userId: string | null = null;
+    const limiter = createConnectionLimiter();
     // Resolves once this session's presence registration completes, so the close
     // handler never races ahead of its own connect (which would strand a session).
     let presenceReady: Promise<boolean> = Promise.resolve(false);
@@ -72,11 +74,23 @@ export const wsHandler: FastifyPluginAsync = async (app) => {
     socket.on("message", async (raw: Buffer) => {
       if (!userId) return;
 
+      // Flood control: drop frames over the broad per-connection limit.
+      if (!limiter.allowFrame()) {
+        send({ type: "error", message: "Rate limit exceeded" });
+        return;
+      }
+
       let msg: ClientMessage;
       try {
         msg = JSON.parse(raw.toString());
       } catch {
         send({ type: "error", message: "Invalid JSON" });
+        return;
+      }
+
+      // Tighter limit on content-creating actions (DB writes + fan-out).
+      if (SEND_TYPES.has(msg.type) && !limiter.allowSend()) {
+        send({ type: "error", message: "You're sending messages too fast" });
         return;
       }
 
