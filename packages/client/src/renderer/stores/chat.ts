@@ -8,6 +8,18 @@ export type ChatMessage = Message & ops.OptimisticFields;
 /** A direct message plus client-only optimistic-send state. */
 export type DmChatMessage = DmMessagePayload & ops.OptimisticFields;
 
+export interface Conversation {
+  id: string;
+  otherUser: {
+    id: string;
+    username: string;
+    displayName: string;
+    avatarUrl: string | null;
+    status: string | null;
+  };
+  lastMessage: { content: string; createdAt: string } | null;
+}
+
 interface ChatState {
   servers: Server[];
   channels: Channel[];
@@ -37,6 +49,9 @@ interface ChatState {
   dmHasMore: boolean;
   dmLoading: boolean;
   dmIsAtLatest: boolean;
+
+  /** DM conversation list shown in the DM sidebar. */
+  conversations: Conversation[];
 
   setServers: (servers: Server[]) => void;
   setChannels: (channels: Channel[]) => void;
@@ -77,6 +92,11 @@ interface ChatState {
   updateDmMessage: (message: DmMessagePayload) => void;
   removeDmMessage: (messageId: string) => void;
   updateDmReactions: (messageId: string, reactions: ReactionGroup[]) => void;
+
+  setConversations: (conversations: Conversation[]) => void;
+  addConversation: (conversation: Conversation) => void;
+  /** Update a conversation's last message and move it to the top; no-op if unknown. */
+  bumpConversation: (dm: { conversationId: string; content: string; createdAt: string }) => void;
 }
 
 export const useChatStore = create<ChatState>()((set) => ({
@@ -101,6 +121,7 @@ export const useChatStore = create<ChatState>()((set) => ({
   dmHasMore: false,
   dmLoading: false,
   dmIsAtLatest: true,
+  conversations: [],
 
   setServers: (servers) => set({ servers }),
   setUnreadCounts: (counts) => set({ unreadCounts: counts }),
@@ -206,4 +227,19 @@ export const useChatStore = create<ChatState>()((set) => ({
   updateDmMessage: (message) => set((s) => ({ dmMessages: ops.merge(s.dmMessages, message as DmChatMessage) })),
   removeDmMessage: (messageId) => set((s) => ({ dmMessages: ops.removeById(s.dmMessages, messageId) })),
   updateDmReactions: (messageId, reactions) => set((s) => ({ dmMessages: ops.setReactions(s.dmMessages, messageId, reactions) })),
+
+  setConversations: (conversations) => set({ conversations }),
+  addConversation: (conversation) =>
+    set((s) => (s.conversations.some((c) => c.id === conversation.id)
+      ? s
+      : { conversations: [conversation, ...s.conversations] })),
+  bumpConversation: (dm) =>
+    set((s) => {
+      const idx = s.conversations.findIndex((c) => c.id === dm.conversationId);
+      if (idx === -1) return s;
+      const next = [...s.conversations];
+      const [conv] = next.splice(idx, 1);
+      next.unshift({ ...conv, lastMessage: { content: dm.content, createdAt: dm.createdAt } });
+      return { conversations: next };
+    }),
 }));

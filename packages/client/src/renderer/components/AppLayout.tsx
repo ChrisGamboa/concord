@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
-import { onWsMessage, sendWs } from "../lib/ws";
+import { sendWs } from "../lib/ws";
+import { installWsRouter } from "../lib/wsRouter";
 import { useChatStore } from "../stores/chat";
 import { useAuthStore } from "../stores/auth";
-import { usePresenceStore } from "../stores/presence";
 import { useVoiceStore } from "../stores/voice";
-import { toast } from "../stores/toast";
 import { ServerList } from "./ServerList";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { ChatArea } from "./ChatArea";
@@ -25,12 +24,8 @@ export function AppLayout() {
   const {
     setServers,
     setChannels,
-    addMessage,
-    updateMessage,
-    removeMessage,
     setActiveServer,
     setUnreadCount,
-    updateReactions,
   } = useChatStore();
 
   const [serversLoading, setServersLoading] = useState(true);
@@ -145,8 +140,6 @@ export function AppLayout() {
   const isViewingUnconnectedVoice =
     isVoiceChannel && voiceConnection?.channelId !== channelId;
 
-  const userId = useAuthStore((s) => s.user?.id);
-  const { setPresence, addTyping } = usePresenceStore();
   const [showSettings, setShowSettings] = useState(false);
   const [showServerSettings, setShowServerSettings] = useState(false);
   const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
@@ -177,94 +170,8 @@ export function AppLayout() {
     };
   }, []);
 
-  // Handle incoming WebSocket messages
-  useEffect(() => {
-    return onWsMessage((msg) => {
-      switch (msg.type) {
-        case "message_created": {
-          addMessage(msg.message, msg.nonce);
-          // Desktop notification when window is not focused (unless channel/server is muted)
-          const chatState = useChatStore.getState();
-          const msgChannel = chatState.channels.find((c) => c.id === msg.message.channelId);
-          const isMuted =
-            chatState.mutedChannels.includes(msg.message.channelId) ||
-            (msgChannel !== undefined && chatState.mutedServers.includes(msgChannel.serverId));
-          const isDnd = userId !== undefined &&
-            usePresenceStore.getState().statuses[userId] === "dnd";
-          if (!isMuted && !isDnd && !document.hasFocus() && msg.message.authorId !== userId) {
-            const electron = window.electron;
-            electron?.sendNotification?.(
-              msg.message.author?.displayName ?? "New message",
-              msg.message.content.length > 100
-                ? msg.message.content.slice(0, 100) + "..."
-                : msg.message.content
-            );
-          }
-          break;
-        }
-        case "message_updated":
-          updateMessage(msg.message);
-          break;
-        case "message_deleted":
-          removeMessage(msg.channelId, msg.messageId);
-          break;
-        case "presence_update":
-          setPresence(msg.userId, msg.status);
-          break;
-        case "ready":
-          // Restore a manually chosen DND status across reconnects
-          if (localStorage.getItem("concord-presence") === "dnd") {
-            sendWs({ type: "presence_set", status: "dnd" });
-          }
-          break;
-        case "typing":
-          addTyping(msg.channelId, msg.userId, msg.username);
-          break;
-        case "reaction_update":
-          updateReactions(msg.messageId, msg.reactions);
-          break;
-        case "unread_count":
-          setUnreadCount(msg.channelId, msg.count, msg.mentions ?? 0);
-          break;
-        case "dm_created": {
-          // Reconcile/append into the open conversation (no-op if not viewing it).
-          useChatStore.getState().addDmMessage(msg.message, msg.nonce);
-          if (msg.message.authorId === userId) break;
-          const viewingThisConv = serverId === "@me" && channelId === msg.message.conversationId;
-          if (!viewingThisConv) {
-            useChatStore.getState().addDmUnread(msg.message.conversationId);
-          }
-          const isDnd = userId !== undefined &&
-            usePresenceStore.getState().statuses[userId] === "dnd";
-          if (!isDnd && (!viewingThisConv || !document.hasFocus())) {
-            const electron = window.electron;
-            electron?.sendNotification?.(
-              msg.message.author?.displayName ?? "New message",
-              msg.message.content.length > 100
-                ? msg.message.content.slice(0, 100) + "..."
-                : msg.message.content
-            );
-          }
-          break;
-        }
-        case "dm_updated":
-          useChatStore.getState().updateDmMessage(msg.message);
-          break;
-        case "dm_deleted":
-          useChatStore.getState().removeDmMessage(msg.messageId);
-          break;
-        case "dm_reaction_update":
-          useChatStore.getState().updateDmReactions(msg.messageId, msg.reactions);
-          break;
-        case "dm_typing":
-          addTyping(msg.conversationId, msg.userId, msg.username);
-          break;
-        case "error":
-          toast(msg.message);
-          break;
-      }
-    });
-  }, [addMessage, updateMessage, removeMessage, setPresence, addTyping, setUnreadCount, updateReactions, userId, serverId, channelId]);
+  // Single WebSocket dispatcher: routes every server event into the stores.
+  useEffect(() => installWsRouter(), []);
 
   return (
     <div style={styles.layout}>
