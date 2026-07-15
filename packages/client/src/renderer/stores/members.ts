@@ -24,8 +24,9 @@ interface MembersState {
   /** Fetch members once per server; concurrent callers share the in-flight request. */
   ensureMembers: (serverId: string) => Promise<MemberRow[]>;
   getCached: (serverId: string) => MemberRow[] | undefined;
-  /** Drop the cache for a server so the next ensureMembers refetches (e.g. after a ban). */
-  invalidate: (serverId: string) => void;
+  /** Overwrite the cache for a server (called by the live MemberList so cached
+   *  consumers stay fresh after joins/leaves/bans/role changes). */
+  setMembers: (serverId: string, members: MemberRow[]) => void;
 }
 
 export const useMembersStore = create<MembersState>()((set, get) => ({
@@ -53,9 +54,6 @@ export const useMembersStore = create<MembersState>()((set, get) => ({
     return p;
   },
   getCached: (serverId) => get().byServer[serverId],
-  invalidate: (serverId) =>
-    set((s) => {
-      const { [serverId]: _drop, ...rest } = s.byServer;
-      return { byServer: rest };
-    }),
+  setMembers: (serverId, members) =>
+    set((s) => ({ byServer: { ...s.byServer, [serverId]: members } })),
 }));
