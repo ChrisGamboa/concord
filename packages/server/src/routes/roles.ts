@@ -1,7 +1,21 @@
 import type { FastifyPluginAsync } from "fastify";
+import { z } from "zod";
 import { prisma } from "../db.js";
 import { Permissions } from "@concord/shared";
 import { checkPermission } from "../permissions.js";
+import { validateBody } from "../validate.js";
+
+const roleName = z.string().min(1, "Role name must be 1-50 characters").max(50, "Role name must be 1-50 characters");
+const roleCreateBody = z.object({
+  name: roleName,
+  color: z.string().optional(),
+  permissions: z.number().int().optional(),
+});
+const roleUpdateBody = z.object({
+  name: roleName.optional(),
+  color: z.string().nullable().optional(),
+  permissions: z.number().int().optional(),
+});
 
 export const roleRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", app.authenticate);
@@ -33,6 +47,7 @@ export const roleRoutes: FastifyPluginAsync = async (app) => {
     Body: { name: string; color?: string; permissions?: number };
   }>(
     "/:serverId/roles",
+    { preHandler: validateBody(roleCreateBody) },
     async (request, reply) => {
       const { userId } = request.user as { userId: string };
       const { serverId } = request.params;
@@ -40,10 +55,6 @@ export const roleRoutes: FastifyPluginAsync = async (app) => {
 
       if (!await checkPermission(userId, serverId, Permissions.MANAGE_ROLES)) {
         return reply.code(403).send({ error: "Missing MANAGE_ROLES permission" });
-      }
-
-      if (!name || name.length < 1 || name.length > 50) {
-        return reply.code(400).send({ error: "Role name must be 1-50 characters" });
       }
 
       // Get highest position for ordering
@@ -72,6 +83,7 @@ export const roleRoutes: FastifyPluginAsync = async (app) => {
     Body: { name?: string; color?: string | null; permissions?: number };
   }>(
     "/:serverId/roles/:roleId",
+    { preHandler: validateBody(roleUpdateBody) },
     async (request, reply) => {
       const { userId } = request.user as { userId: string };
       const { serverId, roleId } = request.params;

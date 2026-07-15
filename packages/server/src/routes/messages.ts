@@ -1,8 +1,16 @@
 import type { FastifyPluginAsync } from "fastify";
+import { z } from "zod";
 import { prisma } from "../db.js";
 import { Permissions } from "@concord/shared";
 import { checkPermission } from "../permissions.js";
 import { createChannelMessage, serializeMessage, MESSAGE_INCLUDE } from "../services/messageService.js";
+import { validateBody } from "../validate.js";
+
+const createMessageBody = z.object({
+  content: z.string().max(4000, "Message must be 1-4000 characters").refine((s) => s.trim().length > 0, { message: "Message must be 1-4000 characters" }),
+  replyToId: z.string().optional(),
+  nonce: z.string().optional(),
+});
 
 export const messageRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", app.authenticate);
@@ -60,14 +68,11 @@ export const messageRoutes: FastifyPluginAsync = async (app) => {
   app.post<{
     Params: { channelId: string };
     Body: { content: string; replyToId?: string; nonce?: string };
-  }>("/channel/:channelId", async (request, reply) => {
+  }>("/channel/:channelId", { preHandler: validateBody(createMessageBody) }, async (request, reply) => {
     const { userId } = request.user as { userId: string };
     const { channelId } = request.params;
     const { content, replyToId, nonce } = request.body;
 
-    if (!content?.trim() || content.length > 4000) {
-      return reply.code(400).send({ error: "Message must be 1-4000 characters" });
-    }
     const channel = await prisma.channel.findUnique({
       where: { id: channelId },
       select: { serverId: true },

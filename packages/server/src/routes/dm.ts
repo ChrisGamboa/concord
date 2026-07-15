@@ -1,7 +1,17 @@
 import type { FastifyPluginAsync } from "fastify";
+import { z } from "zod";
 import { prisma } from "../db.js";
 import { sendToUser } from "../ws/connections.js";
 import { serializeDm, groupReactions, DM_INCLUDE } from "../services/messageService.js";
+import { validateBody } from "../validate.js";
+
+const messageContent = z
+  .string()
+  .max(4000, "Message must be 1-4000 characters")
+  .refine((s) => s.trim().length > 0, { message: "Message must be 1-4000 characters" });
+const dmSendBody = z.object({ content: messageContent, replyToId: z.string().optional(), nonce: z.string().optional() });
+const dmEditBody = z.object({ content: messageContent });
+const dmReactBody = z.object({ emoji: z.string().min(1, "Invalid emoji").max(16, "Invalid emoji") });
 
 export const dmRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", app.authenticate);
@@ -100,14 +110,11 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
   // Send a DM
   app.post<{ Params: { conversationId: string }; Body: { content: string; replyToId?: string; nonce?: string } }>(
     "/conversations/:conversationId/messages",
+    { preHandler: validateBody(dmSendBody) },
     async (request, reply) => {
       const { userId } = request.user as { userId: string };
       const { conversationId } = request.params;
       const { content, nonce } = request.body;
-
-      if (!content?.trim() || content.length > 4000) {
-        return reply.code(400).send({ error: "Message must be 1-4000 characters" });
-      }
 
       const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
       if (!conv || (conv.participant1 !== userId && conv.participant2 !== userId)) {
@@ -144,14 +151,11 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
   // Edit a DM (author only)
   app.patch<{ Params: { messageId: string }; Body: { content: string } }>(
     "/messages/:messageId",
+    { preHandler: validateBody(dmEditBody) },
     async (request, reply) => {
       const { userId } = request.user as { userId: string };
       const { messageId } = request.params;
       const { content } = request.body;
-
-      if (!content?.trim() || content.length > 4000) {
-        return reply.code(400).send({ error: "Message must be 1-4000 characters" });
-      }
 
       const existing = await prisma.directMessage.findUnique({
         where: { id: messageId },
@@ -206,6 +210,7 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
   // Toggle a reaction on a DM (participants only)
   app.post<{ Params: { messageId: string }; Body: { emoji: string } }>(
     "/messages/:messageId/reactions",
+    { preHandler: validateBody(dmReactBody) },
     async (request, reply) => {
       const { userId } = request.user as { userId: string };
       const { messageId } = request.params;

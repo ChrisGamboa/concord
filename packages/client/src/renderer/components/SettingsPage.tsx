@@ -59,7 +59,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(user?.displayName ?? "");
   const [statusInput, setStatusInput] = useState(user?.status ?? "");
-  const { saving, msg: profileMsg, setMsg: setProfileMsg, run } = useAsyncAction();
+  const { saving, msg: profileMsg, run } = useAsyncAction();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSaveName = () => {
