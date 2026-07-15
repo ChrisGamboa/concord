@@ -6,7 +6,7 @@ import { api } from "../lib/api";
 import { usePresenceStore } from "../stores/presence";
 import { useAuthStore } from "../stores/auth";
 import { useChatStore } from "../stores/chat";
-import { useMembersStore } from "../stores/members";
+import { useMembersStore, type MemberRow as CachedMember } from "../stores/members";
 import { toast } from "../stores/toast";
 import { Permissions, hasPermission, type ServerMember, type PublicUser, type Role } from "@concord/shared";
 import { avatarColor, avatarUrl } from "../lib/avatar";
@@ -63,9 +63,10 @@ export function MemberList() {
   const reloadMembers = () => {
     if (!serverId) return;
     api.getMembers(serverId).then((res) => {
-      setMembers(res.members as MemberWithOnline[]);
+      const fetched = res.members as MemberWithOnline[];
+      setMembers(fetched);
       // Keep the shared cache (used by ChatArea/ProfileCard) fresh after bans etc.
-      useMembersStore.getState().setMembers(serverId, res.members as any);
+      useMembersStore.getState().setMembers(serverId, fetched as unknown as CachedMember[]);
     }).catch(() => {});
   };
 
@@ -93,7 +94,7 @@ export function MemberList() {
       const fetched = res.members as MemberWithOnline[];
       setMembers(fetched);
       // Refresh the shared cache so ChatArea mentions and ProfileCard reflect joins/role changes.
-      useMembersStore.getState().setMembers(serverId, res.members as any);
+      useMembersStore.getState().setMembers(serverId, fetched as unknown as CachedMember[]);
       setPresences(
         Object.fromEntries(
           fetched.filter((m) => m.online).map((m) => [m.userId, m.presence ?? "online"])

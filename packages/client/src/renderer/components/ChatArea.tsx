@@ -98,22 +98,22 @@ export function ChatArea() {
   }, [serverId, userId]);
   const canModerate = hasPermission(myPermissions, Permissions.MANAGE_MESSAGES);
 
-  // Members for @mention autocomplete and rendering (shared cache, fetched once per server)
-  const [members, setMembers] = useState<Array<{ userId: string; username: string; displayName: string; avatarUrl: string | null }>>([]);
+  // Members for @mention autocomplete and rendering. Subscribe to the shared cache
+  // reactively so bans/joins reflected by MemberList update the mention list live.
+  const memberRows = useMembersStore((s) => (serverId ? s.byServer[serverId] : undefined));
   useEffect(() => {
     if (!serverId) return;
-    let stale = false;
-    useMembersStore.getState().ensureMembers(serverId).then((rows) => {
-      if (stale) return;
-      setMembers(rows.map((m) => ({
-        userId: m.user?.id ?? m.userId,
-        username: m.user?.username ?? "",
-        displayName: m.user?.displayName ?? m.nickname ?? "",
-        avatarUrl: m.user?.avatarUrl ?? null,
-      })));
-    }).catch(() => toast("Failed to load server members"));
-    return () => { stale = true; };
+    useMembersStore.getState().ensureMembers(serverId).catch(() => toast("Failed to load server members"));
   }, [serverId]);
+  const members = useMemo(
+    () => (memberRows ?? []).map((m) => ({
+      userId: m.user?.id ?? m.userId,
+      username: m.user?.username ?? "",
+      displayName: m.user?.displayName ?? m.nickname ?? "",
+      avatarUrl: m.user?.avatarUrl ?? null,
+    })),
+    [memberRows]
+  );
 
   // Build username -> userId map for mention rendering
   const mentionUsers = useMemo(() => {
