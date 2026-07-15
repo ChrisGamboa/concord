@@ -782,7 +782,9 @@ a {
   display: flex;
   align-items: flex-end;
   gap: 16px;
-  margin-top: -36px;
+  /* Less overlap so the bottom-aligned name/username clear the banner's edge
+     instead of straddling it. */
+  margin-top: -24px;
 }
 
 .settings-avatar-wrapper {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useChatStore } from "../stores/chat";
 import { api } from "../lib/api";
@@ -14,6 +14,23 @@ export function ServerList({ loading }: { loading?: boolean }) {
   const [mode, setMode] = useState<"create" | "join" | null>(null);
   const [inputValue, setInputValue] = useState("");
   const [error, setError] = useState("");
+  const addButtonRef = useRef<HTMLButtonElement>(null);
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
+
+  // Anchor the popup beside the + button (clamped into the viewport) instead of
+  // centering it in the server-list column.
+  const toggleMenu = () => {
+    if (!showMenu) {
+      const r = addButtonRef.current?.getBoundingClientRect();
+      if (r) {
+        const halfEst = 150; // ~half the popup's max height, for viewport clamping
+        const top = Math.max(halfEst + 8, Math.min(r.top + r.height / 2, window.innerHeight - halfEst - 8));
+        setMenuPos({ left: r.right + 12, top });
+      }
+    }
+    setShowMenu((v) => !v);
+    setMode(null);
+  };
 
   const handleCreate = async () => {
     if (!inputValue.trim()) return;
@@ -67,6 +84,16 @@ export function ServerList({ loading }: { loading?: boolean }) {
     return () => window.removeEventListener("keydown", handler);
   }, [showMenu]);
 
+  const popupStyle: React.CSSProperties = {
+    ...styles.popup,
+    position: "fixed",
+    left: menuPos.left,
+    top: menuPos.top,
+    transform: "translateY(-50%)",
+    maxHeight: "calc(100vh - 16px)",
+    overflowY: "auto",
+  };
+
   return (
     <div style={styles.container}>
       <div style={styles.scrollArea}>
@@ -119,7 +146,8 @@ export function ServerList({ loading }: { loading?: boolean }) {
         <div style={styles.divider} />
 
         <button
-          onClick={() => setShowMenu(!showMenu)}
+          ref={addButtonRef}
+          onClick={toggleMenu}
           style={{
             ...styles.serverButton,
             background: showMenu ? "var(--success)" : "var(--bg-tertiary)",
@@ -137,7 +165,7 @@ export function ServerList({ loading }: { loading?: boolean }) {
       )}
 
       {showMenu && !mode && (
-        <div style={styles.popup}>
+        <div style={popupStyle}>
           <button
             style={styles.menuButton}
             onClick={() => setMode("create")}
@@ -154,7 +182,7 @@ export function ServerList({ loading }: { loading?: boolean }) {
       )}
 
       {showMenu && mode === "create" && (
-        <div style={styles.popup}>
+        <div style={popupStyle}>
           <p style={styles.popupLabel}>Create a new server</p>
           {error && <p style={styles.error}>{error}</p>}
           <input
@@ -177,7 +205,7 @@ export function ServerList({ loading }: { loading?: boolean }) {
       )}
 
       {showMenu && mode === "join" && (
-        <div style={styles.popup}>
+        <div style={popupStyle}>
           <p style={styles.popupLabel}>Join an existing server</p>
           <p style={styles.popupHint}>Enter an invite code or server ID</p>
           {error && <p style={styles.error}>{error}</p>}
