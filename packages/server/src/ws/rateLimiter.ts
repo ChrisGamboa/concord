@@ -41,5 +41,9 @@ export function createConnectionLimiter(now: number = Date.now()) {
   };
 }
 
-/** Client message types that create/persist content and warrant the tighter send limit. */
-export const SEND_TYPES = new Set(["send_message", "edit_message", "toggle_reaction"]);
+// Note: limits are per-connection. A user opening many sockets multiplies their
+// effective rate; socket count is bounded per-IP by the global HTTP rate limit on
+// the /ws upgrade. A per-user connection cap would close the multi-socket path.
+
+/** Client message types that create/persist content (DB write + fan-out) and warrant the tighter send limit. */
+export const SEND_TYPES = new Set(["send_message", "edit_message", "delete_message", "toggle_reaction"]);

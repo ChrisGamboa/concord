@@ -47,7 +47,9 @@ describe("createConnectionLimiter", () => {
   it("SEND_TYPES covers the content-creating actions", () => {
     expect(SEND_TYPES.has("send_message")).toBe(true);
     expect(SEND_TYPES.has("edit_message")).toBe(true);
+    expect(SEND_TYPES.has("delete_message")).toBe(true);
     expect(SEND_TYPES.has("toggle_reaction")).toBe(true);
     expect(SEND_TYPES.has("typing_start")).toBe(false);
+    expect(SEND_TYPES.has("subscribe_channel")).toBe(false);
   });
 });
