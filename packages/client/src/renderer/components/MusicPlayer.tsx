@@ -33,11 +33,18 @@ export function MusicPlayer() {
   useEffect(() => {
     if (!voiceChannelId) return;
     const fetchState = () => {
+      // Skip polling while the window is backgrounded.
+      if (document.hidden) return;
       api.musicGetState(voiceChannelId).then(setMusicState).catch(() => {});
     };
     fetchState();
     const interval = setInterval(fetchState, 3000);
-    return () => clearInterval(interval);
+    const onVisible = () => { if (!document.hidden) fetchState(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [voiceChannelId]);
 
   useEffect(() => {

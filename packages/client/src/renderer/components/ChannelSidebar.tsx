@@ -189,6 +189,8 @@ export function ChannelSidebar() {
     if (voiceChannels.length === 0) return;
 
     const fetchParticipants = async () => {
+      // Skip polling while the window is backgrounded (no one is looking).
+      if (document.hidden) return;
       const results: Record<string, VoiceParticipant[]> = {};
       for (const vc of voiceChannels) {
         try {
@@ -205,7 +207,13 @@ export function ChannelSidebar() {
 
     fetchParticipants();
     const interval = setInterval(fetchParticipants, 5000);
-    return () => clearInterval(interval);
+    // Refresh immediately when the window regains focus after being hidden.
+    const onVisible = () => { if (!document.hidden) fetchParticipants(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channels]);
 
