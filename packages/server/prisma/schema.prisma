@@ -198,12 +198,14 @@ model Message {
 }
 
 model Role {
-  id          String @id @default(cuid())
+  id          String  @id @default(cuid())
   serverId    String
   name        String
   color       String?
-  permissions Int    @default(0)
-  position    Int    @default(0)
+  permissions Int     @default(0)
+  position    Int     @default(0)
+  // Marks the server's @everyone base role (previously identified by position === 0).
+  isDefault   Boolean @default(false)
 
   server      Server       @relation(fields: [serverId], references: [id], onDelete: Cascade)
   memberRoles MemberRole[]

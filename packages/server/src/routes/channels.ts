@@ -1,8 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "../db.js";
 import { Permissions } from "@concord/shared";
-import type { ChannelType } from "@concord/shared";
 import { checkPermission } from "../permissions.js";
+import { toClientChannelType, toDbChannelType } from "../channelType.js";
 
 export const channelRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", app.authenticate);
@@ -31,7 +31,7 @@ export const channelRoutes: FastifyPluginAsync = async (app) => {
           id: c.id,
           serverId: c.serverId,
           name: c.name,
-          type: c.type.toLowerCase() as ChannelType,
+          type: toClientChannelType(c.type),
           position: c.position,
           createdAt: c.createdAt.toISOString(),
         })),
@@ -102,7 +102,7 @@ export const channelRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(400).send({ error: "Channel name must be 1-100 characters" });
       }
 
-      const channelType = type?.toUpperCase() === "VOICE" ? "VOICE" : "TEXT";
+      const channelType = toDbChannelType(type);
 
       const maxPos = await prisma.channel.aggregate({
         where: { serverId },
@@ -122,7 +122,7 @@ export const channelRoutes: FastifyPluginAsync = async (app) => {
         id: channel.id,
         serverId: channel.serverId,
         name: channel.name,
-        type: channel.type.toLowerCase(),
+        type: toClientChannelType(channel.type),
         position: channel.position,
         createdAt: channel.createdAt.toISOString(),
       });

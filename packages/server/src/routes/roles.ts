@@ -129,7 +129,7 @@ export const roleRoutes: FastifyPluginAsync = async (app) => {
       if (!existing) return reply.code(404).send({ error: "Role not found" });
 
       // Don't allow deleting @everyone
-      if (existing.position === 0) {
+      if (existing.isDefault) {
         return reply.code(400).send({ error: "Cannot delete the @everyone role" });
       }
 

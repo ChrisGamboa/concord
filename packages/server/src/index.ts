@@ -123,6 +123,11 @@ try {
     WHERE position = 0 AND (permissions & ${Permissions.STREAM}) = 0`;
   if (backfilled > 0) console.log(`[migrate] granted STREAM to ${backfilled} legacy @everyone role(s)`);
 
+  // Backfill: mark legacy @everyone roles (identified by position 0) as default.
+  const markedDefault = await prisma.$executeRaw`
+    UPDATE "Role" SET "isDefault" = true WHERE position = 0 AND "isDefault" = false`;
+  if (markedDefault > 0) console.log(`[migrate] marked ${markedDefault} legacy @everyone role(s) as default`);
+
   // Connect the cross-instance message bus (degrades to single-instance if Redis is down)
   await initConnections();
   startPresenceHeartbeat();

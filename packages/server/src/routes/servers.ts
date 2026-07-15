@@ -61,6 +61,7 @@ export const serverRoutes: FastifyPluginAsync = async (app) => {
               Permissions.SPEAK |
               Permissions.STREAM,
             position: 0,
+            isDefault: true,
           },
         },
         members: {
