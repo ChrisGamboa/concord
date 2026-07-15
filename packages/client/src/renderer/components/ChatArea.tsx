@@ -15,32 +15,9 @@ import { MessageRow, type RowMessage } from "./chat/MessageRow";
 import { MessageComposer } from "./chat/MessageComposer";
 import { chatStyles } from "./chat/chatStyles";
 import { useMembersStore } from "../stores/members";
+import { parseSearchQuery } from "../lib/searchQuery";
 
 const SEND_TIMEOUT_MS = 10_000; // mark a send as failed if unconfirmed after this
-
-/** Extract from:/in:/before:/after: filter tokens from a search query. */
-function parseSearchQuery(raw: string) {
-  const textParts: string[] = [];
-  let from: string | null = null;
-  let inChannel: string | null = null;
-  let before: string | null = null;
-  let after: string | null = null;
-  for (const token of raw.trim().split(/\s+/).filter(Boolean)) {
-    const m = token.match(/^(from|in|before|after):(.+)$/i);
-    if (!m) {
-      textParts.push(token);
-      continue;
-    }
-    const value = m[2];
-    switch (m[1].toLowerCase()) {
-      case "from": from = value.replace(/^@/, ""); break;
-      case "in": inChannel = value.replace(/^#/, ""); break;
-      case "before": before = value; break;
-      case "after": after = value; break;
-    }
-  }
-  return { text: textParts.join(" "), from, inChannel, before, after };
-}
 
 export function ChatArea() {
   const { channelId } = useParams();
