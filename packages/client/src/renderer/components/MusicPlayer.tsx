@@ -6,6 +6,7 @@ import {
   type ChangeEvent,
 } from "react";
 import { api } from "../lib/api";
+import { formatDuration } from "../lib/format";
 import { useVoiceStore } from "../stores/voice";
 import { toast } from "../stores/toast";
 import type { MusicSearchResult, MusicState } from "@concord/shared";
@@ -362,13 +363,6 @@ export function MusicPlayer() {
       </div>
     </div>
   );
-}
-
-function formatDuration(seconds: number): string {
-  if (!seconds) return "";
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 const ICON_PAUSE = (

@@ -101,7 +101,6 @@ model DirectMessage {
   replies      DirectMessage[] @relation("DmReplies")
 
   @@index([conversationId, createdAt])
-  @@index([authorId])
 }
 
 model DmReaction {
