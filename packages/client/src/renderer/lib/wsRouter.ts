@@ -3,6 +3,7 @@ import { api } from "./api";
 import { useChatStore } from "../stores/chat";
 import { usePresenceStore } from "../stores/presence";
 import { useAuthStore } from "../stores/auth";
+import { useSettingsStore } from "../stores/settings";
 import { toast } from "../stores/toast";
 import type { DmMessagePayload, Message } from "@concord/shared";
 
@@ -10,6 +11,8 @@ import type { DmMessagePayload, Message } from "@concord/shared";
 // into the stores, so components subscribe to stores rather than the raw socket.
 
 function notify(title: string, body: string) {
+  // Respect the user's desktop-notification preference.
+  if (!useSettingsStore.getState().notificationsEnabled) return;
   window.electron?.sendNotification?.(title, body.length > 100 ? body.slice(0, 100) + "..." : body);
 }
 

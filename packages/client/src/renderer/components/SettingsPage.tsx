@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useAsyncAction } from "../hooks/useAsyncAction";
+import { useSettingsStore } from "../stores/settings";
 import { useAuthStore } from "../stores/auth";
 import { usePresenceStore } from "../stores/presence";
 import { api } from "../lib/api";
@@ -106,18 +107,15 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   const [audioOutputs, setAudioOutputs] = useState<MediaDeviceOption[]>([]);
   const [videoInputs, setVideoInputs] = useState<MediaDeviceOption[]>([]);
 
-  const [selectedAudioInput, setSelectedAudioInput] = useState(
-    localStorage.getItem("concord:audioInput") ?? "default"
-  );
-  const [selectedAudioOutput, setSelectedAudioOutput] = useState(
-    localStorage.getItem("concord:audioOutput") ?? "default"
-  );
-  const [selectedVideoInput, setSelectedVideoInput] = useState(
-    localStorage.getItem("concord:videoInput") ?? "default"
-  );
-  const [notificationsEnabled, setNotificationsEnabled] = useState(
-    localStorage.getItem("concord:notifications") !== "false"
-  );
+  // Device/notification prefs live in the shared settings store.
+  const selectedAudioInput = useSettingsStore((s) => s.audioInput);
+  const selectedAudioOutput = useSettingsStore((s) => s.audioOutput);
+  const selectedVideoInput = useSettingsStore((s) => s.videoInput);
+  const notificationsEnabled = useSettingsStore((s) => s.notificationsEnabled);
+  const setAudioInput = useSettingsStore((s) => s.setAudioInput);
+  const setAudioOutput = useSettingsStore((s) => s.setAudioOutput);
+  const setVideoInput = useSettingsStore((s) => s.setVideoInput);
+  const setNotificationsEnabled = useSettingsStore((s) => s.setNotificationsEnabled);
 
   useEffect(() => {
     navigator.mediaDevices.enumerateDevices().then((devices) => {
@@ -148,9 +146,6 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
     });
   }, []);
 
-  const save = (key: string, value: string) => {
-    localStorage.setItem(key, value);
-  };
 
   const sections: { id: Section; label: string; icon: React.ReactNode }[] = [
     {
@@ -389,11 +384,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                   </div>
                   <button
                     className={`settings-toggle ${notificationsEnabled ? "settings-toggle--on" : ""}`}
-                    onClick={() => {
-                      const next = !notificationsEnabled;
-                      setNotificationsEnabled(next);
-                      save("concord:notifications", String(next));
-                    }}
+                    onClick={() => setNotificationsEnabled(!notificationsEnabled)}
                   >
                     <div className="settings-toggle-knob" />
                   </button>
@@ -411,10 +402,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                   <select
                     className="settings-select"
                     value={selectedAudioInput}
-                    onChange={(e) => {
-                      setSelectedAudioInput(e.target.value);
-                      save("concord:audioInput", e.target.value);
-                    }}
+                    onChange={(e) => setAudioInput(e.target.value)}
                   >
                     <option value="default">Default</option>
                     {audioInputs.map((d) => (
@@ -429,10 +417,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                   <select
                     className="settings-select"
                     value={selectedAudioOutput}
-                    onChange={(e) => {
-                      setSelectedAudioOutput(e.target.value);
-                      save("concord:audioOutput", e.target.value);
-                    }}
+                    onChange={(e) => setAudioOutput(e.target.value)}
                   >
                     <option value="default">Default</option>
                     {audioOutputs.map((d) => (
@@ -455,10 +440,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                   <select
                     className="settings-select"
                     value={selectedVideoInput}
-                    onChange={(e) => {
-                      setSelectedVideoInput(e.target.value);
-                      save("concord:videoInput", e.target.value);
-                    }}
+                    onChange={(e) => setVideoInput(e.target.value)}
                   >
                     <option value="default">Default</option>
                     {videoInputs.map((d) => (

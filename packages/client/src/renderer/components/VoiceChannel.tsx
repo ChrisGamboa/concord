@@ -16,6 +16,7 @@ import { toast } from "../stores/toast";
 import { playJoinSelf, playDisconnect, playUserJoined, playUserLeft } from "../lib/sounds";
 import { createRnnoiseTrack } from "../lib/rnnoise-processor";
 import { useVoiceStore } from "../stores/voice";
+import { useSettingsStore, deviceIdOrDefault } from "../stores/settings";
 import { useMyPermissions } from "../hooks/useMyPermissions";
 import type { RemoteParticipant } from "livekit-client";
 
@@ -59,12 +60,6 @@ export function VoiceJoinPrompt({
 
 // ---- Persistent voice session: always mounted in AppLayout when connected ----
 
-/** Read a saved device selection; "default"/missing → undefined so LiveKit picks the system default. */
-function storedDevice(key: string): string | undefined {
-  const v = localStorage.getItem(key);
-  return v && v !== "default" ? v : undefined;
-}
-
 export function VoiceSession({ isViewing }: { isViewing: boolean }) {
   const connection = useVoiceStore((s) => s.connection);
   const disconnect = useVoiceStore((s) => s.disconnect);
@@ -97,11 +92,11 @@ export function VoiceSession({ isViewing }: { isViewing: boolean }) {
           noiseSuppression: false,
           channelCount: 2,
           sampleRate: 48000,
-          deviceId: storedDevice("concord:audioInput"),
+          deviceId: deviceIdOrDefault(useSettingsStore.getState().audioInput),
         },
         videoCaptureDefaults: {
           resolution: VideoPresets.h1080.resolution,
-          deviceId: storedDevice("concord:videoInput"),
+          deviceId: deviceIdOrDefault(useSettingsStore.getState().videoInput),
         },
         publishDefaults: {
           audioPreset: { maxBitrate: 128_000 },
@@ -175,10 +170,23 @@ function VoiceStoreSync() {
     return () => setRoom(null);
   }, [room, setRoom]);
 
-  // Apply the saved audio-output (speaker) selection to this room.
+  // Apply the saved output device now, and switch input/output devices live when
+  // the user changes them in Settings during a call.
   useEffect(() => {
-    const outputId = storedDevice("concord:audioOutput");
+    const outputId = deviceIdOrDefault(useSettingsStore.getState().audioOutput);
     if (outputId) room.switchActiveDevice("audiooutput", outputId).catch(() => {});
+
+    return useSettingsStore.subscribe((s, prev) => {
+      if (s.audioInput !== prev.audioInput) {
+        room.switchActiveDevice("audioinput", deviceIdOrDefault(s.audioInput) ?? "default").catch(() => {});
+      }
+      if (s.videoInput !== prev.videoInput) {
+        room.switchActiveDevice("videoinput", deviceIdOrDefault(s.videoInput) ?? "default").catch(() => {});
+      }
+      if (s.audioOutput !== prev.audioOutput) {
+        room.switchActiveDevice("audiooutput", deviceIdOrDefault(s.audioOutput) ?? "default").catch(() => {});
+      }
+    });
   }, [room]);
 
   useEffect(() => {
