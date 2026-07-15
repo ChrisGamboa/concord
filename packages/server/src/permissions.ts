@@ -23,9 +23,9 @@ export async function getUserPermissions(
     include: { role: { select: { permissions: true } } },
   });
 
-  // Also get the @everyone role (position 0)
+  // Also get the @everyone base role
   const everyoneRole = await prisma.role.findFirst({
-    where: { serverId, position: 0 },
+    where: { serverId, isDefault: true },
     select: { permissions: true },
   });
 

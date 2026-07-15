@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useAsyncAction } from "../hooks/useAsyncAction";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useChatStore } from "../stores/chat";
@@ -38,8 +39,7 @@ export function ServerSettings({
   const isOwner = server?.ownerId === currentUserId;
 
   const [tab, setTab] = useState<Tab>("overview");
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState("");
+  const { saving, msg, setMsg, run } = useAsyncAction();
 
   // Overview state
   const [serverName, setServerName] = useState(server?.name ?? "");
@@ -109,45 +109,26 @@ export function ServerSettings({
   }, [selectedRole]);
 
   // Overview handlers
-  const handleSaveServer = async () => {
-    setSaving(true); setMsg("");
-    try {
-      const updated = await api.updateServer(serverId, { name: serverName.trim() || undefined });
-      setServers(servers.map((s) => s.id === serverId ? { ...s, name: updated.name, iconUrl: updated.iconUrl } : s));
-      setMsg("Saved");
-    } catch (err) { setMsg(err instanceof Error ? err.message : "Failed"); }
-    finally { setSaving(false); }
-  };
+  const handleSaveServer = () => run(async () => {
+    const updated = await api.updateServer(serverId, { name: serverName.trim() || undefined });
+    setServers(servers.map((s) => s.id === serverId ? { ...s, name: updated.name, iconUrl: updated.iconUrl } : s));
+  }, "Saved");
 
-  const handleIconUpload = async (file: File) => {
-    setSaving(true); setMsg("");
-    try {
-      const updated = await api.updateServer(serverId, { icon: file });
-      setServers(servers.map((s) => s.id === serverId ? { ...s, iconUrl: updated.iconUrl } : s));
-      setMsg("Icon updated");
-    } catch (err) { setMsg(err instanceof Error ? err.message : "Failed"); }
-    finally { setSaving(false); }
-  };
+  const handleIconUpload = (file: File) => run(async () => {
+    const updated = await api.updateServer(serverId, { icon: file });
+    setServers(servers.map((s) => s.id === serverId ? { ...s, iconUrl: updated.iconUrl } : s));
+  }, "Icon updated");
 
-  const handleRemoveIcon = async () => {
-    setSaving(true); setMsg("");
-    try {
-      const updated = await api.updateServer(serverId, { removeIcon: true });
-      setServers(servers.map((s) => s.id === serverId ? { ...s, iconUrl: updated.iconUrl } : s));
-      setMsg("Icon removed");
-    } catch (err) { setMsg(err instanceof Error ? err.message : "Failed"); }
-    finally { setSaving(false); }
-  };
+  const handleRemoveIcon = () => run(async () => {
+    const updated = await api.updateServer(serverId, { removeIcon: true });
+    setServers(servers.map((s) => s.id === serverId ? { ...s, iconUrl: updated.iconUrl } : s));
+  }, "Icon removed");
 
   // Invite handlers
-  const handleCreateInvite = async () => {
-    setSaving(true);
-    try {
-      await api.createInvite(serverId);
-      await loadInvites();
-    } catch (err) { setMsg(err instanceof Error ? err.message : "Failed"); }
-    finally { setSaving(false); }
-  };
+  const handleCreateInvite = () => run(async () => {
+    await api.createInvite(serverId);
+    await loadInvites();
+  });
 
   const handleDeleteInvite = async (code: string) => {
     await api.deleteInvite(serverId, code);
@@ -155,29 +136,26 @@ export function ServerSettings({
   };
 
   // Role handlers
-  const handleCreateRole = async () => {
-    setSaving(true);
-    try { await api.createRole(serverId, { name: "New Role", permissions: 0 }); await loadRoles(); }
-    catch (err) { setMsg(err instanceof Error ? err.message : "Failed"); }
-    finally { setSaving(false); }
-  };
+  const handleCreateRole = () => run(async () => {
+    await api.createRole(serverId, { name: "New Role", permissions: 0 });
+    await loadRoles();
+  });
 
-  const handleSaveRole = async () => {
+  const handleSaveRole = () => {
     if (!selectedRoleId) return;
-    setSaving(true); setMsg("");
-    try {
+    return run(async () => {
       await api.updateRole(serverId, selectedRoleId, { name: editRoleName, color: editRoleColor || null, permissions: editRolePerms });
-      await loadRoles(); setMsg("Saved");
-    } catch (err) { setMsg(err instanceof Error ? err.message : "Failed"); }
-    finally { setSaving(false); }
+      await loadRoles();
+    }, "Saved");
   };
 
-  const handleDeleteRole = async () => {
+  const handleDeleteRole = () => {
     if (!selectedRoleId) return;
-    setSaving(true);
-    try { await api.deleteRole(serverId, selectedRoleId); setSelectedRoleId(null); await loadRoles(); }
-    catch (err) { setMsg(err instanceof Error ? err.message : "Failed"); }
-    finally { setSaving(false); }
+    return run(async () => {
+      await api.deleteRole(serverId, selectedRoleId);
+      setSelectedRoleId(null);
+      await loadRoles();
+    });
   };
 
   // Leave / Delete server

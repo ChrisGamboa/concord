@@ -6,6 +6,9 @@ import { api } from "../lib/api";
 import { usePresenceStore } from "../stores/presence";
 import { useAuthStore } from "../stores/auth";
 import { useChatStore } from "../stores/chat";
+import { useMembersStore, type MemberRow as CachedMember } from "../stores/members";
+import { useMyPermissions } from "../hooks/useMyPermissions";
+import { PRESENCE_COLORS } from "../lib/presenceColors";
 import { toast } from "../stores/toast";
 import { Permissions, hasPermission, type ServerMember, type PublicUser, type Role } from "@concord/shared";
 import { avatarColor, avatarUrl } from "../lib/avatar";
@@ -16,12 +19,6 @@ interface MemberWithOnline extends ServerMember {
   presence?: "online" | "idle" | "dnd" | "offline";
 }
 
-export const PRESENCE_COLORS: Record<string, string> = {
-  online: "var(--success)",
-  idle: "#f0b232",
-  dnd: "var(--danger)",
-  offline: "var(--text-muted)",
-};
 
 export function MemberList() {
   const { serverId } = useParams();
@@ -34,11 +31,7 @@ export function MemberList() {
   const serverOwnerId = useChatStore((s) => s.servers.find((sv) => sv.id === serverId)?.ownerId);
 
   // Permissions for moderation (ban)
-  const [myPerms, setMyPerms] = useState(0);
-  useEffect(() => {
-    if (!serverId || !myUserId) return;
-    api.getMyPermissions(serverId, myUserId).then((r) => setMyPerms(r.permissions)).catch(() => {});
-  }, [serverId, myUserId]);
+  const myPerms = useMyPermissions(serverId);
   const canBan = hasPermission(myPerms, Permissions.BAN_MEMBERS);
 
   // Right-click context menu for moderation
@@ -62,7 +55,10 @@ export function MemberList() {
   const reloadMembers = () => {
     if (!serverId) return;
     api.getMembers(serverId).then((res) => {
-      setMembers(res.members as MemberWithOnline[]);
+      const fetched = res.members as MemberWithOnline[];
+      setMembers(fetched);
+      // Keep the shared cache (used by ChatArea/ProfileCard) fresh after bans etc.
+      useMembersStore.getState().setMembers(serverId, fetched as unknown as CachedMember[]);
     }).catch(() => {});
   };
 
@@ -89,6 +85,8 @@ export function MemberList() {
     api.getMembers(serverId).then((res) => {
       const fetched = res.members as MemberWithOnline[];
       setMembers(fetched);
+      // Refresh the shared cache so ChatArea mentions and ProfileCard reflect joins/role changes.
+      useMembersStore.getState().setMembers(serverId, fetched as unknown as CachedMember[]);
       setPresences(
         Object.fromEntries(
           fetched.filter((m) => m.online).map((m) => [m.userId, m.presence ?? "online"])

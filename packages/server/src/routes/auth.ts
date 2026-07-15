@@ -5,6 +5,7 @@ import { randomUUID } from "crypto";
 import { join } from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { prisma } from "../db.js";
+import { issueTicket } from "../ws/tickets.js";
 import type { AuthResponse, LoginRequest, RegisterRequest } from "@concord/shared";
 
 const UPLOADS_DIR = join(process.cwd(), "uploads");
@@ -21,8 +22,12 @@ function toUserResponse(user: { id: string; username: string; displayName: strin
   };
 }
 
+// Tighter limit on unauthenticated auth endpoints to blunt brute-force/credential
+// stuffing (the global limiter is far more permissive).
+const AUTH_RATE_LIMIT = { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } };
+
 export const authRoutes: FastifyPluginAsync = async (app) => {
-  app.post<{ Body: RegisterRequest }>("/register", async (request, reply) => {
+  app.post<{ Body: RegisterRequest }>("/register", AUTH_RATE_LIMIT, async (request, reply) => {
     const { username, password, displayName } = request.body;
 
     if (!username || !password || !displayName) {
@@ -47,12 +52,12 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       data: { username, displayName, passwordHash },
     });
 
-    const token = app.jwt.sign({ userId: user.id }, { expiresIn: "7d" });
+    const token = app.jwt.sign({ userId: user.id, tokenVersion: user.tokenVersion ?? 0 }, { expiresIn: "7d" });
     const response: AuthResponse = { token, user: toUserResponse(user) };
     return reply.code(201).send(response);
   });
 
-  app.post<{ Body: LoginRequest }>("/login", async (request, reply) => {
+  app.post<{ Body: LoginRequest }>("/login", AUTH_RATE_LIMIT, async (request, reply) => {
     const { username, password } = request.body;
 
     if (!username || !password) {
@@ -69,9 +74,26 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(401).send({ error: "Invalid credentials" });
     }
 
-    const token = app.jwt.sign({ userId: user.id }, { expiresIn: "7d" });
+    const token = app.jwt.sign({ userId: user.id, tokenVersion: user.tokenVersion ?? 0 }, { expiresIn: "7d" });
     const response: AuthResponse = { token, user: toUserResponse(user) };
     return reply.send(response);
+  });
+
+  // Invalidate all outstanding sessions for the current user (logout everywhere).
+  app.post("/logout", { preHandler: [app.authenticate] }, async (request) => {
+    const { userId } = request.user as { userId: string };
+    await prisma.user.update({
+      where: { id: userId },
+      data: { tokenVersion: { increment: 1 } },
+    });
+    return { ok: true };
+  });
+
+  // Mint a short-lived, single-use ticket for the WebSocket upgrade (keeps the JWT out of the WS URL).
+  app.post("/ws-ticket", { preHandler: [app.authenticate] }, async (request) => {
+    const { userId, tokenVersion } = request.user as { userId: string; tokenVersion?: number };
+    const ticket = await issueTicket(userId, tokenVersion ?? 0);
+    return { ticket };
   });
 
   app.get("/me", { preHandler: [app.authenticate] }, async (request) => {

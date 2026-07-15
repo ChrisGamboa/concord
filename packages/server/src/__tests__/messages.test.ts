@@ -28,12 +28,20 @@ vi.mock("../db.js", () => ({
   },
 }));
 
+vi.mock("../permissions.js", () => ({
+  checkPermission: vi.fn().mockResolvedValue(true),
+  getUserPermissions: vi.fn().mockResolvedValue(0xffffffff),
+}));
+
 const { prisma } = await import("../db.js");
+const { checkPermission } = await import("../permissions.js");
 const mockPrisma = vi.mocked(prisma);
+const mockCheckPermission = vi.mocked(checkPermission);
 
 describe("Message Routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCheckPermission.mockResolvedValue(true);
   });
 
   describe("GET /api/messages/channel/:channelId", () => {
@@ -156,6 +164,24 @@ describe("Message Routes", () => {
         serverId: "srv1",
       } as any);
       mockPrisma.serverMember.findUnique.mockResolvedValue(null);
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/api/messages/channel/ch1",
+        headers: authHeader(token),
+      });
+
+      expect(res.statusCode).toBe(403);
+      await app.close();
+    });
+
+    it("should return 403 if missing READ_MESSAGES permission", async () => {
+      const app = await buildApp();
+      const token = app.jwt.sign({ userId: "user1" });
+
+      mockPrisma.channel.findUnique.mockResolvedValue({ id: "ch1", serverId: "srv1" } as any);
+      mockPrisma.serverMember.findUnique.mockResolvedValue({ userId: "user1", serverId: "srv1" } as any);
+      mockCheckPermission.mockResolvedValue(false);
 
       const res = await app.inject({
         method: "GET",

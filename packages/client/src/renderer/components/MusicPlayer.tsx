@@ -6,6 +6,7 @@ import {
   type ChangeEvent,
 } from "react";
 import { api } from "../lib/api";
+import { formatDuration } from "../lib/format";
 import { useVoiceStore } from "../stores/voice";
 import { toast } from "../stores/toast";
 import type { MusicSearchResult, MusicState } from "@concord/shared";
@@ -33,11 +34,18 @@ export function MusicPlayer() {
   useEffect(() => {
     if (!voiceChannelId) return;
     const fetchState = () => {
+      // Skip polling while the window is backgrounded.
+      if (document.hidden) return;
       api.musicGetState(voiceChannelId).then(setMusicState).catch(() => {});
     };
     fetchState();
     const interval = setInterval(fetchState, 3000);
-    return () => clearInterval(interval);
+    const onVisible = () => { if (!document.hidden) fetchState(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [voiceChannelId]);
 
   useEffect(() => {
@@ -355,13 +363,6 @@ export function MusicPlayer() {
       </div>
     </div>
   );
-}
-
-function formatDuration(seconds: number): string {
-  if (!seconds) return "";
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 const ICON_PAUSE = (

@@ -1,30 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useParams } from "react-router-dom";
 import { useAuthStore } from "../stores/auth";
-import { useChatStore } from "../stores/chat";
+import { useChatStore, type DmChatMessage } from "../stores/chat";
 import { usePresenceStore } from "../stores/presence";
 import { toast } from "../stores/toast";
 import { api } from "../lib/api";
-import { avatarColor, avatarUrl } from "../lib/avatar";
-import { onWsMessage, sendWs } from "../lib/ws";
-import type { ReactionGroup, MessageReference } from "@concord/shared";
-import { GifPicker } from "./GifPicker";
+import { sendWs } from "../lib/ws";
+import type { MessageReference } from "@concord/shared";
 import { Lightbox } from "./Lightbox";
-import { EmojiPicker } from "./EmojiPicker";
 import { MessageList, type MessageListHandle } from "./chat/MessageList";
-import { MessageActions, MessageBody, ReactionBar, SendFailureNotice, type ListMessage } from "./chat/MessageParts";
-
-interface DmMessage extends ListMessage {
-  conversationId: string;
-  editedAt?: string | null;
-  reactions?: ReactionGroup[];
-  replyTo?: MessageReference | null;
-  author?: {
-    id: string;
-    displayName: string;
-    avatarUrl: string | null;
-  };
-}
+import { MessageRow, type RowMessage } from "./chat/MessageRow";
+import { MessageComposer } from "./chat/MessageComposer";
+import { chatStyles } from "./chat/chatStyles";
 
 interface OtherUser {
   id: string;
@@ -37,11 +24,15 @@ interface OtherUser {
 export function DmChatArea() {
   const { channelId: conversationId } = useParams();
   const userId = useAuthStore((s) => s.user?.id);
+
+  // DM message state lives in the shared chat store (mirrors channel messages,
+  // reusing the same optimistic-send/nonce reconciliation).
+  const messages = useChatStore((s) => s.dmMessages);
+  const hasMore = useChatStore((s) => s.dmHasMore);
+  const loading = useChatStore((s) => s.dmLoading);
+  const isAtLatest = useChatStore((s) => s.dmIsAtLatest);
   const clearDmUnread = useChatStore((s) => s.clearDmUnread);
-  const [messages, setMessages] = useState<DmMessage[]>([]);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+
   const [input, setInput] = useState("");
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -51,16 +42,11 @@ export function DmChatArea() {
   const [editContent, setEditContent] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [reactionPickerMsgId, setReactionPickerMsgId] = useState<string | null>(null);
-  const [showGifPicker, setShowGifPicker] = useState(false);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   // Message currently being replied to (consumed by the next send)
   const [replyTarget, setReplyTarget] = useState<MessageReference | null>(null);
-  // False while viewing a historical page after jump-to-message
-  const [isAtLatest, setIsAtLatest] = useState(true);
   const listRef = useRef<MessageListHandle>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Close reaction picker / delete confirm on click-outside or Escape
@@ -96,56 +82,40 @@ export function DmChatArea() {
     }).catch(() => {});
   }, [conversationId]);
 
-  // Load messages
+  // Activate the conversation and load its messages into the store
   useEffect(() => {
     if (!conversationId) return;
     let stale = false;
-    setLoading(true);
-    setMessages([]);
+    const store = useChatStore.getState();
+    store.setActiveConversation(conversationId);
+    // Clear the previous conversation, then flag loading (setDmMessages resets it).
+    store.setDmMessages([], false);
+    store.setDmMessagesLoading(true);
     setReplyTarget(null);
-    setIsAtLatest(true);
     api.getDmMessages(conversationId).then((res) => {
       if (stale) return;
-      setMessages(res.messages);
-      setHasMore(res.hasMore);
+      useChatStore.getState().setDmMessages(res.messages, res.hasMore);
       requestAnimationFrame(() => listRef.current?.scrollToBottom());
-    }).catch(() => toast("Failed to load messages")).finally(() => {
-      if (!stale) setLoading(false);
-    });
-    return () => { stale = true; };
-  }, [conversationId]);
-
-  // Live updates for this conversation
-  useEffect(() => {
-    return onWsMessage((msg) => {
-      if (msg.type === "dm_created" && msg.message.conversationId === conversationId) {
-        // Viewing history: don't append live messages; "Jump to present" catches up
-        if (!isAtLatest) return;
-        const dm = msg.message as DmMessage;
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === dm.id)) return prev;
-          // Our own echo: the REST response reconciles the pending copy instead
-          if (dm.authorId === userId && prev.some((m) => m.pending && m.content === dm.content)) return prev;
-          return [...prev, dm];
-        });
-      } else if (msg.type === "dm_updated" && msg.message.conversationId === conversationId) {
-        setMessages((prev) => prev.map((m) => (m.id === msg.message.id ? { ...m, ...(msg.message as DmMessage) } : m)));
-      } else if (msg.type === "dm_deleted" && msg.conversationId === conversationId) {
-        setMessages((prev) => prev.filter((m) => m.id !== msg.messageId));
-      } else if (msg.type === "dm_reaction_update" && msg.conversationId === conversationId) {
-        setMessages((prev) => prev.map((m) => (m.id === msg.messageId ? { ...m, reactions: msg.reactions } : m)));
+    }).catch(() => {
+      if (!stale) {
+        useChatStore.getState().setDmMessagesLoading(false);
+        toast("Failed to load messages");
       }
     });
-  }, [conversationId, userId, isAtLatest]);
+    return () => {
+      stale = true;
+      useChatStore.getState().setActiveConversation(null);
+    };
+  }, [conversationId]);
 
+  const [loadingMore, setLoadingMore] = useState(false);
   // Load older messages (MessageList keeps the viewport anchored on prepend)
   const loadOlder = useCallback(async () => {
     if (!conversationId || messages.length === 0 || loadingMore) return;
     setLoadingMore(true);
     try {
       const res = await api.getDmMessages(conversationId, messages[0].createdAt);
-      setMessages((prev) => [...res.messages, ...prev]);
-      setHasMore(res.hasMore);
+      useChatStore.getState().prependDmMessages(res.messages, res.hasMore);
     } catch {
       toast("Failed to load older messages");
     } finally {
@@ -153,22 +123,21 @@ export function DmChatArea() {
     }
   }, [conversationId, messages, loadingMore]);
 
-  // Optimistic send: pending until the POST resolves, failed with retry on error
-  const sendDmMessage = useCallback(async (
-    content: string,
-    opts?: { existingTempId?: string; replyTo?: MessageReference | null }
-  ) => {
+  // Optimistic send: pending until the server echo (matched by nonce) reconciles it,
+  // failed with retry if the POST errors.
+  const sendDmMessage = useCallback((content: string, opts?: { nonce?: string; replyTo?: MessageReference | null }) => {
     if (!conversationId || !userId) return;
-    const tempId = opts?.existingTempId ?? `pending-${crypto.randomUUID()}`;
+    const store = useChatStore.getState();
+    const nonce = opts?.nonce ?? `pending-${crypto.randomUUID()}`;
     // Retries carry their original reply reference; new sends consume the chip
-    const reply = opts?.existingTempId ? opts.replyTo ?? null : replyTarget;
-    if (!opts?.existingTempId) setReplyTarget(null);
-    if (opts?.existingTempId) {
-      setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, pending: true, failed: false } : m)));
+    const reply = opts?.nonce ? opts.replyTo ?? null : replyTarget;
+    if (opts?.nonce) {
+      store.markDmMessagePending(nonce);
     } else {
+      setReplyTarget(null);
       const me = useAuthStore.getState().user;
-      setMessages((prev) => [...prev, {
-        id: tempId,
+      store.addPendingDmMessage({
+        id: nonce,
         conversationId,
         authorId: userId,
         content,
@@ -176,22 +145,17 @@ export function DmChatArea() {
         editedAt: null,
         reactions: [],
         replyTo: reply,
-        author: me ? { id: me.id, displayName: me.displayName, avatarUrl: me.avatarUrl } : undefined,
+        author: me ? { id: me.id, username: me.username, displayName: me.displayName, avatarUrl: me.avatarUrl, status: me.status } : undefined,
         pending: true,
-        nonce: tempId,
-      }]);
+        nonce,
+      } as DmChatMessage);
     }
-    try {
-      const created = await api.sendDm(conversationId, content, reply?.id);
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === created.id)) {
-          return prev.filter((m) => m.id !== tempId);
-        }
-        return prev.map((m) => (m.id === tempId ? created : m));
-      });
-    } catch {
-      setMessages((prev) => prev.map((m) => (m.id === tempId ? { ...m, pending: false, failed: true } : m)));
-    }
+    api.sendDm(conversationId, content, reply?.id, nonce)
+      .then((created) => {
+        // Fallback reconcile in case the WS echo is delayed/dropped (idempotent with it)
+        useChatStore.getState().addDmMessage(created, nonce);
+      })
+      .catch(() => useChatStore.getState().markDmMessageFailed(nonce));
   }, [conversationId, userId, replyTarget]);
 
   // Return from a historical page to the live view
@@ -199,9 +163,7 @@ export function DmChatArea() {
     if (!conversationId) return;
     try {
       const res = await api.getDmMessages(conversationId);
-      setMessages(res.messages);
-      setHasMore(res.hasMore);
-      setIsAtLatest(true);
+      useChatStore.getState().setDmMessages(res.messages, res.hasMore, true);
       requestAnimationFrame(() => listRef.current?.scrollToBottom());
     } catch {
       toast("Failed to load latest messages");
@@ -211,24 +173,22 @@ export function DmChatArea() {
   // Jump to a message (e.g. a reply's original), fetching its page if not loaded
   const jumpToMessage = useCallback(async (messageId: string, createdAt: string) => {
     if (!conversationId) return;
-    if (messages.some((m) => m.id === messageId)) {
+    if (useChatStore.getState().dmMessages.some((m) => m.id === messageId)) {
       listRef.current?.focusMessage(messageId);
       return;
     }
     try {
       const before = new Date(new Date(createdAt).getTime() + 1).toISOString();
       const res = await api.getDmMessages(conversationId, before);
-      setMessages(res.messages);
-      setHasMore(res.hasMore);
-      setIsAtLatest(false);
+      useChatStore.getState().setDmMessages(res.messages, res.hasMore, false);
       listRef.current?.focusMessage(messageId);
     } catch {
       toast("Failed to jump to message");
     }
-  }, [conversationId, messages]);
+  }, [conversationId]);
 
   const handleStartReply = useCallback((msgId: string) => {
-    const m = messages.find((x) => x.id === msgId);
+    const m = useChatStore.getState().dmMessages.find((x) => x.id === msgId);
     if (!m) return;
     setReplyTarget({
       id: m.id,
@@ -238,16 +198,21 @@ export function DmChatArea() {
       author: m.author as MessageReference["author"],
     });
     inputRef.current?.focus();
-  }, [messages]);
+  }, []);
 
-  const handleSend = async () => {
+  // Send new content (text/file/GIF): from a historical view, return to live first
+  // so the optimistic message reconciles instead of stranding as pending.
+  const submitContent = useCallback(async (content: string) => {
+    if (!useChatStore.getState().dmIsAtLatest) await jumpToPresent();
+    sendDmMessage(content);
+  }, [jumpToPresent, sendDmMessage]);
+
+  const handleSend = useCallback(async () => {
     if (!input.trim() || !conversationId) return;
     const content = input.trim();
     setInput("");
-    // Sending from a historical view returns to the live view first
-    if (!isAtLatest) await jumpToPresent();
-    sendDmMessage(content);
-  };
+    await submitContent(content);
+  }, [input, conversationId, submitContent]);
 
   const sendTyping = useCallback(() => {
     if (!conversationId) return;
@@ -263,13 +228,13 @@ export function DmChatArea() {
     setUploading(true);
     try {
       const result = await api.uploadFile(file);
-      sendDmMessage(result.url);
+      await submitContent(result.url);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
     }
-  }, [conversationId, sendDmMessage]);
+  }, [conversationId, submitContent]);
 
   const handleStartEdit = (msgId: string, content: string) => {
     setEditingMsgId(msgId);
@@ -282,9 +247,9 @@ export function DmChatArea() {
     const content = editContent.trim();
     setEditingMsgId(null);
     setEditContent("");
+    // The store updates when the server broadcasts dm_updated back to us.
     try {
-      const updated = await api.editDm(msgId, content);
-      setMessages((prev) => prev.map((m) => (m.id === msgId ? { ...m, ...updated } : m)));
+      await api.editDm(msgId, content);
     } catch {
       toast("Failed to edit message");
     }
@@ -298,16 +263,14 @@ export function DmChatArea() {
     setConfirmDeleteId(null);
     try {
       await api.deleteDm(msgId);
-      setMessages((prev) => prev.filter((m) => m.id !== msgId));
     } catch {
       toast("Failed to delete message");
     }
   };
 
   const toggleReaction = useCallback((msgId: string, emoji: string) => {
-    api.toggleDmReaction(msgId, emoji).then((res) => {
-      setMessages((prev) => prev.map((m) => (m.id === msgId ? { ...m, reactions: res.reactions } : m)));
-    }).catch(() => toast("Failed to update reaction"));
+    // The store updates when the server broadcasts dm_reaction_update back to us.
+    api.toggleDmReaction(msgId, emoji).catch(() => toast("Failed to update reaction"));
   }, []);
 
   const typingUsersMap = usePresenceStore((s) => s.typingUsers);
@@ -328,10 +291,10 @@ export function DmChatArea() {
 
   if (!conversationId) {
     return (
-      <div style={styles.container}>
-        <div style={styles.emptyState}>
-          <h2 style={styles.emptyTitle}>Direct Messages</h2>
-          <p style={styles.emptySubtitle}>Select a conversation or start a new one</p>
+      <div style={chatStyles.container}>
+        <div style={chatStyles.emptyState}>
+          <h2 style={chatStyles.emptyTitle}>Direct Messages</h2>
+          <p style={chatStyles.emptySubtitle}>Select a conversation or start a new one</p>
         </div>
       </div>
     );
@@ -340,22 +303,20 @@ export function DmChatArea() {
   return (
     <div
       style={{
-        ...styles.container,
+        ...chatStyles.container,
         ...(dragOver ? { outline: "2px dashed var(--accent)" } : {}),
       }}
       onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
     >
-      <div style={styles.header}>
+      <div style={chatStyles.header}>
         <span style={styles.atIcon}>@</span>
         <span style={styles.headerName}>{otherUser?.displayName ?? "..."}</span>
-        {otherUser?.status && (
-          <span style={styles.headerStatus}>{otherUser.status}</span>
-        )}
+        {otherUser?.status && <span style={styles.headerStatus}>{otherUser.status}</span>}
       </div>
 
-      <MessageList<DmMessage>
+      <MessageList<DmChatMessage>
         ref={listRef}
         messages={messages}
         loading={loading}
@@ -367,261 +328,71 @@ export function DmChatArea() {
         rowElevated={(m) => hoveredMsgId === m.id || reactionPickerMsgId === m.id || confirmDeleteId === m.id}
         emptyState={
           otherUser ? (
-            <div style={styles.emptyState}>
-              <h2 style={styles.emptyTitle}>{otherUser.displayName}</h2>
-              <p style={styles.emptySubtitle}>
+            <div style={chatStyles.emptyState}>
+              <h2 style={chatStyles.emptyTitle}>{otherUser.displayName}</h2>
+              <p style={chatStyles.emptySubtitle}>
                 This is the beginning of your conversation with {otherUser.displayName}.
               </p>
             </div>
           ) : null
         }
-        renderMessage={(msg, { isGrouped }) => {
-          const isOwn = msg.authorId === userId;
-          const isHovered = hoveredMsgId === msg.id;
-          const isEditing = editingMsgId === msg.id;
-
-          const actions = (editing: boolean) => (
-            <MessageActions
-              msgId={msg.id} content={msg.content} isOwn={isOwn} canModerate={false} isPinned={false}
-              isHovered={isHovered} isEditing={editing} editContent={editContent}
-              confirmDeleteId={confirmDeleteId} onCancelDelete={() => setConfirmDeleteId(null)}
-              showReactionPicker={reactionPickerMsgId === msg.id}
-              onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)}
-              onToggleReaction={toggleReaction}
-              onReply={handleStartReply}
-              onStartEdit={handleStartEdit} onDelete={handleDelete}
-              onSaveEdit={handleSaveEdit} onCancelEdit={() => { setEditingMsgId(null); setEditContent(""); }}
-              onEditChange={setEditContent}
-            />
-          );
-
-          if (isGrouped) {
-            return (
-              <div
-                className="message-grouped hover-bg"
-                style={styles.messageGrouped}
-                onMouseEnter={() => setHoveredMsgId(msg.id)}
-                onMouseLeave={() => setHoveredMsgId(null)}
-              >
-                <span className="grouped-timestamp" style={styles.groupedTimestamp}>
-                  {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                </span>
-                <div style={{ ...styles.groupedContent, ...(msg.pending ? styles.pendingContent : {}) }}>
-                  {isEditing ? (
-                    actions(true)
-                  ) : (
-                    <>
-                      <MessageBody content={msg.content} onImageClick={setLightboxSrc} />
-                      {msg.editedAt && <span style={styles.editedTag}>(edited)</span>}
-                      {msg.failed && msg.nonce && (
-                        <SendFailureNotice
-                          onRetry={() => sendDmMessage(msg.content, { existingTempId: msg.nonce, replyTo: msg.replyTo })}
-                          onDiscard={() => setMessages((prev) => prev.filter((m) => m.id !== msg.id))}
-                        />
-                      )}
-                    </>
-                  )}
-                </div>
-                {!isEditing && !msg.pending && !msg.failed && actions(false)}
-              </div>
-            );
-          }
-
-          return (
-            <div
-              className="hover-bg"
-              style={styles.message}
-              onMouseEnter={() => setHoveredMsgId(msg.id)}
-              onMouseLeave={() => setHoveredMsgId(null)}
-            >
-              {avatarUrl(msg.author?.avatarUrl) ? (
-                <img
-                  style={{ ...styles.avatar, objectFit: "cover" as const }}
-                  src={avatarUrl(msg.author?.avatarUrl)!}
-                  alt=""
-                />
-              ) : (
-                <div style={{ ...styles.avatar, background: avatarColor(msg.authorId) }}>
-                  {(msg.author?.displayName ?? "?").charAt(0).toUpperCase()}
-                </div>
-              )}
-              <div style={{ ...styles.messageContent, ...(msg.pending ? styles.pendingContent : {}) }}>
-                {msg.replyTo && (
-                  <div
-                    className="reply-preview"
-                    onClick={() => jumpToMessage(msg.replyTo!.id, msg.replyTo!.createdAt)}
-                    title="Jump to original message"
-                  >
-                    <span className="reply-preview-author">
-                      {msg.replyTo.author?.displayName ?? "Unknown"}
-                    </span>
-                    <span className="reply-preview-content">{msg.replyTo.content}</span>
-                  </div>
-                )}
-                <div style={styles.messageHeader}>
-                  <span style={styles.authorName}>
-                    {msg.author?.displayName ?? "Unknown"}
-                  </span>
-                  <span style={styles.timestamp}>
-                    {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </span>
-                </div>
-                {isEditing ? (
-                  actions(true)
-                ) : (
-                  <>
-                    <MessageBody content={msg.content} onImageClick={setLightboxSrc} />
-                    {msg.editedAt && <span style={styles.editedTag}>(edited)</span>}
-                    {msg.failed && msg.nonce && (
-                      <SendFailureNotice
-                        onRetry={() => sendDmMessage(msg.content, { existingTempId: msg.nonce, replyTo: msg.replyTo })}
-                        onDiscard={() => setMessages((prev) => prev.filter((m) => m.id !== msg.id))}
-                      />
-                    )}
-                  </>
-                )}
-                <ReactionBar
-                  reactions={msg.reactions}
-                  userId={userId}
-                  onToggle={(emoji) => toggleReaction(msg.id, emoji)}
-                />
-              </div>
-              {!isEditing && !msg.pending && !msg.failed && actions(false)}
-            </div>
-          );
-        }}
+        renderMessage={(msg, { isGrouped }) => (
+          <MessageRow
+            msg={msg as RowMessage}
+            isGrouped={isGrouped}
+            currentUserId={userId}
+            isHovered={hoveredMsgId === msg.id}
+            onHover={setHoveredMsgId}
+            isEditing={editingMsgId === msg.id}
+            editContent={editContent}
+            onEditChange={setEditContent}
+            onSaveEdit={handleSaveEdit}
+            onCancelEdit={() => { setEditingMsgId(null); setEditContent(""); }}
+            confirmDeleteId={confirmDeleteId}
+            onCancelDelete={() => setConfirmDeleteId(null)}
+            reactionPickerMsgId={reactionPickerMsgId}
+            onReact={(id) => setReactionPickerMsgId((prev) => prev === id ? null : id)}
+            onToggleReaction={toggleReaction}
+            onReply={handleStartReply}
+            onStartEdit={handleStartEdit}
+            onDelete={handleDelete}
+            onImageClick={setLightboxSrc}
+            onJumpToMessage={jumpToMessage}
+            canModerate={false}
+            onRetryFailed={(m) => sendDmMessage(m.content, { nonce: m.nonce, replyTo: m.replyTo })}
+            onDiscardFailed={(m) => m.nonce && useChatStore.getState().removeDmMessageByNonce(m.nonce)}
+          />
+        )}
       />
 
-      <div style={{ ...styles.inputArea, position: "relative" as const }}>
-        {!isAtLatest && (
-          <button className="history-bar" onClick={jumpToPresent}>
-            You're viewing older messages
-            <span className="history-bar-action">Jump to present</span>
-          </button>
-        )}
-        {showGifPicker && (
-          <GifPicker
-            onSelect={(gifUrl) => {
-              sendDmMessage(gifUrl);
-              setShowGifPicker(false);
-            }}
-            onClose={() => setShowGifPicker(false)}
-          />
-        )}
-        {replyTarget && (
-          <div className="reply-chip">
-            <span className="reply-chip-text">
-              Replying to <strong>{replyTarget.author?.displayName ?? "Unknown"}</strong>
-            </span>
-            <button
-              className="reply-chip-close"
-              onClick={() => setReplyTarget(null)}
-              title="Cancel reply (Esc)"
-            >
-              ×
-            </button>
-          </div>
-        )}
-        {typingText && <div style={styles.typingIndicator}>{typingText}</div>}
-        <form
-          onSubmit={(e) => { e.preventDefault(); handleSend(); }}
-          style={styles.inputContainer}
-        >
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={() => {
-              const file = fileInputRef.current?.files?.[0];
-              if (file) handleFileUpload(file);
-              if (fileInputRef.current) fileInputRef.current.value = "";
-            }}
-            style={{ display: "none" }}
-          />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            style={styles.uploadButton}
-            disabled={uploading}
-            title="Upload file"
-          >
-            +
-          </button>
-          <input
-            ref={inputRef}
-            style={styles.input}
-            placeholder={uploading ? "Uploading..." : `Message ${otherUser?.displayName ?? "..."}`}
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              if (e.target.value.trim()) sendTyping();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Escape" && replyTarget) setReplyTarget(null);
-            }}
-            disabled={uploading}
-            autoFocus
-          />
-          <button
-            type="button"
-            onClick={() => { setShowEmojiPicker(!showEmojiPicker); setShowGifPicker(false); }}
-            style={styles.iconButton}
-            title="Emoji"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-              <line x1="9" y1="9" x2="9.01" y2="9" />
-              <line x1="15" y1="9" x2="15.01" y2="9" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={() => { setShowGifPicker(!showGifPicker); setShowEmojiPicker(false); }}
-            style={styles.iconButton}
-            title="Send a GIF"
-          >
-            GIF
-          </button>
-        </form>
-        {showEmojiPicker && (
-          <EmojiPicker
-            onSelect={(emoji) => {
-              const pos = inputRef.current?.selectionStart ?? input.length;
-              setInput(input.slice(0, pos) + emoji + input.slice(pos));
-              setShowEmojiPicker(false);
-              requestAnimationFrame(() => {
-                const newPos = pos + emoji.length;
-                inputRef.current?.setSelectionRange(newPos, newPos);
-                inputRef.current?.focus();
-              });
-            }}
-            onClose={() => setShowEmojiPicker(false)}
-          />
-        )}
-      </div>
+      <MessageComposer
+        inputRef={inputRef}
+        value={input}
+        setInput={setInput}
+        onChange={(e) => {
+          setInput(e.target.value);
+          if (e.target.value.trim()) sendTyping();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && replyTarget) setReplyTarget(null);
+        }}
+        onSubmit={handleSend}
+        placeholder={uploading ? "Uploading..." : `Message ${otherUser?.displayName ?? "..."}`}
+        uploading={uploading}
+        onFileSelected={handleFileUpload}
+        onGifSelected={(url) => submitContent(url)}
+        replyTarget={replyTarget}
+        onCancelReply={() => setReplyTarget(null)}
+        typingText={typingText}
+        isAtLatest={isAtLatest}
+        onJumpToPresent={jumpToPresent}
+      />
       {lightboxSrc && <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    background: "var(--bg-chat)",
-    minWidth: 0,
-  },
-  header: {
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    height: "48px",
-    padding: "0 16px",
-    borderBottom: "1px solid var(--bg-primary)",
-    boxShadow: "0 1px 0 rgba(0,0,0,0.2)",
-    flexShrink: 0,
-  },
   atIcon: {
     fontSize: "18px",
     color: "var(--text-muted)",
@@ -635,139 +406,5 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "12px",
     color: "var(--text-muted)",
     marginLeft: "4px",
-  },
-  emptyState: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "48px 16px",
-    textAlign: "center",
-  },
-  emptyTitle: {
-    fontSize: "24px",
-    fontWeight: 700,
-    marginBottom: "8px",
-  },
-  emptySubtitle: {
-    color: "var(--text-muted)",
-    fontSize: "14px",
-  },
-  message: {
-    display: "flex",
-    gap: "16px",
-    padding: "2px 16px",
-    marginTop: "16px",
-    position: "relative",
-  },
-  messageGrouped: {
-    display: "flex",
-    alignItems: "flex-start",
-    padding: "1px 16px",
-    paddingLeft: "16px",
-    position: "relative",
-  },
-  groupedTimestamp: {
-    width: "40px",
-    fontSize: "10px",
-    color: "transparent",
-    textAlign: "right",
-    paddingRight: "4px",
-    paddingTop: "2px",
-    flexShrink: 0,
-    userSelect: "none",
-  },
-  groupedContent: {
-    flex: 1,
-    marginLeft: "16px",
-  },
-  avatar: {
-    width: "40px",
-    height: "40px",
-    borderRadius: "50%",
-    background: "var(--accent)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 600,
-    fontSize: "16px",
-    flexShrink: 0,
-  },
-  messageContent: {
-    minWidth: 0,
-    flex: 1,
-  },
-  messageHeader: {
-    display: "flex",
-    alignItems: "baseline",
-    gap: "8px",
-    marginBottom: "2px",
-  },
-  authorName: {
-    fontWeight: 600,
-    fontSize: "14px",
-  },
-  timestamp: {
-    fontSize: "11px",
-    color: "var(--text-muted)",
-  },
-  editedTag: {
-    fontSize: "11px",
-    color: "var(--text-muted)",
-    marginLeft: "4px",
-  },
-  pendingContent: {
-    opacity: 0.55,
-  },
-  typingIndicator: {
-    padding: "0 16px 4px",
-    fontSize: "12px",
-    color: "var(--text-muted)",
-    fontStyle: "italic",
-    height: "18px",
-  },
-  inputArea: {
-    flexShrink: 0,
-  },
-  inputContainer: {
-    padding: "0 16px 24px",
-    display: "flex",
-    gap: "8px",
-  },
-  uploadButton: {
-    width: "44px",
-    height: "44px",
-    background: "var(--bg-secondary)",
-    border: "none",
-    borderRadius: "8px",
-    color: "var(--text-muted)",
-    fontSize: "22px",
-    cursor: "pointer",
-    flexShrink: 0,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  input: {
-    flex: 1,
-    padding: "12px 16px",
-    background: "var(--input-bg)",
-    border: "none",
-    borderRadius: "8px",
-    color: "var(--text-primary)",
-    fontSize: "14px",
-    outline: "none",
-  },
-  iconButton: {
-    padding: "6px 10px",
-    background: "var(--bg-secondary)",
-    border: "1px solid var(--border)",
-    borderRadius: "6px",
-    color: "var(--text-muted)",
-    fontSize: "11px",
-    fontWeight: 700,
-    cursor: "pointer",
-    flexShrink: 0,
-    letterSpacing: "0.02em",
   },
 };

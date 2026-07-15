@@ -1,5 +1,8 @@
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import { randomUUID } from "crypto";
+import { prisma } from "../db.js";
+import { Permissions } from "@concord/shared";
+import { checkPermission } from "../permissions.js";
 import { searchYouTube, isYtdlpAvailable } from "../music/ytdlp.js";
 import {
   addToQueue,
@@ -9,6 +12,38 @@ import {
 } from "../music/queue.js";
 import { playTrack, skipTrack, stopPlayback, pausePlayback, resumePlayback, onQueueChanged } from "../music/player.js";
 import type { MusicQueueItem } from "@concord/shared";
+
+/**
+ * Music targets a voice channel. Require that the caller is a member of the
+ * channel's server, that the id really is a VOICE channel, and that they hold
+ * CONNECT_VOICE. Returns the serverId on success, or null after sending an error.
+ */
+async function authorizeVoiceChannel(
+  userId: string,
+  voiceChannelId: string,
+  reply: FastifyReply
+): Promise<string | null> {
+  const channel = await prisma.channel.findUnique({
+    where: { id: voiceChannelId },
+    select: { serverId: true, type: true },
+  });
+  if (!channel || channel.type !== "VOICE") {
+    reply.code(404).send({ error: "Voice channel not found" });
+    return null;
+  }
+  const member = await prisma.serverMember.findUnique({
+    where: { userId_serverId: { userId, serverId: channel.serverId } },
+  });
+  if (!member) {
+    reply.code(403).send({ error: "Not a member of this server" });
+    return null;
+  }
+  if (!(await checkPermission(userId, channel.serverId, Permissions.CONNECT_VOICE))) {
+    reply.code(403).send({ error: "Missing CONNECT_VOICE permission" });
+    return null;
+  }
+  return channel.serverId;
+}
 
 export const musicRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", app.authenticate);
@@ -49,7 +84,9 @@ export const musicRoutes: FastifyPluginAsync = async (app) => {
   // Get music state for a voice channel
   app.get<{ Params: { voiceChannelId: string } }>(
     "/state/:voiceChannelId",
-    async (request) => {
+    async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      if (!(await authorizeVoiceChannel(userId, request.params.voiceChannelId, reply))) return;
       return getState(request.params.voiceChannelId);
     }
   );
@@ -60,10 +97,11 @@ export const musicRoutes: FastifyPluginAsync = async (app) => {
     Body: { url: string; title?: string; duration?: number; thumbnail?: string };
   }>(
     "/queue/:voiceChannelId",
-    async (request) => {
+    async (request, reply) => {
       const { voiceChannelId } = request.params;
       const { url, title, duration, thumbnail } = request.body;
       const { userId } = request.user as { userId: string };
+      if (!(await authorizeVoiceChannel(userId, voiceChannelId, reply))) return;
 
       const item: MusicQueueItem = {
         id: randomUUID(),
@@ -97,7 +135,9 @@ export const musicRoutes: FastifyPluginAsync = async (app) => {
   // Skip current track
   app.post<{ Params: { voiceChannelId: string } }>(
     "/skip/:voiceChannelId",
-    async (request) => {
+    async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      if (!(await authorizeVoiceChannel(userId, request.params.voiceChannelId, reply))) return;
       await skipTrack(request.params.voiceChannelId);
       return getState(request.params.voiceChannelId);
     }
@@ -106,7 +146,9 @@ export const musicRoutes: FastifyPluginAsync = async (app) => {
   // Pause playback
   app.post<{ Params: { voiceChannelId: string } }>(
     "/pause/:voiceChannelId",
-    async (request) => {
+    async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      if (!(await authorizeVoiceChannel(userId, request.params.voiceChannelId, reply))) return;
       pausePlayback(request.params.voiceChannelId);
       return getState(request.params.voiceChannelId);
     }
@@ -115,7 +157,9 @@ export const musicRoutes: FastifyPluginAsync = async (app) => {
   // Resume playback
   app.post<{ Params: { voiceChannelId: string } }>(
     "/resume/:voiceChannelId",
-    async (request) => {
+    async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      if (!(await authorizeVoiceChannel(userId, request.params.voiceChannelId, reply))) return;
       resumePlayback(request.params.voiceChannelId);
       return getState(request.params.voiceChannelId);
     }
@@ -124,7 +168,9 @@ export const musicRoutes: FastifyPluginAsync = async (app) => {
   // Stop playback
   app.post<{ Params: { voiceChannelId: string } }>(
     "/stop/:voiceChannelId",
-    async (request) => {
+    async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      if (!(await authorizeVoiceChannel(userId, request.params.voiceChannelId, reply))) return;
       await stopPlayback(request.params.voiceChannelId);
       return getState(request.params.voiceChannelId);
     }
@@ -133,7 +179,9 @@ export const musicRoutes: FastifyPluginAsync = async (app) => {
   // Clear queue
   app.delete<{ Params: { voiceChannelId: string } }>(
     "/queue/:voiceChannelId",
-    async (request) => {
+    async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      if (!(await authorizeVoiceChannel(userId, request.params.voiceChannelId, reply))) return;
       clearQueue(request.params.voiceChannelId);
       return getState(request.params.voiceChannelId);
     }
@@ -145,6 +193,8 @@ export const musicRoutes: FastifyPluginAsync = async (app) => {
   }>(
     "/queue/:voiceChannelId/:index",
     async (request, reply) => {
+      const { userId } = request.user as { userId: string };
+      if (!(await authorizeVoiceChannel(userId, request.params.voiceChannelId, reply))) return;
       const index = parseInt(request.params.index, 10);
       if (isNaN(index)) {
         return reply.code(400).send({ error: "Invalid index" });

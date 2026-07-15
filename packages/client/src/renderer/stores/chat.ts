@@ -1,15 +1,24 @@
 import { create } from "zustand";
-import type { Server, Channel, Message, ReactionGroup } from "@concord/shared";
+import type { Server, Channel, Message, ReactionGroup, DmMessagePayload } from "@concord/shared";
+import * as ops from "./messageOps";
 
 /** A channel message plus client-only optimistic-send state. */
-export type ChatMessage = Message & {
-  /** Sent but not yet confirmed by the server */
-  pending?: boolean;
-  /** Send failed (socket closed or no confirmation in time) */
-  failed?: boolean;
-  /** Client-generated id used to match the server confirmation */
-  nonce?: string;
-};
+export type ChatMessage = Message & ops.OptimisticFields;
+
+/** A direct message plus client-only optimistic-send state. */
+export type DmChatMessage = DmMessagePayload & ops.OptimisticFields;
+
+export interface Conversation {
+  id: string;
+  otherUser: {
+    id: string;
+    username: string;
+    displayName: string;
+    avatarUrl: string | null;
+    status: string | null;
+  };
+  lastMessage: { content: string; createdAt: string } | null;
+}
 
 interface ChatState {
   servers: Server[];
@@ -33,6 +42,16 @@ interface ChatState {
   isAtLatest: boolean;
   /** Jump target handed across a channel navigation (e.g. search result in another channel) */
   pendingJump: { channelId: string; messageId: string; createdAt: string } | null;
+
+  // ---- DM message slice (mirrors the channel slice; only one surface is mounted at a time) ----
+  dmMessages: DmChatMessage[];
+  activeConversationId: string | null;
+  dmHasMore: boolean;
+  dmLoading: boolean;
+  dmIsAtLatest: boolean;
+
+  /** DM conversation list shown in the DM sidebar. */
+  conversations: Conversation[];
 
   setServers: (servers: Server[]) => void;
   setChannels: (channels: Channel[]) => void;
@@ -59,6 +78,25 @@ interface ChatState {
   setActiveServer: (serverId: string | null) => void;
   setActiveChannel: (channelId: string | null) => void;
   updateReactions: (messageId: string, reactions: ReactionGroup[]) => void;
+
+  // ---- DM message slice actions ----
+  setActiveConversation: (conversationId: string | null) => void;
+  setDmMessages: (messages: DmMessagePayload[], hasMore: boolean, isAtLatest?: boolean) => void;
+  setDmMessagesLoading: (loading: boolean) => void;
+  prependDmMessages: (messages: DmMessagePayload[], hasMore: boolean) => void;
+  addDmMessage: (message: DmMessagePayload, nonce?: string) => void;
+  addPendingDmMessage: (message: DmChatMessage) => void;
+  markDmMessageFailed: (nonce: string) => void;
+  markDmMessagePending: (nonce: string) => void;
+  removeDmMessageByNonce: (nonce: string) => void;
+  updateDmMessage: (message: DmMessagePayload) => void;
+  removeDmMessage: (messageId: string) => void;
+  updateDmReactions: (messageId: string, reactions: ReactionGroup[]) => void;
+
+  setConversations: (conversations: Conversation[]) => void;
+  addConversation: (conversation: Conversation) => void;
+  /** Update a conversation's last message and move it to the top; no-op if unknown. */
+  bumpConversation: (dm: { conversationId: string; content: string; createdAt: string }) => void;
 }
 
 export const useChatStore = create<ChatState>()((set) => ({
@@ -77,6 +115,13 @@ export const useChatStore = create<ChatState>()((set) => ({
   channelEntryUnread: {},
   isAtLatest: true,
   pendingJump: null,
+
+  dmMessages: [],
+  activeConversationId: null,
+  dmHasMore: false,
+  dmLoading: false,
+  dmIsAtLatest: true,
+  conversations: [],
 
   setServers: (servers) => set({ servers }),
   setUnreadCounts: (counts) => set({ unreadCounts: counts }),
@@ -131,7 +176,7 @@ export const useChatStore = create<ChatState>()((set) => ({
   setMessagesLoading: (loading) => set({ messagesLoading: loading }),
   prependMessages: (messages, hasMore) =>
     set((s) => ({
-      messages: [...messages, ...s.messages],
+      messages: ops.prepend(s.messages, messages as ChatMessage[]),
       hasMoreMessages: hasMore,
     })),
   addMessage: (message, nonce) =>
@@ -139,54 +184,62 @@ export const useChatStore = create<ChatState>()((set) => ({
       if (message.channelId !== s.activeChannelId) return s;
       // Viewing history: don't append live messages; the "Jump to present" bar covers catch-up
       if (!s.isAtLatest) return s;
-      // Reconcile the sender's optimistic message with the confirmed one
-      if (nonce) {
-        const idx = s.messages.findIndex((m) => m.nonce === nonce);
-        if (idx !== -1) {
-          const next = [...s.messages];
-          next[idx] = message;
-          return { messages: next };
-        }
-      }
-      if (s.messages.some((m) => m.id === message.id)) return s;
-      return { messages: [...s.messages, message] };
+      return { messages: ops.reconcile(s.messages, message as ChatMessage, nonce) };
     }),
   addPendingMessage: (message) =>
     set((s) => {
       if (message.channelId !== s.activeChannelId) return s;
       return { messages: [...s.messages, message] };
     }),
-  markMessageFailed: (nonce) =>
-    set((s) => ({
-      messages: s.messages.map((m) =>
-        m.nonce === nonce ? { ...m, pending: false, failed: true } : m
-      ),
-    })),
-  markMessagePending: (nonce) =>
-    set((s) => ({
-      messages: s.messages.map((m) =>
-        m.nonce === nonce ? { ...m, pending: true, failed: false } : m
-      ),
-    })),
-  removeMessageByNonce: (nonce) =>
-    set((s) => ({
-      messages: s.messages.filter((m) => m.nonce !== nonce),
-    })),
-  updateMessage: (message) =>
-    set((s) => ({
-      // Merge so fields the payload omits (reactions, pinnedAt) survive an edit broadcast
-      messages: s.messages.map((m) => (m.id === message.id ? { ...m, ...message } : m)),
-    })),
-  removeMessage: (_channelId, messageId) =>
-    set((s) => ({
-      messages: s.messages.filter((m) => m.id !== messageId),
-    })),
+  markMessageFailed: (nonce) => set((s) => ({ messages: ops.markFailed(s.messages, nonce) })),
+  markMessagePending: (nonce) => set((s) => ({ messages: ops.markPending(s.messages, nonce) })),
+  removeMessageByNonce: (nonce) => set((s) => ({ messages: ops.removeByNonce(s.messages, nonce) })),
+  updateMessage: (message) => set((s) => ({ messages: ops.merge(s.messages, message as ChatMessage) })),
+  removeMessage: (_channelId, messageId) => set((s) => ({ messages: ops.removeById(s.messages, messageId) })),
   setActiveServer: (serverId) => set({ activeServerId: serverId }),
   setActiveChannel: (channelId) => set({ activeChannelId: channelId }),
-  updateReactions: (messageId, reactions) =>
+  updateReactions: (messageId, reactions) => set((s) => ({ messages: ops.setReactions(s.messages, messageId, reactions) })),
+
+  // ---- DM message slice ----
+  setActiveConversation: (conversationId) => set({ activeConversationId: conversationId }),
+  setDmMessages: (messages, hasMore, isAtLatest = true) =>
+    set({ dmMessages: messages as DmChatMessage[], dmHasMore: hasMore, dmLoading: false, dmIsAtLatest: isAtLatest }),
+  setDmMessagesLoading: (loading) => set({ dmLoading: loading }),
+  prependDmMessages: (messages, hasMore) =>
     set((s) => ({
-      messages: s.messages.map((m) =>
-        m.id === messageId ? { ...m, reactions } : m
-      ),
+      dmMessages: ops.prepend(s.dmMessages, messages as DmChatMessage[]),
+      dmHasMore: hasMore,
     })),
+  addDmMessage: (message, nonce) =>
+    set((s) => {
+      if (message.conversationId !== s.activeConversationId) return s;
+      if (!s.dmIsAtLatest) return s;
+      return { dmMessages: ops.reconcile(s.dmMessages, message as DmChatMessage, nonce) };
+    }),
+  addPendingDmMessage: (message) =>
+    set((s) => {
+      if (message.conversationId !== s.activeConversationId) return s;
+      return { dmMessages: [...s.dmMessages, message] };
+    }),
+  markDmMessageFailed: (nonce) => set((s) => ({ dmMessages: ops.markFailed(s.dmMessages, nonce) })),
+  markDmMessagePending: (nonce) => set((s) => ({ dmMessages: ops.markPending(s.dmMessages, nonce) })),
+  removeDmMessageByNonce: (nonce) => set((s) => ({ dmMessages: ops.removeByNonce(s.dmMessages, nonce) })),
+  updateDmMessage: (message) => set((s) => ({ dmMessages: ops.merge(s.dmMessages, message as DmChatMessage) })),
+  removeDmMessage: (messageId) => set((s) => ({ dmMessages: ops.removeById(s.dmMessages, messageId) })),
+  updateDmReactions: (messageId, reactions) => set((s) => ({ dmMessages: ops.setReactions(s.dmMessages, messageId, reactions) })),
+
+  setConversations: (conversations) => set({ conversations }),
+  addConversation: (conversation) =>
+    set((s) => (s.conversations.some((c) => c.id === conversation.id)
+      ? s
+      : { conversations: [conversation, ...s.conversations] })),
+  bumpConversation: (dm) =>
+    set((s) => {
+      const idx = s.conversations.findIndex((c) => c.id === dm.conversationId);
+      if (idx === -1) return s;
+      const next = [...s.conversations];
+      const [conv] = next.splice(idx, 1);
+      next.unshift({ ...conv, lastMessage: { content: dm.content, createdAt: dm.createdAt } });
+      return { conversations: next };
+    }),
 }));

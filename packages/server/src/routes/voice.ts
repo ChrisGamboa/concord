@@ -1,8 +1,9 @@
 import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "../db.js";
-import { Permissions } from "@concord/shared";
+import { Permissions, hasPermission } from "@concord/shared";
+import { TrackSource } from "livekit-server-sdk";
 import { createLiveKitToken, roomService, voiceRoomName } from "../livekit.js";
-import { checkPermission } from "../permissions.js";
+import { checkPermission, getUserPermissions } from "../permissions.js";
 import { env } from "../env.js";
 
 export const voiceRoutes: FastifyPluginAsync = async (app) => {
@@ -40,6 +41,18 @@ export const voiceRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(403).send({ error: "Not a member of this server" });
       }
 
+      // Enforce voice permissions: CONNECT_VOICE to join at all, then gate which
+      // track sources may be published on SPEAK (mic/camera) and STREAM (screen).
+      const perms = await getUserPermissions(userId, channel.serverId);
+      if (!hasPermission(perms, Permissions.CONNECT_VOICE)) {
+        return reply.code(403).send({ error: "Missing CONNECT_VOICE permission" });
+      }
+      const canSpeak = hasPermission(perms, Permissions.SPEAK);
+      const canStream = hasPermission(perms, Permissions.STREAM);
+      const publishSources: TrackSource[] = [];
+      if (canSpeak) publishSources.push(TrackSource.CAMERA, TrackSource.MICROPHONE);
+      if (canStream) publishSources.push(TrackSource.SCREEN_SHARE, TrackSource.SCREEN_SHARE_AUDIO);
+
       // Get user info for display name and avatar
       const user = await prisma.user.findUnique({
         where: { id: userId },
@@ -52,7 +65,11 @@ export const voiceRoutes: FastifyPluginAsync = async (app) => {
         userId,
         user?.displayName ?? user?.username ?? "Unknown",
         roomName,
-        { metadata }
+        {
+          metadata,
+          canPublish: publishSources.length > 0,
+          canPublishSources: publishSources.length > 0 ? publishSources : undefined,
+        }
       );
 
       return {

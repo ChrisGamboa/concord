@@ -146,6 +146,12 @@ export const api = {
   getMembers: (serverId: string) =>
     request<MembersResponse>(`/servers/${serverId}/members`),
 
+  // Search users you share a server with (for starting a DM)
+  searchUsers: (q: string) =>
+    request<{ users: Array<{ id: string; username: string; displayName: string; avatarUrl: string | null; status: string | null }> }>(
+      `/users/search?q=${encodeURIComponent(q)}`
+    ),
+
   // Bans
   banMember: (serverId: string, targetId: string, reason?: string) =>
     request<{ banned: boolean }>(`/servers/${serverId}/bans/${targetId}`, {
@@ -189,6 +195,11 @@ export const api = {
   getMyPermissions: (serverId: string, userId: string) =>
     request<{ permissions: number }>(`/servers/${serverId}/members/${userId}/permissions`),
 
+  logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
+
+  // WebSocket connection ticket (short-lived, single-use; keeps the JWT out of the WS URL)
+  getWsTicket: () => request<{ ticket: string }>("/auth/ws-ticket", { method: "POST" }),
+
   // DMs
   getConversations: () =>
     request<{ conversations: Array<{ id: string; otherUser: any; lastMessage: { content: string; createdAt: string } | null }> }>("/dm/conversations"),
@@ -205,10 +216,10 @@ export const api = {
     return request<{ messages: any[]; hasMore: boolean }>(`/dm/conversations/${conversationId}/messages?${params}`);
   },
 
-  sendDm: (conversationId: string, content: string, replyToId?: string) =>
+  sendDm: (conversationId: string, content: string, replyToId?: string, nonce?: string) =>
     request<any>(`/dm/conversations/${conversationId}/messages`, {
       method: "POST",
-      body: JSON.stringify({ content, replyToId }),
+      body: JSON.stringify({ content, replyToId, nonce }),
     }),
 
   editDm: (messageId: string, content: string) =>

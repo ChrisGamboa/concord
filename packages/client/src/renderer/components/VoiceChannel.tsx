@@ -16,7 +16,8 @@ import { toast } from "../stores/toast";
 import { playJoinSelf, playDisconnect, playUserJoined, playUserLeft } from "../lib/sounds";
 import { createRnnoiseTrack } from "../lib/rnnoise-processor";
 import { useVoiceStore } from "../stores/voice";
-import { useAuthStore } from "../stores/auth";
+import { useSettingsStore, deviceIdOrDefault } from "../stores/settings";
+import { useMyPermissions } from "../hooks/useMyPermissions";
 import type { RemoteParticipant } from "livekit-client";
 
 /** Extract avatar URL from LiveKit participant metadata */
@@ -91,9 +92,11 @@ export function VoiceSession({ isViewing }: { isViewing: boolean }) {
           noiseSuppression: false,
           channelCount: 2,
           sampleRate: 48000,
+          deviceId: deviceIdOrDefault(useSettingsStore.getState().audioInput),
         },
         videoCaptureDefaults: {
           resolution: VideoPresets.h1080.resolution,
+          deviceId: deviceIdOrDefault(useSettingsStore.getState().videoInput),
         },
         publishDefaults: {
           audioPreset: { maxBitrate: 128_000 },
@@ -166,6 +169,25 @@ function VoiceStoreSync() {
     setRoom(room);
     return () => setRoom(null);
   }, [room, setRoom]);
+
+  // Apply the saved output device now, and switch input/output devices live when
+  // the user changes them in Settings during a call.
+  useEffect(() => {
+    const outputId = deviceIdOrDefault(useSettingsStore.getState().audioOutput);
+    if (outputId) room.switchActiveDevice("audiooutput", outputId).catch(() => {});
+
+    return useSettingsStore.subscribe((s, prev) => {
+      if (s.audioInput !== prev.audioInput) {
+        room.switchActiveDevice("audioinput", deviceIdOrDefault(s.audioInput) ?? "default").catch(() => {});
+      }
+      if (s.videoInput !== prev.videoInput) {
+        room.switchActiveDevice("videoinput", deviceIdOrDefault(s.videoInput) ?? "default").catch(() => {});
+      }
+      if (s.audioOutput !== prev.audioOutput) {
+        room.switchActiveDevice("audiooutput", deviceIdOrDefault(s.audioOutput) ?? "default").catch(() => {});
+      }
+    });
+  }, [room]);
 
   useEffect(() => {
     setMuted(!localParticipant.isMicrophoneEnabled);
@@ -351,16 +373,9 @@ function VoiceContent({
   const { menu: volumeMenu, onContextMenu: onParticipantRightClick } = useParticipantContextMenu();
   const voiceChannelId = useVoiceStore((s) => s.connection?.channelId);
   const voiceServerId = useVoiceStore((s) => s.connection?.serverId);
-  const authUserId = useAuthStore((s) => s.user?.id);
 
-  // Fetch current user's permissions for this server
-  const [myPermissions, setMyPermissions] = useState(0);
-  useEffect(() => {
-    if (!voiceServerId || !authUserId) return;
-    api.getMyPermissions(voiceServerId, authUserId).then((res) => {
-      setMyPermissions(res.permissions);
-    }).catch(() => {});
-  }, [voiceServerId, authUserId]);
+  // Current user's permissions for this server
+  const myPermissions = useMyPermissions(voiceServerId);
 
   // Track participant join/leave for sound effects
   const prevParticipantIds = useRef<Set<string>>(new Set());

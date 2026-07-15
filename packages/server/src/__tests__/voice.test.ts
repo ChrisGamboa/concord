@@ -29,11 +29,23 @@ vi.mock("../livekit.js", () => ({
   },
 }));
 
+vi.mock("../permissions.js", () => ({
+  getUserPermissions: vi.fn().mockResolvedValue(0xffffffff),
+  checkPermission: vi.fn().mockResolvedValue(true),
+}));
+
 const { prisma } = await import("../db.js");
 const { createLiveKitToken, roomService } = await import("../livekit.js");
+const { getUserPermissions } = await import("../permissions.js");
 const mockPrisma = vi.mocked(prisma);
 const mockCreateToken = vi.mocked(createLiveKitToken);
 const mockRoomService = vi.mocked(roomService);
+const mockGetPerms = vi.mocked(getUserPermissions);
+
+beforeEach(() => {
+  // Default: full permissions unless a test overrides
+  mockGetPerms.mockResolvedValue(0xffffffff);
+});
 
 // Need to register voice routes in the test app
 import type { FastifyPluginAsync } from "fastify";
@@ -96,7 +108,56 @@ describe("Voice Routes", () => {
         "user1",
         "Test User",
         "voice:ch1",
-        { metadata: JSON.stringify({ avatarUrl: null }) }
+        expect.objectContaining({
+          metadata: JSON.stringify({ avatarUrl: null }),
+          canPublish: true,
+        })
+      );
+      await app.close();
+    });
+
+    it("should reject join without CONNECT_VOICE permission", async () => {
+      const app = await buildAppWithVoice();
+      const token = app.jwt.sign({ userId: "user1" });
+
+      mockPrisma.channel.findUnique.mockResolvedValue({
+        id: "ch1", serverId: "srv1", type: "VOICE", server: { id: "srv1" },
+      } as any);
+      mockPrisma.serverMember.findUnique.mockResolvedValue({ userId: "user1", serverId: "srv1" } as any);
+      mockGetPerms.mockResolvedValue(0); // no permissions
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/voice/ch1/join",
+        headers: authHeader(token),
+      });
+
+      expect(res.statusCode).toBe(403);
+      await app.close();
+    });
+
+    it("should join as a listener (no publish) when lacking SPEAK and STREAM", async () => {
+      const app = await buildAppWithVoice();
+      const token = app.jwt.sign({ userId: "user1" });
+
+      const { Permissions } = await import("@concord/shared");
+      mockPrisma.channel.findUnique.mockResolvedValue({
+        id: "ch1", serverId: "srv1", type: "VOICE", server: { id: "srv1" },
+      } as any);
+      mockPrisma.serverMember.findUnique.mockResolvedValue({ userId: "user1", serverId: "srv1" } as any);
+      mockPrisma.user.findUnique.mockResolvedValue({ id: "user1", username: "u", displayName: "U", avatarUrl: null } as any);
+      mockGetPerms.mockResolvedValue(Permissions.CONNECT_VOICE); // can connect but not speak/stream
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/voice/ch1/join",
+        headers: authHeader(token),
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(mockCreateToken).toHaveBeenCalledWith(
+        "user1", "U", "voice:ch1",
+        expect.objectContaining({ canPublish: false }),
       );
       await app.close();
     });

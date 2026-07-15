@@ -1,4 +1,4 @@
-import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
+import { AccessToken, RoomServiceClient, TrackSource } from "livekit-server-sdk";
 import { env } from "./env.js";
 
 export const roomService = new RoomServiceClient(
@@ -14,6 +14,8 @@ export async function createLiveKitToken(
   options?: {
     canPublish?: boolean;
     canSubscribe?: boolean;
+    /** Restrict which track sources may be published (omit to allow all). */
+    canPublishSources?: TrackSource[];
     metadata?: string;
   }
 ): Promise<string> {
@@ -29,6 +31,7 @@ export async function createLiveKitToken(
     roomJoin: true,
     canPublish: options?.canPublish ?? true,
     canSubscribe: options?.canSubscribe ?? true,
+    ...(options?.canPublishSources ? { canPublishSources: options.canPublishSources } : {}),
   });
 
   return token.toJwt();

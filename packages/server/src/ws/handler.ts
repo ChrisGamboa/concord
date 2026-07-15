@@ -2,6 +2,8 @@ import type { FastifyPluginAsync } from "fastify";
 import { randomUUID } from "crypto";
 import { prisma } from "../db.js";
 import type { ClientMessage, ServerMessage } from "@concord/shared";
+import { Permissions } from "@concord/shared";
+import { checkPermission } from "../permissions.js";
 import {
   addConnection,
   removeConnection,
@@ -10,58 +12,52 @@ import {
   broadcastToChannel,
   broadcastToAll,
   sendToUser,
-  isUserOnline,
-  getOnlineUserIds,
+} from "./connections.js";
+import {
+  createChannelMessage,
+  serializeMessage,
+  MESSAGE_INCLUDE,
+} from "../services/messageService.js";
+import {
+  addSession,
+  removeSession,
   setUserStatus,
   getUserStatus,
   clearUserStatus,
-} from "./connections.js";
+} from "./presence.js";
+import { createConnectionLimiter, SEND_TYPES } from "./rateLimiter.js";
+import { consumeTicket } from "./tickets.js";
 
 export const wsHandler: FastifyPluginAsync = async (app) => {
   app.get("/ws", { websocket: true }, (socket, request) => {
     const sessionId = randomUUID();
     let userId: string | null = null;
+    const limiter = createConnectionLimiter();
+    // Resolves once this session's presence registration completes, so the close
+    // handler never races ahead of its own connect (which would strand a session).
+    let presenceReady: Promise<boolean> = Promise.resolve(false);
 
-    // Authenticate via first message or query param
-    const token =
-      (request.query as Record<string, string>).token ?? null;
-
-    if (token) {
-      try {
-        const decoded = app.jwt.verify<{ userId: string }>(token);
-        userId = decoded.userId;
-        const wasOnline = isUserOnline(userId);
-        addConnection(sessionId, socket, userId);
-        send({ type: "ready", userId, sessionId });
-
-        // Broadcast presence if this is their first connection. A status set by
-        // another recent session (e.g. dnd) survives reconnects within a run.
-        if (!wasOnline) {
-          if (!getUserStatus(userId)) setUserStatus(userId, "online");
-          broadcastToAll(
-            { type: "presence_update", userId, status: getUserStatus(userId) ?? "online" },
-            sessionId
-          );
-        }
-      } catch {
-        send({ type: "error", message: "Invalid token" });
-        socket.close();
-        return;
-      }
-    } else {
-      send({ type: "error", message: "Token required as query param" });
-      socket.close();
-      return;
-    }
-
+    // Register listeners up front; they no-op until async auth sets userId.
     socket.on("message", async (raw: Buffer) => {
       if (!userId) return;
+
+      // Flood control: drop frames over the broad per-connection limit.
+      if (!limiter.allowFrame()) {
+        send({ type: "error", message: "Rate limit exceeded" });
+        return;
+      }
 
       let msg: ClientMessage;
       try {
         msg = JSON.parse(raw.toString());
       } catch {
         send({ type: "error", message: "Invalid JSON" });
+        return;
+      }
+
+      // Tighter limit on content-creating actions (DB writes + fan-out).
+      if (SEND_TYPES.has(msg.type) && !limiter.allowSend()) {
+        send({ type: "error", message: "You're sending messages too fast" });
         return;
       }
 
@@ -76,16 +72,20 @@ export const wsHandler: FastifyPluginAsync = async (app) => {
     socket.on("close", () => {
       const disconnectedUserId = userId;
       removeConnection(sessionId);
+      if (!disconnectedUserId) return;
 
-      // Broadcast offline if user has no remaining connections
-      if (disconnectedUserId && !isUserOnline(disconnectedUserId)) {
-        clearUserStatus(disconnectedUserId);
-        broadcastToAll({
-          type: "presence_update",
-          userId: disconnectedUserId,
-          status: "offline",
+      // Broadcast offline if the user has no remaining sessions on any instance.
+      // Wait for this session's own registration first so add/remove stay ordered.
+      void presenceReady.then(() => removeSession(sessionId, disconnectedUserId)).then((isLast) => {
+        if (!isLast) return;
+        return clearUserStatus(disconnectedUserId).then(() => {
+          broadcastToAll({
+            type: "presence_update",
+            userId: disconnectedUserId,
+            status: "offline",
+          });
         });
-      }
+      });
     });
 
     function send(msg: ServerMessage) {
@@ -93,23 +93,72 @@ export const wsHandler: FastifyPluginAsync = async (app) => {
         socket.send(JSON.stringify(msg));
       }
     }
+
+    // Authenticate: prefer a single-use ticket (keeps the JWT out of the URL/logs),
+    // fall back to a token query param. Then check tokenVersion for revocation.
+    void (async () => {
+      const query = request.query as Record<string, string>;
+      let authedUserId: string | null = null;
+      let authedTokenVersion = 0;
+
+      if (query.ticket) {
+        const data = await consumeTicket(query.ticket);
+        if (data) {
+          authedUserId = data.userId;
+          authedTokenVersion = data.tokenVersion;
+        }
+      } else if (query.token) {
+        try {
+          const decoded = app.jwt.verify<{ userId: string; tokenVersion?: number }>(query.token);
+          authedUserId = decoded.userId;
+          authedTokenVersion = decoded.tokenVersion ?? 0;
+        } catch {
+          /* invalid token → rejected below */
+        }
+      }
+
+      if (!authedUserId) {
+        send({ type: "error", message: "Authentication required" });
+        socket.close();
+        return;
+      }
+
+      // Revocation: reject if the token was invalidated (logout-all).
+      const dbUser = await prisma.user?.findUnique?.({
+        where: { id: authedUserId },
+        select: { tokenVersion: true },
+      });
+      if (dbUser && (dbUser.tokenVersion ?? 0) !== authedTokenVersion) {
+        send({ type: "error", message: "Session expired" });
+        socket.close();
+        return;
+      }
+
+      // The socket may have closed during the async auth above; the close handler
+      // ran with userId still null and skipped cleanup, so registering now would
+      // strand presence. Bail if it's no longer open.
+      if (socket.readyState !== 1) return;
+
+      userId = authedUserId;
+      addConnection(sessionId, socket, userId);
+      send({ type: "ready", userId, sessionId });
+
+      // Broadcast presence if this is their first connection. A status set by
+      // another recent session (e.g. dnd) survives reconnects within a run.
+      presenceReady = addSession(sessionId, userId);
+      void presenceReady.then(async (isFirst) => {
+        if (!isFirst || !authedUserId) return;
+        const existing = await getUserStatus(authedUserId);
+        if (!existing) await setUserStatus(authedUserId, "online");
+        broadcastToAll(
+          { type: "presence_update", userId: authedUserId, status: existing ?? "online" },
+          sessionId
+        );
+      });
+    })();
   });
 };
 
-async function verifyChannelAccess(
-  userId: string,
-  channelId: string
-): Promise<boolean> {
-  const channel = await prisma.channel.findUnique({
-    where: { id: channelId },
-    select: { serverId: true },
-  });
-  if (!channel) return false;
-  const member = await prisma.serverMember.findUnique({
-    where: { userId_serverId: { userId, serverId: channel.serverId } },
-  });
-  return member !== null;
-}
 
 async function handleMessage(
   sessionId: string,
@@ -118,7 +167,17 @@ async function handleMessage(
 ) {
   switch (msg.type) {
     case "subscribe_channel": {
-      if (!(await verifyChannelAccess(userId, msg.channelId))) return;
+      const ch = await prisma.channel.findUnique({
+        where: { id: msg.channelId },
+        select: { serverId: true },
+      });
+      if (!ch) return;
+      const mem = await prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId, serverId: ch.serverId } },
+      });
+      if (!mem) return;
+      // Live delivery must honor READ_MESSAGES just like the REST fetch does.
+      if (!(await checkPermission(userId, ch.serverId, Permissions.READ_MESSAGES))) return;
       subscribeToChannel(sessionId, msg.channelId);
       break;
     }
@@ -128,95 +187,25 @@ async function handleMessage(
     }
     case "send_message": {
       if (!msg.content || msg.content.trim().length === 0 || msg.content.length > 4000) return;
-      if (!(await verifyChannelAccess(userId, msg.channelId))) return;
-
-      // A reply must reference a message in the same channel
-      let replyToId: string | null = null;
-      if (msg.replyToId) {
-        const target = await prisma.message.findUnique({
-          where: { id: msg.replyToId },
-          select: { channelId: true },
-        });
-        if (target?.channelId === msg.channelId) replyToId = msg.replyToId;
-      }
-
-      const message = await prisma.message.create({
-        data: {
-          channelId: msg.channelId,
-          authorId: userId,
-          content: msg.content,
-          replyToId,
-        },
-        include: {
-          author: {
-            select: { id: true, username: true, displayName: true, avatarUrl: true, status: true },
-          },
-          replyTo: {
-            select: {
-              id: true,
-              content: true,
-              authorId: true,
-              createdAt: true,
-              author: { select: { id: true, username: true, displayName: true, avatarUrl: true, status: true } },
-            },
-          },
-        },
+      const sendChannel = await prisma.channel.findUnique({
+        where: { id: msg.channelId },
+        select: { serverId: true },
       });
+      if (!sendChannel) return;
+      const sender = await prisma.serverMember.findUnique({
+        where: { userId_serverId: { userId, serverId: sendChannel.serverId } },
+      });
+      if (!sender) return;
+      if (!(await checkPermission(userId, sendChannel.serverId, Permissions.SEND_MESSAGES))) return;
 
-      const serverMsg: ServerMessage = {
-        type: "message_created",
-        message: {
-          id: message.id,
-          channelId: message.channelId,
-          authorId: message.authorId,
-          content: message.content,
-          createdAt: message.createdAt.toISOString(),
-          editedAt: null,
-          author: message.author,
-          replyTo: message.replyTo
-            ? {
-                id: message.replyTo.id,
-                content: message.replyTo.content,
-                authorId: message.replyTo.authorId,
-                createdAt: message.replyTo.createdAt.toISOString(),
-                author: message.replyTo.author,
-              }
-            : null,
-        },
-        ...(msg.nonce ? { nonce: msg.nonce } : {}),
-      };
-
-      broadcastToChannel(msg.channelId, serverMsg);
-
-      // Update unread counts for all server members not subscribed to this channel
-      const channel = await prisma.channel.findUnique({ where: { id: msg.channelId }, select: { serverId: true } });
-      if (channel) {
-        const members = await prisma.serverMember.findMany({
-          where: { serverId: channel.serverId },
-          select: { userId: true, user: { select: { username: true } } },
-        });
-        for (const member of members) {
-          if (member.userId === userId) continue; // skip sender
-          const lastRead = await prisma.lastRead.findUnique({
-            where: { userId_channelId: { userId: member.userId, channelId: msg.channelId } },
-          });
-          const since = lastRead?.readAt ?? new Date(0);
-          const count = await prisma.message.count({
-            where: { channelId: msg.channelId, createdAt: { gt: since } },
-          });
-          if (count > 0) {
-            const mentions = await prisma.message.count({
-              where: {
-                channelId: msg.channelId,
-                createdAt: { gt: since },
-                content: { contains: `@${member.user.username}` },
-              },
-            });
-            sendToUser(member.userId, { type: "unread_count", channelId: msg.channelId, count, mentions });
-          }
-        }
-      }
-
+      await createChannelMessage({
+        channelId: msg.channelId,
+        serverId: sendChannel.serverId,
+        authorId: userId,
+        content: msg.content,
+        replyToId: msg.replyToId,
+        nonce: msg.nonce,
+      });
       break;
     }
     case "edit_message": {
@@ -228,42 +217,12 @@ async function handleMessage(
       const updated = await prisma.message.update({
         where: { id: msg.messageId },
         data: { content: msg.content, editedAt: new Date() },
-        include: {
-          author: {
-            select: { id: true, username: true, displayName: true, avatarUrl: true, status: true },
-          },
-          replyTo: {
-            select: {
-              id: true,
-              content: true,
-              authorId: true,
-              createdAt: true,
-              author: { select: { id: true, username: true, displayName: true, avatarUrl: true, status: true } },
-            },
-          },
-        },
+        include: MESSAGE_INCLUDE,
       });
 
       broadcastToChannel(updated.channelId, {
         type: "message_updated",
-        message: {
-          id: updated.id,
-          channelId: updated.channelId,
-          authorId: updated.authorId,
-          content: updated.content,
-          createdAt: updated.createdAt.toISOString(),
-          editedAt: updated.editedAt?.toISOString() ?? null,
-          author: updated.author,
-          replyTo: updated.replyTo
-            ? {
-                id: updated.replyTo.id,
-                content: updated.replyTo.content,
-                authorId: updated.replyTo.authorId,
-                createdAt: updated.replyTo.createdAt.toISOString(),
-                author: updated.replyTo.author,
-              }
-            : null,
-        },
+        message: serializeMessage(updated),
       });
       break;
     }
@@ -276,8 +235,6 @@ async function handleMessage(
 
       // Allow if author OR has MANAGE_MESSAGES permission
       if (toDelete.authorId !== userId) {
-        const { checkPermission } = await import("../permissions.js");
-        const { Permissions } = await import("@concord/shared");
         const canManage = await checkPermission(userId, toDelete.channel.serverId, Permissions.MANAGE_MESSAGES);
         if (!canManage) return;
       }
@@ -368,7 +325,7 @@ async function handleMessage(
     }
     case "presence_set": {
       if (!["online", "idle", "dnd"].includes(msg.status)) return;
-      setUserStatus(userId, msg.status);
+      await setUserStatus(userId, msg.status);
       // Broadcast to everyone including the sender's other sessions
       broadcastToAll({ type: "presence_update", userId, status: msg.status });
       break;

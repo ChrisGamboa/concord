@@ -1,45 +1,17 @@
 import type { FastifyPluginAsync } from "fastify";
+import { z } from "zod";
 import { prisma } from "../db.js";
 import { sendToUser } from "../ws/connections.js";
+import { serializeDm, groupReactions, DM_INCLUDE } from "../services/messageService.js";
+import { validateBody } from "../validate.js";
 
-function groupReactions(reactions: Array<{ emoji: string; userId: string }>) {
-  const groups: Record<string, string[]> = {};
-  for (const r of reactions) (groups[r.emoji] ??= []).push(r.userId);
-  return Object.entries(groups).map(([emoji, userIds]) => ({ emoji, count: userIds.length, userIds }));
-}
-
-const DM_AUTHOR_SELECT = {
-  select: { id: true, username: true, displayName: true, avatarUrl: true, status: true },
-} as const;
-
-const DM_REPLY_SELECT = {
-  select: {
-    id: true,
-    content: true,
-    authorId: true,
-    createdAt: true,
-    author: DM_AUTHOR_SELECT,
-  },
-} as const;
-
-function mapReplyTo(replyTo: {
-  id: string;
-  content: string;
-  authorId: string;
-  createdAt: Date;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  author: any;
-} | null) {
-  return replyTo
-    ? {
-        id: replyTo.id,
-        content: replyTo.content,
-        authorId: replyTo.authorId,
-        createdAt: replyTo.createdAt.toISOString(),
-        author: replyTo.author,
-      }
-    : null;
-}
+const messageContent = z
+  .string()
+  .max(4000, "Message must be 1-4000 characters")
+  .refine((s) => s.trim().length > 0, { message: "Message must be 1-4000 characters" });
+const dmSendBody = z.object({ content: messageContent, replyToId: z.string().optional(), nonce: z.string().optional() });
+const dmEditBody = z.object({ content: messageContent });
+const dmReactBody = z.object({ emoji: z.string().min(1, "Invalid emoji").max(16, "Invalid emoji") });
 
 export const dmRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", app.authenticate);
@@ -120,11 +92,7 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
           conversationId,
           ...(before ? { createdAt: { lt: new Date(before) } } : {}),
         },
-        include: {
-          author: DM_AUTHOR_SELECT,
-          reactions: { select: { emoji: true, userId: true } },
-          replyTo: DM_REPLY_SELECT,
-        },
+        include: DM_INCLUDE,
         orderBy: { createdAt: "desc" },
         take: limit + 1,
       });
@@ -133,33 +101,20 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
       const page = hasMore ? messages.slice(0, limit) : messages;
 
       return {
-        messages: page.reverse().map((m) => ({
-          id: m.id,
-          conversationId: m.conversationId,
-          authorId: m.authorId,
-          content: m.content,
-          createdAt: m.createdAt.toISOString(),
-          editedAt: m.editedAt?.toISOString() ?? null,
-          reactions: groupReactions(m.reactions),
-          replyTo: mapReplyTo(m.replyTo),
-          author: m.author,
-        })),
+        messages: page.reverse().map(serializeDm),
         hasMore,
       };
     }
   );
 
   // Send a DM
-  app.post<{ Params: { conversationId: string }; Body: { content: string; replyToId?: string } }>(
+  app.post<{ Params: { conversationId: string }; Body: { content: string; replyToId?: string; nonce?: string } }>(
     "/conversations/:conversationId/messages",
+    { preHandler: validateBody(dmSendBody) },
     async (request, reply) => {
       const { userId } = request.user as { userId: string };
       const { conversationId } = request.params;
-      const { content } = request.body;
-
-      if (!content?.trim() || content.length > 4000) {
-        return reply.code(400).send({ error: "Message must be 1-4000 characters" });
-      }
+      const { content, nonce } = request.body;
 
       const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
       if (!conv || (conv.participant1 !== userId && conv.participant2 !== userId)) {
@@ -178,24 +133,15 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
 
       const dm = await prisma.directMessage.create({
         data: { conversationId, authorId: userId, content: content.trim(), replyToId },
-        include: { author: DM_AUTHOR_SELECT, replyTo: DM_REPLY_SELECT },
+        include: DM_INCLUDE,
       });
 
-      const msg = {
-        id: dm.id,
-        conversationId: dm.conversationId,
-        authorId: dm.authorId,
-        content: dm.content,
-        createdAt: dm.createdAt.toISOString(),
-        editedAt: null,
-        reactions: [],
-        replyTo: mapReplyTo(dm.replyTo),
-        author: dm.author,
-      };
+      const msg = serializeDm(dm);
 
-      // Send to both participants via WS
+      // Send to both participants via WS. The nonce is echoed only to the sender
+      // so they can reconcile their optimistic (pending) copy with the persisted one.
       const otherId = conv.participant1 === userId ? conv.participant2 : conv.participant1;
-      sendToUser(userId, { type: "dm_created", message: msg });
+      sendToUser(userId, { type: "dm_created", message: msg, ...(nonce ? { nonce } : {}) });
       sendToUser(otherId, { type: "dm_created", message: msg });
 
       return msg;
@@ -205,14 +151,11 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
   // Edit a DM (author only)
   app.patch<{ Params: { messageId: string }; Body: { content: string } }>(
     "/messages/:messageId",
+    { preHandler: validateBody(dmEditBody) },
     async (request, reply) => {
       const { userId } = request.user as { userId: string };
       const { messageId } = request.params;
       const { content } = request.body;
-
-      if (!content?.trim() || content.length > 4000) {
-        return reply.code(400).send({ error: "Message must be 1-4000 characters" });
-      }
 
       const existing = await prisma.directMessage.findUnique({
         where: { id: messageId },
@@ -224,24 +167,10 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
       const updated = await prisma.directMessage.update({
         where: { id: messageId },
         data: { content: content.trim(), editedAt: new Date() },
-        include: {
-          author: DM_AUTHOR_SELECT,
-          reactions: { select: { emoji: true, userId: true } },
-          replyTo: DM_REPLY_SELECT,
-        },
+        include: DM_INCLUDE,
       });
 
-      const msg = {
-        id: updated.id,
-        conversationId: updated.conversationId,
-        authorId: updated.authorId,
-        content: updated.content,
-        createdAt: updated.createdAt.toISOString(),
-        editedAt: updated.editedAt?.toISOString() ?? null,
-        reactions: groupReactions(updated.reactions),
-        replyTo: mapReplyTo(updated.replyTo),
-        author: updated.author,
-      };
+      const msg = serializeDm(updated);
 
       sendToUser(existing.conversation.participant1, { type: "dm_updated", message: msg });
       sendToUser(existing.conversation.participant2, { type: "dm_updated", message: msg });
@@ -281,6 +210,7 @@ export const dmRoutes: FastifyPluginAsync = async (app) => {
   // Toggle a reaction on a DM (participants only)
   app.post<{ Params: { messageId: string }; Body: { emoji: string } }>(
     "/messages/:messageId/reactions",
+    { preHandler: validateBody(dmReactBody) },
     async (request, reply) => {
       const { userId } = request.user as { userId: string };
       const { messageId } = request.params;

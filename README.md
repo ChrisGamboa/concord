@@ -348,6 +348,8 @@ Clients (Electron apps)
 
 PostgreSQL and Redis should **not** be publicly exposed -- only the API, WebSocket, and LiveKit need to be reachable from the internet.
 
+**Horizontal scaling:** the API/WebSocket server is stateless apart from the shared Postgres and Redis. Run multiple instances behind the reverse proxy; they fan out WebSocket broadcasts and share presence over Redis pub/sub, so a client connected to one instance still receives messages and presence from users on another. If Redis is unreachable the server degrades to single-instance automatically.
+
 ### Step 1: Provision a Server
 
 Any Linux VPS works. Recommended minimum specs:
@@ -393,71 +395,21 @@ Certbot auto-renews via systemd timer.
 
 ### Step 3: Deploy Infrastructure (PostgreSQL, Redis, LiveKit)
 
-Use the existing `docker-compose.yml` with production tweaks. Create a `docker-compose.prod.yml`:
+The repo already ships a `docker-compose.prod.yml` (Postgres, Redis, and LiveKit; Postgres and Redis bound to `127.0.0.1`, LiveKit's WebRTC ports exposed) plus config templates under `deploy/`. You don't need to write any of these by hand -- `scripts/generate-env.sh` (see [Deployment Scripts](#deployment-scripts)) fills them in with generated secrets. What each piece is, if you configure manually:
 
-```yaml
-services:
-  postgres:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: concord
-      POSTGRES_PASSWORD: <strong-random-password>
-      POSTGRES_DB: concord
-    ports:
-      - "127.0.0.1:5432:5432"      # bind to localhost only
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+- **Postgres/Redis passwords** are read from a `.env.prod` file via variable substitution (`${POSTGRES_PASSWORD}`, `${REDIS_PASSWORD}`) -- pass it with `--env-file .env.prod`.
+- **LiveKit** reads `deploy/livekit.yaml`, created from `deploy/livekit.yaml.template` by replacing the `LIVEKIT_API_KEY_PLACEHOLDER` / `LIVEKIT_API_SECRET_PLACEHOLDER` values. `docker-compose.prod.yml` mounts it at `/etc/livekit.yaml`.
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command: redis-server --requirepass <redis-password>
-    ports:
-      - "127.0.0.1:6379:6379"      # bind to localhost only
-    volumes:
-      - redis_data:/data
-
-  livekit:
-    image: livekit/livekit-server:latest
-    restart: unless-stopped
-    ports:
-      - "7880:7880"
-      - "7881:7881"
-      - "7882:7882/udp"
-    volumes:
-      - ./livekit.yaml:/etc/livekit.yaml
-    command: --config /etc/livekit.yaml
-
-volumes:
-  postgres_data:
-  redis_data:
-```
-
-Create a `livekit.yaml` for production LiveKit:
-
-```yaml
-port: 7880
-rtc:
-  tcp_port: 7881
-  port_range_start: 7882
-  port_range_end: 7882
-  use_external_ip: true
-keys:
-  your-api-key: <your-api-secret>
-```
-
-Generate a LiveKit key/secret pair:
+Generate a LiveKit key/secret pair (any random strings, kept consistent between `deploy/livekit.yaml` and your `.env`):
 
 ```bash
-# Any random strings work -- just keep them consistent between LiveKit config and your .env
 openssl rand -base64 32   # use as API secret
 ```
 
 Start infrastructure:
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 ```
 
 ### Step 4: Deploy the Concord Server
@@ -468,6 +420,7 @@ Clone the repo on your server, install, and build:
 git clone https://github.com/ChrisGamboa/concord.git
 cd concord
 pnpm install
+pnpm --filter @concord/shared build   # server depends on the shared package
 pnpm --filter @concord/server build
 pnpm --filter @concord/server db:push
 ```
@@ -502,7 +455,7 @@ pm2 startup
 
 ### Step 5: Reverse Proxy with Nginx
 
-Nginx handles SSL termination, routes HTTP/WS traffic to Fastify, and (optionally) proxies LiveKit's WebSocket.
+Nginx handles SSL termination, routes HTTP/WS traffic to Fastify, and (optionally) proxies LiveKit's WebSocket. This config is shipped as `deploy/nginx.conf.template` (with a `DOMAIN_PLACEHOLDER`); `scripts/generate-env.sh` writes a filled-in copy to `deploy/nginx-<domain>.conf`, so you normally don't hand-write it.
 
 ```nginx
 server {
@@ -604,7 +557,7 @@ The `scripts/` directory has automation for production deployment:
 | Script | Purpose |
 |---|---|
 | `scripts/setup-server.sh` | Run once on a fresh VPS. Installs Node 22, pnpm, Docker, Nginx, Certbot, ffmpeg, yt-dlp, pm2. |
-| `scripts/generate-env.sh` | Interactive. Prompts for domain + Klipy key, generates random secrets, outputs `.env`, `livekit.yaml`, and nginx config. |
+| `scripts/generate-env.sh` | Interactive. Prompts for domain + Klipy key, generates random secrets, and writes `packages/server/.env`, `.env.prod` (Compose secrets), `deploy/livekit.yaml`, and `deploy/nginx-<domain>.conf`. |
 | `scripts/deploy.sh` | Idempotent deploy/update. Pulls code, builds, pushes DB schema, restarts pm2. |
 
 Quick start on a fresh VPS:

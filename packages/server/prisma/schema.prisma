@@ -15,6 +15,8 @@ model User {
   avatarUrl    String?
   status       String?
   createdAt    DateTime @default(now())
+  // Bumped to invalidate all outstanding JWTs for this user (logout-all, ban).
+  tokenVersion Int      @default(0)
 
   messages       Message[]
   ownedServers   Server[]       @relation("ServerOwner")
@@ -191,15 +193,18 @@ model Message {
   replies   Message[]  @relation("MessageReplies")
 
   @@index([channelId, createdAt])
+  @@index([authorId])
 }
 
 model Role {
-  id          String @id @default(cuid())
+  id          String  @id @default(cuid())
   serverId    String
   name        String
   color       String?
-  permissions Int    @default(0)
-  position    Int    @default(0)
+  permissions Int     @default(0)
+  position    Int     @default(0)
+  // Marks the server's @everyone base role (previously identified by position === 0).
+  isDefault   Boolean @default(false)
 
   server      Server       @relation(fields: [serverId], references: [id], onDelete: Cascade)
   memberRoles MemberRole[]
@@ -218,6 +223,7 @@ model ServerMember {
   memberRoles MemberRole[]
 
   @@id([userId, serverId])
+  @@index([serverId])
 }
 
 model MemberRole {

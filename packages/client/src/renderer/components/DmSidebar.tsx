@@ -3,21 +3,9 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { avatarColor, avatarUrl } from "../lib/avatar";
 import { usePresenceStore } from "../stores/presence";
-import { useChatStore } from "../stores/chat";
+import { useChatStore, type Conversation } from "../stores/chat";
+import { presenceColor } from "../lib/presenceColors";
 import { toast } from "../stores/toast";
-import { onWsMessage } from "../lib/ws";
-
-interface Conversation {
-  id: string;
-  otherUser: {
-    id: string;
-    username: string;
-    displayName: string;
-    avatarUrl: string | null;
-    status: string | null;
-  };
-  lastMessage: { content: string; createdAt: string } | null;
-}
 
 export function DmSidebar() {
   const { channelId: activeConvId } = useParams();
@@ -25,54 +13,25 @@ export function DmSidebar() {
   const onlineUsers = usePresenceStore((s) => s.onlineUsers);
   const statuses = usePresenceStore((s) => s.statuses);
   const dmUnreadConvIds = useChatStore((s) => s.dmUnreadConvIds);
-  const presenceColor = (uid: string) => {
-    const st = statuses[uid] ?? (onlineUsers.has(uid) ? "online" : "offline");
-    return st === "online" ? "var(--success)" : st === "idle" ? "#f0b232" : st === "dnd" ? "var(--danger)" : "var(--text-muted)";
-  };
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  // Conversation list + live updates flow through the store via the WS router.
+  const conversations = useChatStore((s) => s.conversations);
+  const dotColor = (uid: string) =>
+    presenceColor(statuses[uid] ?? (onlineUsers.has(uid) ? "online" : "offline"));
   const [showNewDm, setShowNewDm] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Conversation["otherUser"][]>([]);
   const [searching, setSearching] = useState(false);
 
   useEffect(() => {
-    api.getConversations().then((res) => setConversations(res.conversations)).catch(() => toast("Failed to load conversations"));
-  }, []);
-
-  // Update conversation list when new DMs arrive
-  useEffect(() => {
-    return onWsMessage((msg) => {
-      if (msg.type === "dm_created") {
-        const dm = (msg as any).message;
-        setConversations((prev) => {
-          const idx = prev.findIndex((c) => c.id === dm.conversationId);
-          if (idx >= 0) {
-            const updated = [...prev];
-            updated[idx] = {
-              ...updated[idx],
-              lastMessage: { content: dm.content, createdAt: dm.createdAt },
-            };
-            // Move to top
-            const [item] = updated.splice(idx, 1);
-            updated.unshift(item);
-            return updated;
-          }
-          // New conversation -- refetch to get full data
-          api.getConversations().then((res) => setConversations(res.conversations)).catch(() => {});
-          return prev;
-        });
-      }
-    });
+    api.getConversations()
+      .then((res) => useChatStore.getState().setConversations(res.conversations))
+      .catch(() => toast("Failed to load conversations"));
   }, []);
 
   const handleStartConversation = useCallback(async (targetUserId: string) => {
     try {
       const conv = await api.createConversation(targetUserId);
-      // Add to list if not already there
-      setConversations((prev) => {
-        if (prev.some((c) => c.id === conv.id)) return prev;
-        return [{ id: conv.id, otherUser: conv.otherUser, lastMessage: null }, ...prev];
-      });
+      useChatStore.getState().addConversation({ id: conv.id, otherUser: conv.otherUser, lastMessage: null });
       setShowNewDm(false);
       setSearchQuery("");
       setSearchResults([]);
@@ -82,50 +41,24 @@ export function DmSidebar() {
     }
   }, [navigate]);
 
-  // Search for users to DM -- search members from all servers the user is in
+  // Search for users to DM via the server-side endpoint (one request per query,
+  // scoped to users you share a server with).
   useEffect(() => {
     if (!searchQuery.trim()) {
       setSearchResults([]);
       return;
     }
     setSearching(true);
-    // Fetch all servers, then get members from each and deduplicate
-    const doSearch = async () => {
-      try {
-        const { servers } = await api.getServers();
-        const seen = new Set<string>();
-        const results: Conversation["otherUser"][] = [];
-        for (const server of servers) {
-          const { members } = await api.getMembers(server.id);
-          for (const m of members as any[]) {
-            const user = m.user;
-            if (!user || seen.has(user.id)) continue;
-            seen.add(user.id);
-            const q = searchQuery.toLowerCase();
-            if (
-              user.username.toLowerCase().includes(q) ||
-              user.displayName.toLowerCase().includes(q)
-            ) {
-              results.push({
-                id: user.id,
-                username: user.username,
-                displayName: user.displayName,
-                avatarUrl: user.avatarUrl,
-                status: user.status ?? null,
-              });
-            }
-          }
-        }
-        // Exclude users who already have conversations
-        const existingIds = new Set(conversations.map((c) => c.otherUser.id));
-        setSearchResults(results.filter((u) => !existingIds.has(u.id)));
-      } catch {
-        setSearchResults([]);
-      } finally {
-        setSearching(false);
-      }
-    };
-    const timer = setTimeout(doSearch, 300);
+    const timer = setTimeout(() => {
+      api.searchUsers(searchQuery.trim())
+        .then((res) => {
+          // Exclude users who already have conversations
+          const existingIds = new Set(conversations.map((c) => c.otherUser.id));
+          setSearchResults(res.users.filter((u) => !existingIds.has(u.id)));
+        })
+        .catch(() => setSearchResults([]))
+        .finally(() => setSearching(false));
+    }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery, conversations]);
 
@@ -206,7 +139,7 @@ export function DmSidebar() {
                 <div
                   style={{
                     ...styles.statusDot,
-                    background: presenceColor(conv.otherUser.id),
+                    background: dotColor(conv.otherUser.id),
                   }}
                 />
               </div>

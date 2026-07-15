@@ -1,14 +1,17 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useAsyncAction } from "../hooks/useAsyncAction";
+import { useSettingsStore } from "../stores/settings";
 import { useAuthStore } from "../stores/auth";
 import { usePresenceStore } from "../stores/presence";
 import { api } from "../lib/api";
 import { sendWs } from "../lib/ws";
 import { avatarColor, avatarUrl } from "../lib/avatar";
+import { PRESENCE_COLORS } from "../lib/presenceColors";
 
 const PRESENCE_OPTIONS = [
-  { value: "online" as const, label: "Online", color: "var(--success)" },
-  { value: "idle" as const, label: "Idle", color: "#f0b232" },
-  { value: "dnd" as const, label: "Do Not Disturb", color: "var(--danger)" },
+  { value: "online" as const, label: "Online", color: PRESENCE_COLORS.online },
+  { value: "idle" as const, label: "Idle", color: PRESENCE_COLORS.idle },
+  { value: "dnd" as const, label: "Do Not Disturb", color: PRESENCE_COLORS.dnd },
 ];
 
 interface MediaDeviceOption {
@@ -58,57 +61,33 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(user?.displayName ?? "");
   const [statusInput, setStatusInput] = useState(user?.status ?? "");
-  const [saving, setSaving] = useState(false);
-  const [profileMsg, setProfileMsg] = useState("");
+  const { saving, msg: profileMsg, run } = useAsyncAction();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSaveName = async () => {
+  const handleSaveName = () => {
     if (!nameInput.trim() || nameInput.trim() === user?.displayName) {
       setEditingName(false);
       return;
     }
-    setSaving(true);
-    setProfileMsg("");
-    try {
+    return run(async () => {
       const res = await api.updateProfile({ displayName: nameInput.trim() });
       updateUser(res.user);
       setEditingName(false);
-      setProfileMsg("Display name updated");
-    } catch (err) {
-      setProfileMsg(err instanceof Error ? err.message : "Failed to update");
-    } finally {
-      setSaving(false);
-    }
+    }, "Display name updated");
   };
 
-  const handleAvatarUpload = async (file: File) => {
+  const handleAvatarUpload = (file: File) => {
     if (!file.type.startsWith("image/")) return;
-    setSaving(true);
-    setProfileMsg("");
-    try {
+    return run(async () => {
       const res = await api.updateProfile({ avatar: file });
       updateUser(res.user);
-      setProfileMsg("Avatar updated");
-    } catch (err) {
-      setProfileMsg(err instanceof Error ? err.message : "Failed to upload");
-    } finally {
-      setSaving(false);
-    }
+    }, "Avatar updated");
   };
 
-  const handleRemoveAvatar = async () => {
-    setSaving(true);
-    setProfileMsg("");
-    try {
-      const res = await api.updateProfile({ removeAvatar: true });
-      updateUser(res.user);
-      setProfileMsg("Avatar removed");
-    } catch (err) {
-      setProfileMsg(err instanceof Error ? err.message : "Failed to remove");
-    } finally {
-      setSaving(false);
-    }
-  };
+  const handleRemoveAvatar = () => run(async () => {
+    const res = await api.updateProfile({ removeAvatar: true });
+    updateUser(res.user);
+  }, "Avatar removed");
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -128,18 +107,15 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   const [audioOutputs, setAudioOutputs] = useState<MediaDeviceOption[]>([]);
   const [videoInputs, setVideoInputs] = useState<MediaDeviceOption[]>([]);
 
-  const [selectedAudioInput, setSelectedAudioInput] = useState(
-    localStorage.getItem("concord:audioInput") ?? "default"
-  );
-  const [selectedAudioOutput, setSelectedAudioOutput] = useState(
-    localStorage.getItem("concord:audioOutput") ?? "default"
-  );
-  const [selectedVideoInput, setSelectedVideoInput] = useState(
-    localStorage.getItem("concord:videoInput") ?? "default"
-  );
-  const [notificationsEnabled, setNotificationsEnabled] = useState(
-    localStorage.getItem("concord:notifications") !== "false"
-  );
+  // Device/notification prefs live in the shared settings store.
+  const selectedAudioInput = useSettingsStore((s) => s.audioInput);
+  const selectedAudioOutput = useSettingsStore((s) => s.audioOutput);
+  const selectedVideoInput = useSettingsStore((s) => s.videoInput);
+  const notificationsEnabled = useSettingsStore((s) => s.notificationsEnabled);
+  const setAudioInput = useSettingsStore((s) => s.setAudioInput);
+  const setAudioOutput = useSettingsStore((s) => s.setAudioOutput);
+  const setVideoInput = useSettingsStore((s) => s.setVideoInput);
+  const setNotificationsEnabled = useSettingsStore((s) => s.setNotificationsEnabled);
 
   useEffect(() => {
     navigator.mediaDevices.enumerateDevices().then((devices) => {
@@ -170,9 +146,6 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
     });
   }, []);
 
-  const save = (key: string, value: string) => {
-    localStorage.setItem(key, value);
-  };
 
   const sections: { id: Section; label: string; icon: React.ReactNode }[] = [
     {
@@ -378,15 +351,10 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                       placeholder="Set a status..."
                       maxLength={128}
                     />
-                    <button className="settings-save-btn" disabled={saving} onClick={async () => {
-                      setSaving(true); setProfileMsg("");
-                      try {
-                        const res = await api.updateProfile({ status: statusInput });
-                        updateUser(res.user);
-                        setProfileMsg("Status updated");
-                      } catch (err) { setProfileMsg(err instanceof Error ? err.message : "Failed"); }
-                      finally { setSaving(false); }
-                    }}>
+                    <button className="settings-save-btn" disabled={saving} onClick={() => run(async () => {
+                      const res = await api.updateProfile({ status: statusInput });
+                      updateUser(res.user);
+                    }, "Status updated")}>
                       Save
                     </button>
                   </div>
@@ -416,11 +384,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                   </div>
                   <button
                     className={`settings-toggle ${notificationsEnabled ? "settings-toggle--on" : ""}`}
-                    onClick={() => {
-                      const next = !notificationsEnabled;
-                      setNotificationsEnabled(next);
-                      save("concord:notifications", String(next));
-                    }}
+                    onClick={() => setNotificationsEnabled(!notificationsEnabled)}
                   >
                     <div className="settings-toggle-knob" />
                   </button>
@@ -438,10 +402,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                   <select
                     className="settings-select"
                     value={selectedAudioInput}
-                    onChange={(e) => {
-                      setSelectedAudioInput(e.target.value);
-                      save("concord:audioInput", e.target.value);
-                    }}
+                    onChange={(e) => setAudioInput(e.target.value)}
                   >
                     <option value="default">Default</option>
                     {audioInputs.map((d) => (
@@ -456,10 +417,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                   <select
                     className="settings-select"
                     value={selectedAudioOutput}
-                    onChange={(e) => {
-                      setSelectedAudioOutput(e.target.value);
-                      save("concord:audioOutput", e.target.value);
-                    }}
+                    onChange={(e) => setAudioOutput(e.target.value)}
                   >
                     <option value="default">Default</option>
                     {audioOutputs.map((d) => (
@@ -482,10 +440,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                   <select
                     className="settings-select"
                     value={selectedVideoInput}
-                    onChange={(e) => {
-                      setSelectedVideoInput(e.target.value);
-                      save("concord:videoInput", e.target.value);
-                    }}
+                    onChange={(e) => setVideoInput(e.target.value)}
                   >
                     <option value="default">Default</option>
                     {videoInputs.map((d) => (
