@@ -41,7 +41,7 @@ export const gifRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(502).send({ error: "Klipy API error" });
       }
 
-      const json = await res.json() as {
+      let json: {
         result: boolean;
         data: {
           data: Array<{
@@ -56,6 +56,14 @@ export const gifRoutes: FastifyPluginAsync = async (app) => {
           has_next: boolean;
         };
       };
+      try {
+        json = await res.json() as typeof json;
+      } catch {
+        return reply.code(502).send({ error: "Invalid response from GIF service" });
+      }
+      if (!json?.data?.data || !Array.isArray(json.data.data)) {
+        return reply.code(502).send({ error: "Unexpected response from GIF service" });
+      }
 
       return {
         gifs: json.data.data

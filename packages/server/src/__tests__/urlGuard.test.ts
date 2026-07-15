@@ -14,8 +14,13 @@ describe("isPrivateIp", () => {
     }
   });
 
-  it("flags private/loopback IPv6 (incl. IPv4-mapped)", () => {
-    for (const ip of ["::1", "::", "fc00::1", "fd12::34", "fe80::1", "::ffff:127.0.0.1", "::ffff:10.0.0.1"]) {
+  it("flags private/loopback IPv6 (incl. compressed, expanded, and IPv4-mapped)", () => {
+    for (const ip of [
+      "::1", "::", "fc00::1", "fd12::34", "fe80::1",
+      "::ffff:127.0.0.1", "::ffff:10.0.0.1",
+      "0:0:0:0:0:0:0:1", // expanded loopback
+      "::ffff:7f00:1", // hex IPv4-mapped 127.0.0.1
+    ]) {
       expect(isPrivateIp(ip)).toBe(true);
     }
   });
