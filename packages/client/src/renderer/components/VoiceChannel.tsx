@@ -59,6 +59,12 @@ export function VoiceJoinPrompt({
 
 // ---- Persistent voice session: always mounted in AppLayout when connected ----
 
+/** Read a saved device selection; "default"/missing → undefined so LiveKit picks the system default. */
+function storedDevice(key: string): string | undefined {
+  const v = localStorage.getItem(key);
+  return v && v !== "default" ? v : undefined;
+}
+
 export function VoiceSession({ isViewing }: { isViewing: boolean }) {
   const connection = useVoiceStore((s) => s.connection);
   const disconnect = useVoiceStore((s) => s.disconnect);
@@ -91,9 +97,11 @@ export function VoiceSession({ isViewing }: { isViewing: boolean }) {
           noiseSuppression: false,
           channelCount: 2,
           sampleRate: 48000,
+          deviceId: storedDevice("concord:audioInput"),
         },
         videoCaptureDefaults: {
           resolution: VideoPresets.h1080.resolution,
+          deviceId: storedDevice("concord:videoInput"),
         },
         publishDefaults: {
           audioPreset: { maxBitrate: 128_000 },
@@ -166,6 +174,12 @@ function VoiceStoreSync() {
     setRoom(room);
     return () => setRoom(null);
   }, [room, setRoom]);
+
+  // Apply the saved audio-output (speaker) selection to this room.
+  useEffect(() => {
+    const outputId = storedDevice("concord:audioOutput");
+    if (outputId) room.switchActiveDevice("audiooutput", outputId).catch(() => {});
+  }, [room]);
 
   useEffect(() => {
     setMuted(!localParticipant.isMicrophoneEnabled);

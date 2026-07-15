@@ -146,6 +146,12 @@ export const api = {
   getMembers: (serverId: string) =>
     request<MembersResponse>(`/servers/${serverId}/members`),
 
+  // Search users you share a server with (for starting a DM)
+  searchUsers: (q: string) =>
+    request<{ users: Array<{ id: string; username: string; displayName: string; avatarUrl: string | null; status: string | null }> }>(
+      `/users/search?q=${encodeURIComponent(q)}`
+    ),
+
   // Bans
   banMember: (serverId: string, targetId: string, reason?: string) =>
     request<{ banned: boolean }>(`/servers/${serverId}/bans/${targetId}`, {

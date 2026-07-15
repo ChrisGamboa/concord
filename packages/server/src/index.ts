@@ -22,6 +22,7 @@ import { uploadRoutes } from "./routes/uploads.js";
 import { roleRoutes } from "./routes/roles.js";
 import { gifRoutes } from "./routes/gif.js";
 import { dmRoutes } from "./routes/dm.js";
+import { userRoutes } from "./routes/users.js";
 import { previewRoutes } from "./routes/preview.js";
 import { muteRoutes } from "./routes/mutes.js";
 import { wsHandler } from "./ws/handler.js";
@@ -30,9 +31,10 @@ import { closeBus } from "./ws/bus.js";
 import { startPresenceHeartbeat, stopPresenceHeartbeat } from "./ws/presence.js";
 import { stopAll as stopAllMusic } from "./music/player.js";
 
-// trustProxy so client IPs (behind the documented nginx reverse proxy) are read
-// from X-Forwarded-For — required for correct per-IP rate limiting.
-const app = Fastify({ logger: true, trustProxy: true });
+// Trust exactly one proxy hop (the documented nginx in front) so the client IP is
+// read correctly for rate limiting. `true` would trust the whole X-Forwarded-For
+// chain, letting a client spoof its IP and evade the limiter.
+const app = Fastify({ logger: true, trustProxy: 1 });
 
 // Security headers. CSP is off (this is a JSON API, not an HTML app) and CORP is
 // cross-origin so the Electron client can load /uploads images from another origin.
@@ -76,6 +78,7 @@ await app.register(uploadRoutes, { prefix: "/api/uploads" });
 await app.register(roleRoutes, { prefix: "/api/servers" });
 await app.register(gifRoutes, { prefix: "/api/gif" });
 await app.register(dmRoutes, { prefix: "/api/dm" });
+await app.register(userRoutes, { prefix: "/api/users" });
 await app.register(previewRoutes, { prefix: "/api/preview" });
 await app.register(muteRoutes, { prefix: "/api/mutes" });
 

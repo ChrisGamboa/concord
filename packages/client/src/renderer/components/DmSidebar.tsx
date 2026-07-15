@@ -82,50 +82,24 @@ export function DmSidebar() {
     }
   }, [navigate]);
 
-  // Search for users to DM -- search members from all servers the user is in
+  // Search for users to DM via the server-side endpoint (one request per query,
+  // scoped to users you share a server with).
   useEffect(() => {
     if (!searchQuery.trim()) {
       setSearchResults([]);
       return;
     }
     setSearching(true);
-    // Fetch all servers, then get members from each and deduplicate
-    const doSearch = async () => {
-      try {
-        const { servers } = await api.getServers();
-        const seen = new Set<string>();
-        const results: Conversation["otherUser"][] = [];
-        for (const server of servers) {
-          const { members } = await api.getMembers(server.id);
-          for (const m of members as any[]) {
-            const user = m.user;
-            if (!user || seen.has(user.id)) continue;
-            seen.add(user.id);
-            const q = searchQuery.toLowerCase();
-            if (
-              user.username.toLowerCase().includes(q) ||
-              user.displayName.toLowerCase().includes(q)
-            ) {
-              results.push({
-                id: user.id,
-                username: user.username,
-                displayName: user.displayName,
-                avatarUrl: user.avatarUrl,
-                status: user.status ?? null,
-              });
-            }
-          }
-        }
-        // Exclude users who already have conversations
-        const existingIds = new Set(conversations.map((c) => c.otherUser.id));
-        setSearchResults(results.filter((u) => !existingIds.has(u.id)));
-      } catch {
-        setSearchResults([]);
-      } finally {
-        setSearching(false);
-      }
-    };
-    const timer = setTimeout(doSearch, 300);
+    const timer = setTimeout(() => {
+      api.searchUsers(searchQuery.trim())
+        .then((res) => {
+          // Exclude users who already have conversations
+          const existingIds = new Set(conversations.map((c) => c.otherUser.id));
+          setSearchResults(res.users.filter((u) => !existingIds.has(u.id)));
+        })
+        .catch(() => setSearchResults([]))
+        .finally(() => setSearching(false));
+    }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery, conversations]);
 

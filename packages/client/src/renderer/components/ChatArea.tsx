@@ -14,6 +14,7 @@ import { MessageList, type MessageListHandle } from "./chat/MessageList";
 import { MessageRow, type RowMessage } from "./chat/MessageRow";
 import { MessageComposer } from "./chat/MessageComposer";
 import { chatStyles } from "./chat/chatStyles";
+import { useMembersStore } from "../stores/members";
 
 const SEND_TIMEOUT_MS = 10_000; // mark a send as failed if unconfirmed after this
 
@@ -120,18 +121,21 @@ export function ChatArea() {
   }, [serverId, userId]);
   const canModerate = hasPermission(myPermissions, Permissions.MANAGE_MESSAGES);
 
-  // Fetch members for @mention autocomplete and rendering
+  // Members for @mention autocomplete and rendering (shared cache, fetched once per server)
   const [members, setMembers] = useState<Array<{ userId: string; username: string; displayName: string; avatarUrl: string | null }>>([]);
   useEffect(() => {
     if (!serverId) return;
-    api.getMembers(serverId).then((res) => {
-      setMembers((res.members as any[]).map((m: any) => ({
+    let stale = false;
+    useMembersStore.getState().ensureMembers(serverId).then((rows) => {
+      if (stale) return;
+      setMembers(rows.map((m) => ({
         userId: m.user?.id ?? m.userId,
         username: m.user?.username ?? "",
         displayName: m.user?.displayName ?? m.nickname ?? "",
         avatarUrl: m.user?.avatarUrl ?? null,
       })));
     }).catch(() => toast("Failed to load server members"));
+    return () => { stale = true; };
   }, [serverId]);
 
   // Build username -> userId map for mention rendering

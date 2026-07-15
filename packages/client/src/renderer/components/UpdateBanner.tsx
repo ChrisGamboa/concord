@@ -10,14 +10,12 @@ export function UpdateBanner() {
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    const electron = (window as any).electron;
+    const electron = window.electron;
     if (!electron?.onUpdateDownloaded) return;
 
-    const cleanup = electron.onUpdateDownloaded((info: UpdateInfo) => {
+    return electron.onUpdateDownloaded((info: UpdateInfo) => {
       setUpdate(info);
     });
-
-    return cleanup;
   }, []);
 
   if (!update || dismissed) return null;
@@ -35,7 +33,7 @@ export function UpdateBanner() {
         <div className="update-banner-actions">
           <button
             className="update-banner-restart"
-            onClick={() => (window as any).electron?.restartToUpdate()}
+            onClick={() => window.electron?.restartToUpdate()}
           >
             Restart Now
           </button>

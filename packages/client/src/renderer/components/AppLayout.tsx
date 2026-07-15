@@ -192,7 +192,7 @@ export function AppLayout() {
           const isDnd = userId !== undefined &&
             usePresenceStore.getState().statuses[userId] === "dnd";
           if (!isMuted && !isDnd && !document.hasFocus() && msg.message.authorId !== userId) {
-            const electron = (window as any).electron;
+            const electron = window.electron;
             electron?.sendNotification?.(
               msg.message.author?.displayName ?? "New message",
               msg.message.content.length > 100
@@ -237,7 +237,7 @@ export function AppLayout() {
           const isDnd = userId !== undefined &&
             usePresenceStore.getState().statuses[userId] === "dnd";
           if (!isDnd && (!viewingThisConv || !document.hasFocus())) {
-            const electron = (window as any).electron;
+            const electron = window.electron;
             electron?.sendNotification?.(
               msg.message.author?.displayName ?? "New message",
               msg.message.content.length > 100

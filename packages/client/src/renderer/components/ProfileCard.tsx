@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { useAuthStore } from "../stores/auth";
 import { avatarColor, avatarUrl } from "../lib/avatar";
 import { usePresenceStore } from "../stores/presence";
+import { useMembersStore } from "../stores/members";
 import { toast } from "../stores/toast";
 import type { Role } from "@concord/shared";
 
@@ -43,15 +44,15 @@ export function ProfileCard({ userId, x, y, anchor = "left", onClose }: ProfileC
 
   useEffect(() => {
     if (!serverId) return;
-    api.getMembers(serverId).then((res) => {
-      const m = (res.members as any[]).find((m: any) => m.userId === userId);
+    useMembersStore.getState().ensureMembers(serverId).then((rows) => {
+      const m = rows.find((m) => m.userId === userId);
       if (m) {
         setMember({
           displayName: m.user?.displayName ?? m.nickname ?? "Unknown",
           username: m.user?.username ?? "",
           avatarUrl: m.user?.avatarUrl ?? null,
           status: m.user?.status ?? null,
-          joinedAt: m.joinedAt,
+          joinedAt: m.joinedAt ?? "",
           roleIds: m.roleIds ?? [],
         });
       }
