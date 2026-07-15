@@ -134,6 +134,11 @@ export const wsHandler: FastifyPluginAsync = async (app) => {
         return;
       }
 
+      // The socket may have closed during the async auth above; the close handler
+      // ran with userId still null and skipped cleanup, so registering now would
+      // strand presence. Bail if it's no longer open.
+      if (socket.readyState !== 1) return;
+
       userId = authedUserId;
       addConnection(sessionId, socket, userId);
       send({ type: "ready", userId, sessionId });

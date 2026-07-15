@@ -16,6 +16,7 @@ import { MessageComposer } from "./chat/MessageComposer";
 import { chatStyles } from "./chat/chatStyles";
 import { useMembersStore } from "../stores/members";
 import { parseSearchQuery } from "../lib/searchQuery";
+import { useMyPermissions } from "../hooks/useMyPermissions";
 
 const SEND_TIMEOUT_MS = 10_000; // mark a send as failed if unconfirmed after this
 
@@ -88,14 +89,8 @@ export function ChatArea() {
   const { serverId } = useParams() as { serverId?: string };
   const channel = channels.find((c) => c.id === channelId);
 
-  // Fetch permissions for moderation actions
-  const [myPermissions, setMyPermissions] = useState(0);
-  useEffect(() => {
-    if (!serverId || !userId) return;
-    api.getMyPermissions(serverId, userId).then((res) => {
-      setMyPermissions(res.permissions);
-    }).catch(() => {});
-  }, [serverId, userId]);
+  // Permissions for moderation actions
+  const myPermissions = useMyPermissions(serverId);
   const canModerate = hasPermission(myPermissions, Permissions.MANAGE_MESSAGES);
 
   // Members for @mention autocomplete and rendering. Subscribe to the shared cache

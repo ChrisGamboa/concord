@@ -16,7 +16,7 @@ import { toast } from "../stores/toast";
 import { playJoinSelf, playDisconnect, playUserJoined, playUserLeft } from "../lib/sounds";
 import { createRnnoiseTrack } from "../lib/rnnoise-processor";
 import { useVoiceStore } from "../stores/voice";
-import { useAuthStore } from "../stores/auth";
+import { useMyPermissions } from "../hooks/useMyPermissions";
 import type { RemoteParticipant } from "livekit-client";
 
 /** Extract avatar URL from LiveKit participant metadata */
@@ -365,16 +365,9 @@ function VoiceContent({
   const { menu: volumeMenu, onContextMenu: onParticipantRightClick } = useParticipantContextMenu();
   const voiceChannelId = useVoiceStore((s) => s.connection?.channelId);
   const voiceServerId = useVoiceStore((s) => s.connection?.serverId);
-  const authUserId = useAuthStore((s) => s.user?.id);
 
-  // Fetch current user's permissions for this server
-  const [myPermissions, setMyPermissions] = useState(0);
-  useEffect(() => {
-    if (!voiceServerId || !authUserId) return;
-    api.getMyPermissions(voiceServerId, authUserId).then((res) => {
-      setMyPermissions(res.permissions);
-    }).catch(() => {});
-  }, [voiceServerId, authUserId]);
+  // Current user's permissions for this server
+  const myPermissions = useMyPermissions(voiceServerId);
 
   // Track participant join/leave for sound effects
   const prevParticipantIds = useRef<Set<string>>(new Set());

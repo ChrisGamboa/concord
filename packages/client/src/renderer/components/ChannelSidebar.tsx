@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useChatStore } from "../stores/chat";
-import { useAuthStore } from "../stores/auth";
 import { useVoiceStore } from "../stores/voice";
 import { ChannelType, Permissions, hasPermission, type VoiceParticipant } from "@concord/shared";
 import { api } from "../lib/api";
+import { useMyPermissions } from "../hooks/useMyPermissions";
 import { toast } from "../stores/toast";
 import { playDisconnect } from "../lib/sounds";
 
@@ -24,12 +24,7 @@ export function ChannelSidebar() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   // Permissions
-  const authUserId = useAuthStore((s) => s.user?.id);
-  const [myPerms, setMyPerms] = useState(0);
-  useEffect(() => {
-    if (!serverId || !authUserId) return;
-    api.getMyPermissions(serverId, authUserId).then((r) => setMyPerms(r.permissions)).catch(() => {});
-  }, [serverId, authUserId]);
+  const myPerms = useMyPermissions(serverId);
   const canManageChannels = hasPermission(myPerms, Permissions.MANAGE_CHANNELS);
 
   // Close context menu on click outside

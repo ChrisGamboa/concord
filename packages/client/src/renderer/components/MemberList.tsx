@@ -7,6 +7,7 @@ import { usePresenceStore } from "../stores/presence";
 import { useAuthStore } from "../stores/auth";
 import { useChatStore } from "../stores/chat";
 import { useMembersStore, type MemberRow as CachedMember } from "../stores/members";
+import { useMyPermissions } from "../hooks/useMyPermissions";
 import { toast } from "../stores/toast";
 import { Permissions, hasPermission, type ServerMember, type PublicUser, type Role } from "@concord/shared";
 import { avatarColor, avatarUrl } from "../lib/avatar";
@@ -35,11 +36,7 @@ export function MemberList() {
   const serverOwnerId = useChatStore((s) => s.servers.find((sv) => sv.id === serverId)?.ownerId);
 
   // Permissions for moderation (ban)
-  const [myPerms, setMyPerms] = useState(0);
-  useEffect(() => {
-    if (!serverId || !myUserId) return;
-    api.getMyPermissions(serverId, myUserId).then((r) => setMyPerms(r.permissions)).catch(() => {});
-  }, [serverId, myUserId]);
+  const myPerms = useMyPermissions(serverId);
   const canBan = hasPermission(myPerms, Permissions.BAN_MEMBERS);
 
   // Right-click context menu for moderation
