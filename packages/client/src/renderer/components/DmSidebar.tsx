@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { avatarColor, avatarUrl } from "../lib/avatar";
 import { usePresenceStore } from "../stores/presence";
 import { useChatStore, type Conversation } from "../stores/chat";
+import { presenceColor } from "../lib/presenceColors";
 import { toast } from "../stores/toast";
 
 export function DmSidebar() {
@@ -14,10 +15,8 @@ export function DmSidebar() {
   const dmUnreadConvIds = useChatStore((s) => s.dmUnreadConvIds);
   // Conversation list + live updates flow through the store via the WS router.
   const conversations = useChatStore((s) => s.conversations);
-  const presenceColor = (uid: string) => {
-    const st = statuses[uid] ?? (onlineUsers.has(uid) ? "online" : "offline");
-    return st === "online" ? "var(--success)" : st === "idle" ? "#f0b232" : st === "dnd" ? "var(--danger)" : "var(--text-muted)";
-  };
+  const dotColor = (uid: string) =>
+    presenceColor(statuses[uid] ?? (onlineUsers.has(uid) ? "online" : "offline"));
   const [showNewDm, setShowNewDm] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Conversation["otherUser"][]>([]);
@@ -140,7 +139,7 @@ export function DmSidebar() {
                 <div
                   style={{
                     ...styles.statusDot,
-                    background: presenceColor(conv.otherUser.id),
+                    background: dotColor(conv.otherUser.id),
                   }}
                 />
               </div>

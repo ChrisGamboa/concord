@@ -8,6 +8,7 @@ import { useAuthStore } from "../stores/auth";
 import { useChatStore } from "../stores/chat";
 import { useMembersStore, type MemberRow as CachedMember } from "../stores/members";
 import { useMyPermissions } from "../hooks/useMyPermissions";
+import { PRESENCE_COLORS } from "../lib/presenceColors";
 import { toast } from "../stores/toast";
 import { Permissions, hasPermission, type ServerMember, type PublicUser, type Role } from "@concord/shared";
 import { avatarColor, avatarUrl } from "../lib/avatar";
@@ -18,12 +19,6 @@ interface MemberWithOnline extends ServerMember {
   presence?: "online" | "idle" | "dnd" | "offline";
 }
 
-export const PRESENCE_COLORS: Record<string, string> = {
-  online: "var(--success)",
-  idle: "#f0b232",
-  dnd: "var(--danger)",
-  offline: "var(--text-muted)",
-};
 
 export function MemberList() {
   const { serverId } = useParams();

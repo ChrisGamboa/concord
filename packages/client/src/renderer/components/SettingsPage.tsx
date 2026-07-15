@@ -5,11 +5,12 @@ import { usePresenceStore } from "../stores/presence";
 import { api } from "../lib/api";
 import { sendWs } from "../lib/ws";
 import { avatarColor, avatarUrl } from "../lib/avatar";
+import { PRESENCE_COLORS } from "../lib/presenceColors";
 
 const PRESENCE_OPTIONS = [
-  { value: "online" as const, label: "Online", color: "var(--success)" },
-  { value: "idle" as const, label: "Idle", color: "#f0b232" },
-  { value: "dnd" as const, label: "Do Not Disturb", color: "var(--danger)" },
+  { value: "online" as const, label: "Online", color: PRESENCE_COLORS.online },
+  { value: "idle" as const, label: "Idle", color: PRESENCE_COLORS.idle },
+  { value: "dnd" as const, label: "Do Not Disturb", color: PRESENCE_COLORS.dnd },
 ];
 
 interface MediaDeviceOption {
