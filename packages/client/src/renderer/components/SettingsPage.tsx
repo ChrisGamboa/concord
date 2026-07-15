@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useAsyncAction } from "../hooks/useAsyncAction";
 import { useAuthStore } from "../stores/auth";
 import { usePresenceStore } from "../stores/presence";
 import { api } from "../lib/api";
@@ -58,57 +59,33 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(user?.displayName ?? "");
   const [statusInput, setStatusInput] = useState(user?.status ?? "");
-  const [saving, setSaving] = useState(false);
-  const [profileMsg, setProfileMsg] = useState("");
+  const { saving, msg: profileMsg, setMsg: setProfileMsg, run } = useAsyncAction();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSaveName = async () => {
+  const handleSaveName = () => {
     if (!nameInput.trim() || nameInput.trim() === user?.displayName) {
       setEditingName(false);
       return;
     }
-    setSaving(true);
-    setProfileMsg("");
-    try {
+    return run(async () => {
       const res = await api.updateProfile({ displayName: nameInput.trim() });
       updateUser(res.user);
       setEditingName(false);
-      setProfileMsg("Display name updated");
-    } catch (err) {
-      setProfileMsg(err instanceof Error ? err.message : "Failed to update");
-    } finally {
-      setSaving(false);
-    }
+    }, "Display name updated");
   };
 
-  const handleAvatarUpload = async (file: File) => {
+  const handleAvatarUpload = (file: File) => {
     if (!file.type.startsWith("image/")) return;
-    setSaving(true);
-    setProfileMsg("");
-    try {
+    return run(async () => {
       const res = await api.updateProfile({ avatar: file });
       updateUser(res.user);
-      setProfileMsg("Avatar updated");
-    } catch (err) {
-      setProfileMsg(err instanceof Error ? err.message : "Failed to upload");
-    } finally {
-      setSaving(false);
-    }
+    }, "Avatar updated");
   };
 
-  const handleRemoveAvatar = async () => {
-    setSaving(true);
-    setProfileMsg("");
-    try {
-      const res = await api.updateProfile({ removeAvatar: true });
-      updateUser(res.user);
-      setProfileMsg("Avatar removed");
-    } catch (err) {
-      setProfileMsg(err instanceof Error ? err.message : "Failed to remove");
-    } finally {
-      setSaving(false);
-    }
-  };
+  const handleRemoveAvatar = () => run(async () => {
+    const res = await api.updateProfile({ removeAvatar: true });
+    updateUser(res.user);
+  }, "Avatar removed");
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -378,15 +355,10 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
                       placeholder="Set a status..."
                       maxLength={128}
                     />
-                    <button className="settings-save-btn" disabled={saving} onClick={async () => {
-                      setSaving(true); setProfileMsg("");
-                      try {
-                        const res = await api.updateProfile({ status: statusInput });
-                        updateUser(res.user);
-                        setProfileMsg("Status updated");
-                      } catch (err) { setProfileMsg(err instanceof Error ? err.message : "Failed"); }
-                      finally { setSaving(false); }
-                    }}>
+                    <button className="settings-save-btn" disabled={saving} onClick={() => run(async () => {
+                      const res = await api.updateProfile({ status: statusInput });
+                      updateUser(res.user);
+                    }, "Status updated")}>
                       Save
                     </button>
                   </div>
