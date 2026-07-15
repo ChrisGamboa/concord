@@ -8,6 +8,7 @@ vi.mock("../db.js", () => ({
       findUnique: vi.fn(),
       create: vi.fn(),
       findUniqueOrThrow: vi.fn(),
+      update: vi.fn(),
     },
   },
 }));
@@ -182,6 +183,46 @@ describe("Auth Routes", () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.json().user.username).toBe("testuser");
+      await app.close();
+    });
+  });
+
+  describe("token revocation", () => {
+    it("rejects a token whose version is stale (revoked)", async () => {
+      const app = await buildApp();
+      const token = app.jwt.sign({ userId: "user1", tokenVersion: 0 });
+      mockPrisma.user.findUnique.mockResolvedValue({ tokenVersion: 1 } as any);
+
+      const res = await app.inject({ method: "GET", url: "/api/auth/me", headers: authHeader(token) });
+      expect(res.statusCode).toBe(401);
+      await app.close();
+    });
+
+    it("accepts a token whose version matches the user", async () => {
+      const app = await buildApp();
+      const token = app.jwt.sign({ userId: "user1", tokenVersion: 3 });
+      mockPrisma.user.findUnique.mockResolvedValue({ tokenVersion: 3 } as any);
+      mockPrisma.user.findUniqueOrThrow.mockResolvedValue({
+        id: "user1", username: "u", displayName: "U", passwordHash: "h", avatarUrl: null, createdAt: new Date(),
+      });
+
+      const res = await app.inject({ method: "GET", url: "/api/auth/me", headers: authHeader(token) });
+      expect(res.statusCode).toBe(200);
+      await app.close();
+    });
+
+    it("logout increments the user's tokenVersion", async () => {
+      const app = await buildApp();
+      const token = app.jwt.sign({ userId: "user1", tokenVersion: 0 });
+      mockPrisma.user.findUnique.mockResolvedValue({ tokenVersion: 0 } as any);
+      mockPrisma.user.update.mockResolvedValue({} as any);
+
+      const res = await app.inject({ method: "POST", url: "/api/auth/logout", headers: authHeader(token) });
+      expect(res.statusCode).toBe(200);
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: "user1" },
+        data: { tokenVersion: { increment: 1 } },
+      });
       await app.close();
     });
   });

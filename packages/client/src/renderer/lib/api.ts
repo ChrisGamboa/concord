@@ -195,6 +195,11 @@ export const api = {
   getMyPermissions: (serverId: string, userId: string) =>
     request<{ permissions: number }>(`/servers/${serverId}/members/${userId}/permissions`),
 
+  logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
+
+  // WebSocket connection ticket (short-lived, single-use; keeps the JWT out of the WS URL)
+  getWsTicket: () => request<{ ticket: string }>("/auth/ws-ticket", { method: "POST" }),
+
   // DMs
   getConversations: () =>
     request<{ conversations: Array<{ id: string; otherUser: any; lastMessage: { content: string; createdAt: string } | null }> }>("/dm/conversations"),

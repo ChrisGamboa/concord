@@ -26,6 +26,7 @@ import { userRoutes } from "./routes/users.js";
 import { previewRoutes } from "./routes/preview.js";
 import { muteRoutes } from "./routes/mutes.js";
 import { wsHandler } from "./ws/handler.js";
+import { registerAuthenticate } from "./authenticate.js";
 import { initConnections } from "./ws/connections.js";
 import { closeBus } from "./ws/bus.js";
 import { startPresenceHeartbeat, stopPresenceHeartbeat } from "./ws/presence.js";
@@ -55,17 +56,8 @@ await app.register(staticPlugin, {
   decorateReply: false,
 });
 
-// Auth decorator
-app.decorate(
-  "authenticate",
-  async (request: any, reply: any) => {
-    try {
-      await request.jwtVerify();
-    } catch {
-      reply.code(401).send({ error: "Unauthorized" });
-    }
-  }
-);
+// Auth decorator (verifies JWT + tokenVersion for revocation)
+registerAuthenticate(app);
 
 // Routes
 await app.register(authRoutes, { prefix: "/api/auth" });

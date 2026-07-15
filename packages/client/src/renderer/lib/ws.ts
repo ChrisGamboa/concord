@@ -1,5 +1,6 @@
 import type { ClientMessage, ServerMessage } from "@concord/shared";
 import { WS_URL } from "./config";
+import { api } from "./api";
 
 type MessageHandler = (msg: ServerMessage) => void;
 
@@ -7,10 +8,20 @@ let socket: WebSocket | null = null;
 let handlers: MessageHandler[] = [];
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-export function connectWs(token: string) {
-  if (socket?.readyState === WebSocket.OPEN) return;
+export async function connectWs(token: string) {
+  if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) return;
 
-  socket = new WebSocket(`${WS_URL}/ws?token=${encodeURIComponent(token)}`);
+  // Prefer a short-lived ticket so the JWT never lands in the WS URL/logs; fall
+  // back to the token query param if the ticket request fails.
+  let url = `${WS_URL}/ws?token=${encodeURIComponent(token)}`;
+  try {
+    const { ticket } = await api.getWsTicket();
+    url = `${WS_URL}/ws?ticket=${encodeURIComponent(ticket)}`;
+  } catch {
+    /* fall back to token in query */
+  }
+
+  socket = new WebSocket(url);
 
   socket.onopen = () => {
     console.log("[ws] connected");

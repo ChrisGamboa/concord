@@ -26,6 +26,7 @@ import {
   clearUserStatus,
 } from "./presence.js";
 import { createConnectionLimiter, SEND_TYPES } from "./rateLimiter.js";
+import { consumeTicket } from "./tickets.js";
 
 export const wsHandler: FastifyPluginAsync = async (app) => {
   app.get("/ws", { websocket: true }, (socket, request) => {
@@ -36,41 +37,7 @@ export const wsHandler: FastifyPluginAsync = async (app) => {
     // handler never races ahead of its own connect (which would strand a session).
     let presenceReady: Promise<boolean> = Promise.resolve(false);
 
-    // Authenticate via first message or query param
-    const token =
-      (request.query as Record<string, string>).token ?? null;
-
-    if (token) {
-      let decodedUserId: string;
-      try {
-        decodedUserId = app.jwt.verify<{ userId: string }>(token).userId;
-      } catch {
-        send({ type: "error", message: "Invalid token" });
-        socket.close();
-        return;
-      }
-      userId = decodedUserId;
-      addConnection(sessionId, socket, userId);
-      send({ type: "ready", userId, sessionId });
-
-      // Broadcast presence if this is their first connection. A status set by
-      // another recent session (e.g. dnd) survives reconnects within a run.
-      presenceReady = addSession(sessionId, decodedUserId);
-      void presenceReady.then(async (isFirst) => {
-        if (!isFirst) return;
-        const existing = await getUserStatus(decodedUserId);
-        if (!existing) await setUserStatus(decodedUserId, "online");
-        broadcastToAll(
-          { type: "presence_update", userId: decodedUserId, status: existing ?? "online" },
-          sessionId
-        );
-      });
-    } else {
-      send({ type: "error", message: "Token required as query param" });
-      socket.close();
-      return;
-    }
-
+    // Register listeners up front; they no-op until async auth sets userId.
     socket.on("message", async (raw: Buffer) => {
       if (!userId) return;
 
@@ -126,6 +93,64 @@ export const wsHandler: FastifyPluginAsync = async (app) => {
         socket.send(JSON.stringify(msg));
       }
     }
+
+    // Authenticate: prefer a single-use ticket (keeps the JWT out of the URL/logs),
+    // fall back to a token query param. Then check tokenVersion for revocation.
+    void (async () => {
+      const query = request.query as Record<string, string>;
+      let authedUserId: string | null = null;
+      let authedTokenVersion = 0;
+
+      if (query.ticket) {
+        const data = await consumeTicket(query.ticket);
+        if (data) {
+          authedUserId = data.userId;
+          authedTokenVersion = data.tokenVersion;
+        }
+      } else if (query.token) {
+        try {
+          const decoded = app.jwt.verify<{ userId: string; tokenVersion?: number }>(query.token);
+          authedUserId = decoded.userId;
+          authedTokenVersion = decoded.tokenVersion ?? 0;
+        } catch {
+          /* invalid token → rejected below */
+        }
+      }
+
+      if (!authedUserId) {
+        send({ type: "error", message: "Authentication required" });
+        socket.close();
+        return;
+      }
+
+      // Revocation: reject if the token was invalidated (logout-all).
+      const dbUser = await prisma.user?.findUnique?.({
+        where: { id: authedUserId },
+        select: { tokenVersion: true },
+      });
+      if (dbUser && (dbUser.tokenVersion ?? 0) !== authedTokenVersion) {
+        send({ type: "error", message: "Session expired" });
+        socket.close();
+        return;
+      }
+
+      userId = authedUserId;
+      addConnection(sessionId, socket, userId);
+      send({ type: "ready", userId, sessionId });
+
+      // Broadcast presence if this is their first connection. A status set by
+      // another recent session (e.g. dnd) survives reconnects within a run.
+      presenceReady = addSession(sessionId, userId);
+      void presenceReady.then(async (isFirst) => {
+        if (!isFirst || !authedUserId) return;
+        const existing = await getUserStatus(authedUserId);
+        if (!existing) await setUserStatus(authedUserId, "online");
+        broadcastToAll(
+          { type: "presence_update", userId: authedUserId, status: existing ?? "online" },
+          sessionId
+        );
+      });
+    })();
   });
 };
 

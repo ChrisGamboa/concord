@@ -8,6 +8,7 @@ import { channelRoutes } from "../routes/channels.js";
 import { messageRoutes } from "../routes/messages.js";
 import { muteRoutes } from "../routes/mutes.js";
 import { dmRoutes } from "../routes/dm.js";
+import { registerAuthenticate } from "../authenticate.js";
 import "../types.js";
 
 export async function buildApp() {
@@ -17,16 +18,7 @@ export async function buildApp() {
   await app.register(jwt, { secret: "test-secret" });
   await app.register(websocket);
 
-  app.decorate(
-    "authenticate",
-    async (request: any, reply: any) => {
-      try {
-        await request.jwtVerify();
-      } catch {
-        reply.code(401).send({ error: "Unauthorized" });
-      }
-    }
-  );
+  registerAuthenticate(app);
 
   await app.register(authRoutes, { prefix: "/api/auth" });
   await app.register(serverRoutes, { prefix: "/api/servers" });
